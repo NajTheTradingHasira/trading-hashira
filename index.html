@@ -890,106 +890,19 @@ const NX={
   },
 
   // ═══ STAGE ANALYSIS (Weinstein) ═══
+  _stageData:null,
   async loadStage(){
     const t=$('#stage-ticker').value.trim().toUpperCase();if(!t)return;
     const el=$('#stage-content');el.innerHTML=`<div class="loading">Classifying ${t}…</div>`;
     try{
       const d=await NX.apiFetch('/api/stage/classify/'+t);
       if(d.error){el.innerHTML='<div class="error-msg">'+d.error+'</div>';return;}
-      const s=d.stage||'?';
-      const sub=d.sub_stage||'';
-      const stageLabel=d.stage_label||'';
-      const conf=d.confidence||0;
-      const attrs=Array.isArray(d.attributes)?d.attributes:[];
-      const sn=parseInt(s);
-      const sc=sn<=1?'s1':sn===2?'s2':sn===3?'s3':'s4';
-      const stgClr=n=>[null,'var(--green)','var(--green)','var(--amber)','var(--red)'][n]||'var(--text-dim)';
-
-      // Attribute rows
-      let attrHTML='';
-      attrs.forEach(a=>{
-        const sig=a.stage_signal||0;
-        const w=a.weight||0;
-        const c=a.confidence||0;
-        const col=stgClr(sig);
-        const name=(a.name||'').replace(/_/g,' ').toUpperCase();
-        const detail=a.detail||'';
-        attrHTML+=`<div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border)">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-            <span style="font-size:10px;color:var(--text-dim);letter-spacing:1px;font-weight:600">${name}</span>
-            <div style="display:flex;align-items:center;gap:8px">
-              <span class="badge" style="background:${col}20;color:${col};border:1px solid ${col}40;font-size:10px;padding:1px 6px">S${sig}</span>
-              <span style="font-size:10px;color:var(--text-dim)">w:${(w*100).toFixed(0)}%</span>
-            </div>
-          </div>
-          <div class="attr-bar"><div class="attr-fill" style="width:${c*100}%;background:${col}"></div></div>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:3px">${detail}</div>
-        </div>`;
-      });
-
-      // Extract Mansfield RS from attributes
-      const rsAttr=attrs.find(a=>a.name==='mansfield_rs');
-      const rsDetail=rsAttr?rsAttr.detail:'—';
-      const rsSig=rsAttr?rsAttr.stage_signal:0;
-      const rsConf=rsAttr?rsAttr.confidence:0;
-
-      // Helper: find attr by name
-      const aByName=n=>attrs.find(a=>a.name===n)||{};
-
-      // Action badge
-      const actionMap={'1':'Accumulate on volume','1A':'Accumulate on volume','1B':'Accumulate on volume',
-        '2':'Buy breakouts','2A':'Buy breakouts','2B':'Hold / trail stops',
-        '3':'Sell into strength','3A':'Sell into strength','3B':'Reduce exposure',
-        '4':'Avoid / short only','4A':'Avoid / short only','4B':'Avoid / short only'};
+      NX._stageData=d;
+      const s=d.stage||'?',sub=d.sub_stage||'',stageLabel=d.stage_label||'',conf=d.confidence||0;
+      const sn=parseInt(s),sc=sn<=1?'s1':sn===2?'s2':sn===3?'s3':'s4';
+      const actionMap={'1':'Accumulate on volume','1A':'Accumulate on volume','1B':'Accumulate on volume','2':'Buy breakouts','2A':'Buy breakouts','2B':'Hold / trail stops','3':'Sell into strength','3A':'Sell into strength','3B':'Reduce exposure','4':'Avoid / short only','4A':'Avoid / short only','4B':'Avoid / short only'};
       const actionText=actionMap[sub]||actionMap[String(s)]||'—';
       const actionClr=sn<=2&&sub!=='2B'?'var(--green)':(sn===2||sn===3&&sub==='3A')?'var(--amber)':'var(--red)';
-
-      // Trend Quality Checklist
-      const checks=[
-        {label:'Price above 10-week MA',desc:'Momentum intact',pass:(aByName('momentum_10w').stage_signal||9)<=2},
-        {label:'Price above 30-week MA',desc:'Primary trend bullish',pass:(aByName('price_vs_30w').stage_signal||9)<=2},
-        {label:'10W MA above 30W MA',desc:'MA stack aligned',pass:(aByName('sma_30w_slope').stage_signal||9)<=2&&(aByName('momentum_10w').stage_signal||9)<=2},
-        {label:'30-week MA rising',desc:'Trend direction up',pass:(aByName('sma_30w_slope').stage_signal||9)<=2},
-        {label:'Mansfield RS > 0',desc:'Outperforming benchmark',pass:(aByName('mansfield_rs').stage_signal||9)<=2},
-        {label:'Near 52-week highs',desc:'Price structure strong',pass:(aByName('price_structure').stage_signal||9)<=2},
-        {label:'Volume confirms',desc:'Institutional participation',pass:(aByName('volume').stage_signal||9)<=2},
-      ];
-      const tqScore=checks.filter(c=>c.pass).length;
-      const tqLabel=tqScore>=6?'Favorable — buy setups valid':tqScore>=4?'Neutral — selective':'Unfavorable — avoid longs';
-      const tqClr=tqScore>=6?'var(--green)':tqScore>=4?'var(--amber)':'var(--red)';
-      const checklistHTML=checks.map(c=>`<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)">
-        <span style="font-size:14px;width:20px;text-align:center;color:${c.pass?'var(--green)':'var(--red)'}">${c.pass?'✓':'✗'}</span>
-        <span style="flex:1;font-size:12px;color:${c.pass?'var(--text)':'var(--text-dim)'}">${c.label}</span>
-        <span style="font-size:10px;color:var(--text-dim)">${c.desc}</span>
-      </div>`).join('');
-
-      // Extract depth % from price_vs_30w detail
-      const pvDetail=aByName('price_vs_30w').detail||'';
-      const depthMatch=pvDetail.match(/([-+]?\d+\.?\d*)%/);
-      const depthPct=depthMatch?depthMatch[1]+'%':'—';
-
-      // Bottom metrics
-      const conflicts=d.conflicts||[];
-      const conflictSev=conflicts.length>=3?'var(--red)':conflicts.length>=1?'var(--amber)':'var(--green)';
-
-      // Conflicts HTML
-      let conflictHTML='';
-      if(conflicts.length){
-        conflictHTML=`<div class="card" style="border-left:3px solid var(--amber)"><div class="card-header" style="color:var(--amber)">⚠ CONFLICTS (${conflicts.length})</div>${conflicts.map(c=>`<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;padding-left:8px;border-left:2px solid var(--amber);opacity:.8">${c.replace(/CONFLICT:\s*/,'')}</div>`).join('')}</div>`;
-      }
-
-      // Blocked
-      let blockedHTML='';
-      if(d.blocked){
-        blockedHTML=`<div class="card" style="border-left:3px solid var(--red)"><div class="card-header" style="color:var(--red)">🚫 BLOCKED</div><div style="font-size:12px;color:var(--text-muted)">${d.block_reason||'Stage transition blocked'}</div></div>`;
-      }
-
-      // Transition watch
-      let transHTML='';
-      if(d.transition_watch){
-        transHTML=`<div class="card" style="border-left:3px solid var(--purple)"><div class="card-header" style="color:var(--purple)">👁 TRANSITION WATCH</div><div style="font-size:12px;color:var(--text-muted)">${d.transition_watch}</div></div>`;
-      }
-
       el.innerHTML=`
 <div class="card" style="display:flex;align-items:center;gap:24px;flex-wrap:wrap">
   <div><div style="font-size:10px;color:var(--text-dim);letter-spacing:1px;margin-bottom:6px">WEINSTEIN STAGE</div>
@@ -999,69 +912,162 @@ const NX={
   </div>
   <div class="m-card" style="border:none;padding:0;background:none"><div class="label">CONFIDENCE</div><div class="value accent-c">${(conf*100).toFixed(0)}%</div></div>
   <div class="m-card" style="border:none;padding:0;background:none"><div class="label">TICKER</div><div class="value neutral">${t}</div></div>
-  <div class="m-card" style="border:none;padding:0;background:none"><div class="label">RS VERIFIED</div><div class="value ${d.rs_verified?'up':'down'}">${d.rs_verified?'YES':'NO'}</div></div>
-  <div class="m-card" style="border:none;padding:0;background:none"><div class="label">WANDA</div><div class="value ${d.wanda_override?'up':'neutral'}">${d.wanda_override?'OVERRIDE':'—'}</div></div>
+  <div class="m-card" style="border:none;padding:0;background:none"><div class="label">WANDA</div><div class="value ${(d.wanda||{}).composite>=60?'up':'neutral'}">${(d.wanda||{}).composite||'—'}</div></div>
+  <div class="m-card" style="border:none;padding:0;background:none"><div class="label">TREND</div><div class="value" style="color:${actionClr}">${(d.kell_ema||{}).stack_score||0}/6</div></div>
 </div>
 <div class="grid g2">
   <div class="card"><div class="card-header">${t} WEEKLY PRICE + MOVING AVERAGES</div><div class="chart-box chart-box-lg"><canvas id="cv-stage-price"></canvas></div></div>
   <div class="card"><div class="card-header">MANSFIELD RELATIVE STRENGTH vs SPY</div><div class="chart-box chart-box-lg"><canvas id="cv-stage-mrs"></canvas></div></div>
 </div>
-<div class="grid g2">
-  <div class="card"><div class="card-header">STAGE ATTRIBUTES (${attrs.length})</div>${attrHTML||'<div class="empty-state">No attribute data</div>'}</div>
-  <div class="card"><div class="card-header">RELATIVE STRENGTH</div>
-    <div style="margin-bottom:12px">
-      <div style="font-size:10px;color:var(--text-dim);margin-bottom:4px">MANSFIELD RS</div>
-      <div style="font-size:14px;font-weight:700;color:${stgClr(rsSig)}">${rsDetail}</div>
-      <div class="attr-bar" style="margin-top:4px"><div class="attr-fill" style="width:${rsConf*100}%;background:${stgClr(rsSig)}"></div></div>
-      <div style="font-size:10px;color:var(--text-dim);margin-top:4px">Stage signal: S${rsSig} · Confidence: ${(rsConf*100).toFixed(0)}%</div>
-    </div>
-    <div style="display:flex;gap:16px;flex-wrap:wrap">
-      <div><span style="font-size:10px;color:var(--text-dim)">RS VERIFIED</span><br/><span style="font-size:14px;font-weight:600;color:${d.rs_verified?'var(--green)':'var(--text-dim)'}">${d.rs_verified?'✓ Verified':'Not verified'}</span></div>
-      <div><span style="font-size:10px;color:var(--text-dim)">WANDA OVERRIDE</span><br/><span style="font-size:14px;font-weight:600">${d.wanda_override?'Active':'—'}</span></div>
-    </div>
-  </div>
+<div class="tab-row" id="stage-tabs">
+  ${['OVERVIEW','KELL EMA','ALIGNMENT','WANDA','ABS STR','COMP STR','VOLUME','SCANNER'].map((t,i)=>`<button class="tab-btn${i===0?' active':''}" onclick="NX.switchStageTab('${t}')">${t}</button>`).join('')}
 </div>
-<div class="card"><div class="card-header">TREND QUALITY CHECKLIST</div>
-  ${checklistHTML}
-  <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
-    <span style="font-size:13px;font-weight:700;color:${tqClr}">Score: ${tqScore}/7</span>
-    <span style="font-size:12px;color:${tqClr};font-weight:600">${tqLabel}</span>
-  </div>
-</div>
-${conflictHTML}${blockedHTML}${transHTML}
-<div class="metrics-row g5" style="margin-top:4px">
-  <div class="m-card"><div class="label">DEPTH vs 30W</div><div class="value ${depthPct.startsWith('-')?'down':'up'}">${depthPct}</div></div>
-  <div class="m-card"><div class="label">SUB-STAGE</div><div class="value neutral">${sub||'—'}</div><div class="sub">${actionText}</div></div>
-  <div class="m-card"><div class="label">CONFLICTS</div><div class="value" style="color:${conflictSev}">${conflicts.length}</div><div class="sub">${conflicts.length===0?'Clean':conflicts.length>=3?'High divergence':'Minor'}</div></div>
-  <div class="m-card"><div class="label">TREND SCORE</div><div class="value" style="color:${tqClr}">${tqScore}/7</div></div>
-  <div class="m-card"><div class="label">STAGE SIGNAL</div><div class="value" style="color:${stgClr(sn)}">S${s}</div><div class="sub">${(conf*100).toFixed(0)}% conf</div></div>
-</div>`;
-
-      // ── Render charts after DOM is set ──
+<div id="stage-tab-content"></div>`;
+      // Charts
       const ws=d.weekly_series||[];
       if(ws.length){
-        const priceLabels=ws.map(w=>w.date);
-        const closeData=ws.map(w=>w.close);
-        const sma10Data=d.sma_10w||[];
-        const sma30Data=d.sma_30w||[];
-        makeChart('cv-stage-price',{type:'line',data:{labels:priceLabels,datasets:[
-          {label:'Close',data:closeData,borderColor:'#00b8d4',backgroundColor:'#00b8d412',fill:true,tension:.2,pointRadius:0,borderWidth:1.5},
-          {label:'10W EMA',data:sma10Data,borderColor:'#ffc107',backgroundColor:'transparent',fill:false,tension:.3,pointRadius:0,borderWidth:1.5,spanGaps:true},
-          {label:'30W MA',data:sma30Data,borderColor:'#ff5252',backgroundColor:'transparent',fill:false,tension:.3,pointRadius:0,borderWidth:1.5,borderDash:[5,3],spanGaps:true},
+        makeChart('cv-stage-price',{type:'line',data:{labels:ws.map(w=>w.date),datasets:[
+          {label:'Close',data:ws.map(w=>w.close),borderColor:'#00b8d4',backgroundColor:'#00b8d412',fill:true,tension:.2,pointRadius:0,borderWidth:1.5},
+          {label:'10W EMA',data:d.sma_10w||[],borderColor:'#ffc107',backgroundColor:'transparent',fill:false,tension:.3,pointRadius:0,borderWidth:1.5,spanGaps:true},
+          {label:'30W MA',data:d.sma_30w||[],borderColor:'#ff5252',backgroundColor:'transparent',fill:false,tension:.3,pointRadius:0,borderWidth:1.5,borderDash:[5,3],spanGaps:true},
         ]},options:{plugins:{legend:{labels:{boxWidth:10,padding:8,font:{size:10},color:'#c8d6e5'}}},scales:{x:{ticks:{maxTicksToLimit:10,font:{size:9}}},y:{ticks:{callback:v=>'$'+fmt(v)}}},interaction:{mode:'index',intersect:false},maintainAspectRatio:false}});
       }
       const mrs=d.mansfield_series||[];
       if(mrs.length){
-        const mrsLabels=mrs.map(m=>m.date);
-        const mrsData=mrs.map(m=>m.value);
-        const mrsColors=mrsData.map(v=>v>=0?'#00e67660':'#ff525260');
-        makeChart('cv-stage-mrs',{type:'bar',data:{labels:mrsLabels,datasets:[
-          {label:'Mansfield RS',data:mrsData,backgroundColor:mrsColors,borderRadius:1},
-          {label:'Zero',data:mrsLabels.map(()=>0),type:'line',borderColor:'#ffffff30',borderDash:[4,4],pointRadius:0,borderWidth:1},
+        makeChart('cv-stage-mrs',{type:'bar',data:{labels:mrs.map(m=>m.date),datasets:[
+          {label:'Mansfield RS',data:mrs.map(m=>m.value),backgroundColor:mrs.map(m=>m.value>=0?'#00e67660':'#ff525260'),borderRadius:1},
+          {label:'Zero',data:mrs.map(()=>0),type:'line',borderColor:'#ffffff30',borderDash:[4,4],pointRadius:0,borderWidth:1},
         ]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksToLimit:10,font:{size:9}}},y:{ticks:{font:{size:9}}}},interaction:{mode:'index',intersect:false},maintainAspectRatio:false}});
       }
-
+      NX._renderStageTab('OVERVIEW');
     }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}
+  },
+  switchStageTab(tab){
+    $$('#stage-tabs .tab-btn').forEach(b=>b.classList.toggle('active',b.textContent===tab));
+    NX._renderStageTab(tab);
+  },
+  _renderStageTab(tab){
+    const d=NX._stageData;if(!d)return;
+    const el=$('#stage-tab-content');if(!el)return;
+    const t=d.ticker||'';
+    const stgClr=n=>[null,'var(--green)','var(--green)','var(--amber)','var(--red)'][n]||'var(--text-dim)';
+    const attrs=Array.isArray(d.attributes)?d.attributes:[];
+    const aByName=n=>attrs.find(a=>a.name===n)||{};
+    const chk=(pass,label,desc)=>`<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)"><span style="font-size:14px;width:20px;text-align:center;color:${pass?'var(--green)':'var(--red)'}">${pass?'✓':'✗'}</span><span style="flex:1;font-size:12px;color:${pass?'var(--text)':'var(--text-dim)'}">${label}</span><span style="font-size:10px;color:var(--text-dim)">${desc}</span></div>`;
+    const mc=(label,val,clr)=>`<div class="m-card"><div class="label">${label}</div><div class="value" style="color:${clr||'var(--text)'}">${val}</div></div>`;
+
+    if(tab==='OVERVIEW'){
+      const rsAttr=aByName('mansfield_rs');const rsSig=rsAttr.stage_signal||0;const rsConf=rsAttr.confidence||0;const rsDetail=rsAttr.detail||'—';
+      const sn=parseInt(d.stage);
+      let attrHTML='';attrs.forEach(a=>{const sig=a.stage_signal||0;const col=stgClr(sig);attrHTML+=`<div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border)"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px"><span style="font-size:10px;color:var(--text-dim);letter-spacing:1px;font-weight:600">${(a.name||'').replace(/_/g,' ').toUpperCase()}</span><div style="display:flex;align-items:center;gap:8px"><span class="badge" style="background:${col}20;color:${col};border:1px solid ${col}40;font-size:10px;padding:1px 6px">S${sig}</span><span style="font-size:10px;color:var(--text-dim)">w:${((a.weight||0)*100).toFixed(0)}%</span></div></div><div class="attr-bar"><div class="attr-fill" style="width:${(a.confidence||0)*100}%;background:${col}"></div></div><div style="font-size:11px;color:var(--text-muted);margin-top:3px">${a.detail||''}</div></div>`;});
+      const checks=[{l:'Price above 10-week MA',d:'Momentum intact',p:(aByName('momentum_10w').stage_signal||9)<=2},{l:'Price above 30-week MA',d:'Primary trend bullish',p:(aByName('price_vs_30w').stage_signal||9)<=2},{l:'10W MA above 30W MA',d:'MA stack aligned',p:(aByName('sma_30w_slope').stage_signal||9)<=2&&(aByName('momentum_10w').stage_signal||9)<=2},{l:'30-week MA rising',d:'Trend direction up',p:(aByName('sma_30w_slope').stage_signal||9)<=2},{l:'Mansfield RS > 0',d:'Outperforming benchmark',p:(aByName('mansfield_rs').stage_signal||9)<=2},{l:'Near 52-week highs',d:'Price structure strong',p:(aByName('price_structure').stage_signal||9)<=2},{l:'Volume confirms',d:'Institutional participation',p:(aByName('volume').stage_signal||9)<=2}];
+      const tqScore=checks.filter(c=>c.p).length;const tqClr=tqScore>=6?'var(--green)':tqScore>=4?'var(--amber)':'var(--red)';const tqLabel=tqScore>=6?'Favorable — buy setups valid':tqScore>=4?'Neutral — selective':'Unfavorable — avoid longs';
+      const conflicts=d.conflicts||[];const conflictSev=conflicts.length>=3?'var(--red)':conflicts.length>=1?'var(--amber)':'var(--green)';
+      const pvDetail=aByName('price_vs_30w').detail||'';const depthMatch=pvDetail.match(/([-+]?\d+\.?\d*)%/);const depthPct=depthMatch?depthMatch[1]+'%':'—';
+      const actionMap={'1':'Accumulate','1A':'Accumulate','1B':'Accumulate','2':'Buy breakouts','2A':'Buy breakouts','2B':'Trail stops','3':'Sell strength','3A':'Sell strength','3B':'Reduce','4':'Avoid/short','4A':'Avoid/short','4B':'Avoid/short'};
+      const actionText=actionMap[d.sub_stage]||actionMap[String(d.stage)]||'—';
+      el.innerHTML=`<div class="grid g2"><div class="card"><div class="card-header">STAGE ATTRIBUTES (${attrs.length})</div>${attrHTML||'<div class="empty-state">No data</div>'}</div><div class="card"><div class="card-header">RELATIVE STRENGTH</div><div style="margin-bottom:12px"><div style="font-size:10px;color:var(--text-dim);margin-bottom:4px">MANSFIELD RS</div><div style="font-size:14px;font-weight:700;color:${stgClr(rsSig)}">${rsDetail}</div><div class="attr-bar" style="margin-top:4px"><div class="attr-fill" style="width:${rsConf*100}%;background:${stgClr(rsSig)}"></div></div></div><div style="display:flex;gap:16px"><div><span style="font-size:10px;color:var(--text-dim)">RS VERIFIED</span><br/><span style="font-size:14px;font-weight:600;color:${d.rs_verified?'var(--green)':'var(--text-dim)'}">${d.rs_verified?'✓ Yes':'No'}</span></div><div><span style="font-size:10px;color:var(--text-dim)">WANDA</span><br/><span style="font-size:14px;font-weight:600">${d.wanda_override?'Override':'—'}</span></div></div></div></div>
+<div class="card"><div class="card-header">TREND QUALITY CHECKLIST</div>${checks.map(c=>chk(c.p,c.l,c.d)).join('')}<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;justify-content:space-between"><span style="font-size:13px;font-weight:700;color:${tqClr}">Score: ${tqScore}/7</span><span style="font-size:12px;color:${tqClr};font-weight:600">${tqLabel}</span></div></div>
+${conflicts.length?`<div class="card" style="border-left:3px solid var(--amber)"><div class="card-header" style="color:var(--amber)">⚠ CONFLICTS (${conflicts.length})</div>${conflicts.map(c=>`<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;padding-left:8px;border-left:2px solid var(--amber)">${c.replace(/CONFLICT:\s*/,'')}</div>`).join('')}</div>`:''}
+${d.blocked?`<div class="card" style="border-left:3px solid var(--red)"><div class="card-header" style="color:var(--red)">🚫 BLOCKED</div><div style="font-size:12px;color:var(--text-muted)">${d.block_reason||'Stage transition blocked'}</div></div>`:''}
+${d.transition_watch?`<div class="card" style="border-left:3px solid var(--purple)"><div class="card-header" style="color:var(--purple)">👁 TRANSITION WATCH</div><div style="font-size:12px;color:var(--text-muted)">${d.transition_watch}</div></div>`:''}
+<div class="metrics-row g5" style="margin-top:4px">${mc('DEPTH vs 30W',depthPct,depthPct.startsWith('-')?'var(--red)':'var(--green)')}${mc('SUB-STAGE',(d.sub_stage||'—'))}${mc('CONFLICTS',conflicts.length,conflictSev)}${mc('TREND',tqScore+'/7',tqClr)}${mc('STAGE','S'+d.stage,stgClr(sn))}</div>`;
+    }
+
+    else if(tab==='KELL EMA'){
+      const k=d.kell_ema||{};const ws=d.weekly_series||[];const lastPrice=ws.length?ws[ws.length-1].close:0;
+      const setupClr=k.kell_setup==='POWER_MOVE'?'var(--green)':k.kell_setup==='PULLBACK_BUY'?'var(--amber)':'var(--text-dim)';
+      const extClr=k.extension_zone==='OVEREXTENDED'?'var(--red)':k.extension_zone==='STRETCHED'?'var(--amber)':k.extension_zone==='HEALTHY'?'var(--green)':k.extension_zone==='PULLBACK'?'var(--amber)':'var(--red)';
+      const zones=[{l:'BREAKDOWN',min:-999,max:-5,c:'var(--red)'},{l:'PULLBACK',min:-5,max:0,c:'var(--amber)'},{l:'HEALTHY',min:0,max:5,c:'var(--green)'},{l:'STRETCHED',min:5,max:8,c:'var(--amber)'},{l:'OVEREXTENDED',min:8,max:999,c:'var(--red)'}];
+      const extPct=k.extension_pct||0;const extPos=Math.max(0,Math.min(100,((extPct+10)/20)*100));
+      el.innerHTML=`<div class="card"><div class="card-header">OLIVER KELL EMA STACK · ${t}<span style="font-weight:400;margin-left:8px;color:var(--text-dim)">10/20 EMA momentum stack</span></div>
+<div style="display:flex;align-items:center;gap:20px;margin:16px 0;flex-wrap:wrap">
+  <div><div style="font-size:36px;font-weight:800;color:${k.stack_score>=4?'var(--green)':k.stack_score>=2?'var(--amber)':'var(--red)'}">${k.stack_score||0}<span style="font-size:18px;color:var(--text-dim)">/6</span></div><div style="font-size:11px;color:var(--text-muted)">${k.stack_label||'—'}</div></div>
+  <span class="badge" style="background:${setupClr}18;color:${setupClr};border:1px solid ${setupClr}40;font-size:11px;padding:4px 12px;font-weight:700">${k.kell_setup||'NONE'}</span>
+  <span class="badge" style="background:${extClr}18;color:${extClr};border:1px solid ${extClr}40;font-size:11px;padding:4px 12px">${(k.extension_pct||0)>=0?'+':''}${fmt(k.extension_pct||0)}% · ${k.extension_zone||'—'}</span>
+</div>
+<div class="metrics-row g4">${mc('PRICE','$'+fmt(lastPrice),lastPrice>k.ema_10w?'var(--green)':'var(--red)')}${mc('10W EMA','$'+fmt(k.ema_10w),lastPrice>k.ema_10w?'var(--green)':'var(--red)')}${mc('20W EMA','$'+fmt(k.ema_20w),lastPrice>k.ema_20w?'var(--green)':'var(--red)')}${mc('30W SMA','$'+fmt(k.sma_30w),k.ema_20w>k.sma_30w?'var(--green)':'var(--red)')}</div>
+<div style="margin-top:16px"><div class="card-header">EMA STACK CHECKLIST</div>${(k.checklist||[]).map(c=>chk(c.pass,c.label,c.description||'')).join('')}</div>
+<div style="margin-top:16px"><div class="card-header">EXTENSION FROM 10W EMA</div>
+<div style="display:flex;height:24px;border-radius:4px;overflow:hidden;margin:8px 0">${zones.map(z=>`<div style="flex:1;background:${z.c}20;position:relative;border-right:1px solid var(--border)"><span style="position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);font-size:9px;color:var(--text-dim)">${z.l}</span></div>`).join('')}</div>
+<div style="position:relative;height:8px;margin-top:20px"><div style="position:absolute;left:${extPos}%;top:-4px;width:3px;height:16px;background:var(--text);border-radius:2px"></div></div>
+<div style="text-align:center;margin-top:12px;font-size:12px;color:${extClr};font-weight:600">${fmt(extPct)}% from 10W EMA</div>
+</div></div>`;
+    }
+
+    else if(tab==='ALIGNMENT'){
+      const a=d.alignment||{};
+      const envClr=a.environment==='FAVORABLE'?'var(--green)':a.environment==='HOSTILE'?'var(--red)':'var(--amber)';
+      const stgBadge=(stage,label,title)=>`<div class="card" style="text-align:center"><div class="label" style="margin-bottom:8px">${title}</div><div style="font-size:28px;font-weight:800;color:${stgClr(stage)}">S${stage}</div><div style="font-size:11px;color:var(--text-muted);margin-top:4px">${label}</div>${stage===2?'<div class="badge b-green" style="margin-top:6px">CONFIRMED</div>':''}</div>`;
+      el.innerHTML=`<div class="card"><div class="card-header">WEINSTEIN TRIPLE ALIGNMENT · ${t}</div>
+<div style="margin:12px 0"><span class="badge" style="background:${envClr}18;color:${envClr};border:1px solid ${envClr}40;font-size:12px;padding:4px 14px;font-weight:700">${a.environment||'—'}</span><div style="font-size:11px;color:var(--text-muted);margin-top:6px">${a.environment_detail||''}</div></div>
+<div class="grid g3">${stgBadge(a.market_stage,'('+a.market_label+')','MARKET (SPX)')}${stgBadge(a.sector_stage,'('+a.sector_label+')','SECTOR ('+a.sector_etf+')')}${stgBadge(a.stock_stage,d.stage_label||'','STOCK ('+t+')')}</div>
+${a.triple_aligned?'<div class="card" style="border-left:3px solid var(--green);margin-top:12px"><div class="card-header" style="color:var(--green)">✓ TRIPLE ALIGNED</div><div style="font-size:12px;color:var(--text-muted)">Market + Sector + Stock all Stage 2 — maximum conviction environment</div></div>':''}
+<div style="margin-top:16px"><div class="label">SECTOR RS · ${a.sector_etf||'—'} vs SPX · 26W</div><div style="font-size:18px;font-weight:700;color:${(a.sector_rs_26w||0)>=0?'var(--green)':'var(--red)'};margin-top:4px">${a.sector_rs_26w>=0?'+':''}${fmt(a.sector_rs_26w||0)}%<span style="font-size:12px;color:var(--text-dim);margin-left:8px">${(a.sector_rs_26w||0)>=2?'LEADING':(a.sector_rs_26w||0)<=-2?'LAGGING':'INLINE'}</span></div></div>
+</div>`;
+    }
+
+    else if(tab==='WANDA'){
+      const w=d.wanda||{};const comp=w.components||{};
+      const gaugeClr=w.composite>=80?'var(--green)':w.composite>=60?'#00b8d4':w.composite>=40?'var(--amber)':'var(--red)';
+      const weights={price_rs:40,earnings_mom:25,industry_rs:20,float_liq:15};
+      const names={price_rs:'PRICE RS (63D)',earnings_mom:'EARNINGS MOMENTUM',industry_rs:'INDUSTRY RS',float_liq:'FLOAT / LIQUIDITY'};
+      let compHTML='';Object.entries(comp).forEach(([k,v])=>{const s=v.score||50;const c=s>=70?'var(--green)':s>=40?'var(--amber)':'var(--red)';compHTML+=`<div style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:10px;color:var(--text-dim);letter-spacing:1px">${names[k]||k.toUpperCase()} <span style="color:var(--text-dim);opacity:.6">(${weights[k]||0}%)</span></span><span style="font-size:12px;font-weight:700;color:${c}">${s}</span></div><div class="attr-bar"><div class="attr-fill" style="width:${s}%;background:${c}"></div></div><div style="font-size:10px;color:var(--text-muted);margin-top:2px">${v.detail||''}</div></div>`;});
+      el.innerHTML=`<div class="card"><div class="card-header">WANDA COMPOSITE RS · ${t}<span style="font-weight:400;margin-left:8px;color:var(--text-dim)">Weighted Adaptive Normalized Directional Alpha</span></div>
+<div style="text-align:center;margin:20px 0"><div style="font-size:48px;font-weight:800;color:${gaugeClr}">${w.composite||0}</div>
+<div style="width:100%;max-width:300px;margin:8px auto;height:10px;background:linear-gradient(90deg,var(--red),var(--amber),var(--green));border-radius:5px;position:relative"><div style="position:absolute;left:${w.composite||0}%;top:-3px;width:4px;height:16px;background:#fff;border-radius:2px;transform:translateX(-50%)"></div></div>
+<div style="font-size:13px;font-weight:700;color:${gaugeClr};margin-top:6px">${w.label||'—'}</div></div>
+<div class="card-header">COMPONENT BREAKDOWN</div>${compHTML}</div>`;
+    }
+
+    else if(tab==='ABS STR'){
+      const abs=d.absolute_strength||{};const r=abs.returns||{};
+      const rv=(k,l)=>{const v=r[k];return mc(l,v!=null?((v>=0?'+':'')+fmt(v)+'%'):'—',v>0?'var(--green)':v<0?'var(--red)':'var(--text-dim)');}
+      el.innerHTML=`<div class="card"><div class="card-header">ABSOLUTE STRENGTH · ${t}</div>
+<div class="card-header" style="margin-top:12px">MULTI-TIMEFRAME RETURNS</div>
+<div class="metrics-row g3">${rv('w4','4 WEEK')}${rv('w13','13 WEEK')}${rv('w26','26 WEEK')}${rv('w52','52 WEEK')}${rv('from_high','FROM 52W HIGH')}${rv('from_low','FROM 52W LOW')}</div>
+<div class="card-header" style="margin-top:16px">ABSOLUTE STRENGTH CHECKLIST</div>
+${(abs.checklist||[]).map(c=>chk(c.pass,c.label,c.description||'')).join('')}</div>`;
+    }
+
+    else if(tab==='COMP STR'){
+      const cs=d.comparative_strength||{};const peers=cs.peers||[];
+      const tierClr=cs.tier==='TOP TIER'?'var(--green)':cs.tier==='UPPER HALF'?'#00b8d4':cs.tier==='LOWER HALF'?'var(--amber)':'var(--red)';
+      const hth=cs.head_to_head||[];
+      const maxDelta=Math.max(1,...hth.map(h=>Math.abs(h.delta)));
+      el.innerHTML=`<div class="card"><div class="card-header">COMPARATIVE STRENGTH · ${t}<span style="font-weight:400;margin-left:8px;color:var(--text-dim)">#${cs.rank||'?'} of ${cs.total||'?'} in ${cs.sector||'—'}</span></div>
+<div style="display:flex;gap:10px;margin:12px 0;flex-wrap:wrap">
+  <span class="badge" style="background:${tierClr}18;color:${tierClr};border:1px solid ${tierClr}40;padding:3px 10px">${cs.tier||'—'}</span>
+  <span class="badge b-accent">${cs.percentile||0}th percentile</span>
+  <span class="badge" style="background:var(--border);color:var(--text-muted)">${cs.consistency||'—'}</span>
+</div>
+<div class="card-header">SECTOR RANKING</div>
+<div style="overflow-x:auto"><table><thead><tr><th>#</th><th>Ticker</th><th>4W</th><th>13W</th><th>26W</th><th>52W</th><th>Comp</th><th>High</th><th>Trend</th></tr></thead><tbody>
+${peers.map((p,i)=>{const isMe=p.ticker===t;const bg=isMe?'background:var(--accent-bg);':'';return`<tr style="${bg}"><td>${i+1}</td><td style="font-weight:700;${isMe?'color:var(--accent)':''}">${p.ticker}</td><td class="${(p.w4||0)>=0?'up':'down'}">${fmt(p.w4)}%</td><td class="${(p.w13||0)>=0?'up':'down'}">${fmt(p.w13)}%</td><td class="${(p.w26||0)>=0?'up':'down'}">${fmt(p.w26)}%</td><td class="${(p.w52||0)>=0?'up':'down'}">${fmt(p.w52)}%</td><td style="font-weight:700">${fmt(p.composite)}</td><td>${fmt(p.from_high)}%</td><td style="font-size:10px;color:var(--text-dim)">${p.trend||''}</td></tr>`;}).join('')}
+</tbody></table></div>
+${hth.length?`<div class="card-header" style="margin-top:16px">HEAD-TO-HEAD vs ${t}</div>${hth.map(h=>{const w=Math.min(100,Math.abs(h.delta)/maxDelta*100);const pos=h.delta>=0;return`<div style="display:flex;align-items:center;gap:8px;margin:3px 0"><span style="width:50px;font-size:11px;font-weight:600">${h.ticker}</span><div style="flex:1;height:14px;position:relative;background:var(--border);border-radius:2px"><div style="position:absolute;${pos?'left:50%':'right:50%'};width:${w/2}%;height:100%;background:${pos?'var(--green)':'var(--red)'};border-radius:2px;opacity:.6"></div><div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--text-dim)"></div></div><span style="width:50px;text-align:right;font-size:11px;color:${pos?'var(--green)':'var(--red)'}">${h.delta>=0?'+':''}${fmt(h.delta)}</span></div>`;}).join('')}`:''}</div>`;
+    }
+
+    else if(tab==='VOLUME'){
+      const v=d.volume_analysis||{};
+      const volClr=v.vol_label==='CLIMACTIC'?'var(--purple)':v.vol_label==='ABOVE AVG'?'var(--green)':v.vol_label==='NORMAL'?'var(--text)':v.vol_label==='BELOW AVG'?'var(--amber)':'var(--red)';
+      const sevClr=v.distribution_severity==='CRITICAL'?'var(--red)':v.distribution_severity==='ELEVATED'?'var(--amber)':'var(--green)';
+      el.innerHTML=`<div class="card"><div class="card-header">VOLUME ANALYSIS · ${t}</div>
+<div style="display:flex;align-items:center;gap:16px;margin:16px 0;flex-wrap:wrap">
+  <div style="font-size:36px;font-weight:800;color:${volClr}">${fmt(v.current_vol_ratio||0)}×</div>
+  <span class="badge" style="background:${volClr}18;color:${volClr};border:1px solid ${volClr}40;padding:4px 12px;font-size:12px;font-weight:700">${v.vol_label||'—'}</span>
+</div>
+<div style="font-size:11px;color:var(--text-muted);margin-bottom:16px">${v.vol_detail||''}</div>
+<div class="card-header">WEINSTEIN VOLUME THRESHOLDS</div>
+${(v.thresholds||[]).map(th=>`<div style="display:flex;align-items:center;gap:10px;padding:5px 8px;margin:2px 0;border-radius:4px;${th.current?'background:var(--accent-bg);border:1px solid var(--accent)40':''}"><span style="font-size:11px;font-weight:600;width:70px;color:${th.current?'var(--accent)':'var(--text-dim)'}">${th.level}</span><span style="font-size:11px;color:${th.current?'var(--text)':'var(--text-dim)'}">${th.label}</span>${th.current?'<span class="badge b-accent" style="margin-left:auto;font-size:9px">CURRENT</span>':''}</div>`).join('')}
+<div class="card-header" style="margin-top:16px">DISTRIBUTION DAYS · ${v.distribution_count||0} <span class="badge" style="background:${sevClr}18;color:${sevClr};border:1px solid ${sevClr}40;font-size:9px;padding:1px 6px;margin-left:6px">${v.distribution_severity||'—'}</span></div>
+${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Change</th><th>Vol Ratio</th></tr></thead><tbody>${(v.distribution_days||[]).map(dd=>`<tr><td>#${dd.week_idx}</td><td class="down">${fmt(dd.price_chg_pct)}%</td><td style="color:var(--amber)">${fmt(dd.vol_ratio)}×</td></tr>`).join('')}</tbody></table>`:'<div style="font-size:11px;color:var(--text-dim);padding:12px 0">No distribution days detected — clean accumulation</div>'}
+</div>`;
+    }
+
+    else if(tab==='SCANNER'){
+      el.innerHTML=`<div class="card"><div class="card-header">MULTI-TICKER SCANNER</div><div class="empty-state"><div style="font-size:24px;margin-bottom:8px">◎</div>Multi-ticker stage scanner coming soon<br/><span style="font-size:10px;color:var(--text-dim)">Scan watchlist for Stage 2 breakouts, triple-aligned setups, and WANDA leaders</span></div></div>`;
+    }
   },
 
   // ═══ MARKET BREADTH ═══

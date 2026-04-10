@@ -240,6 +240,24 @@ tr:hover{background:var(--bg2)}
 .api-footer input:focus{outline:none;border-color:var(--accent)}
 .api-footer .row{display:flex;gap:6px;align-items:center}
 
+/* Perplexity Panel */
+#pplx-panel{
+  position:fixed;right:-460px;top:0;width:460px;height:100vh;
+  background:var(--bg1);border-left:1px solid var(--accent-dim);
+  z-index:200;transition:right .3s ease;overflow-y:auto;
+  box-shadow:-4px 0 30px rgba(0,0,0,.5);
+}
+#pplx-panel.open{right:0}
+#pplx-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:199;display:none}
+#pplx-overlay.open{display:block}
+@media(max-width:640px){#pplx-panel{width:100%;right:-100%}}
+.pplx-btn{
+  background:transparent;border:1px solid var(--purple-dim);color:var(--purple);
+  font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:.5px;
+  padding:6px 14px;border-radius:3px;cursor:pointer;transition:all var(--transition-fast);
+}
+.pplx-btn:hover{background:var(--purple);color:var(--bg0);border-color:var(--purple);box-shadow:0 0 16px var(--purple-dim)}
+
 /* Responsive */
 @media(max-width:900px){
   :root{--sidebar-w:180px}
@@ -492,7 +510,7 @@ tr:hover{background:var(--bg2)}
       <div style="display:flex;gap:10px;align-items:center;margin:16px 0;flex-wrap:wrap">
         <span class="badge b-amber" style="font-size:10px;padding:4px 10px">● DEMO MODE · NO API CALLS · SEEDED MOCK DATA</span>
         <button class="btn btn-sm" id="dp-live-btn" onclick="NX._dpLive=!NX._dpLive;NX.loadDarkPool()" style="border-color:var(--accent)">→ SWITCH TO LIVE</button>
-        <button class="btn btn-sm" style="margin-left:auto;border-color:var(--purple);color:var(--purple)" onclick="">🔍 DARK POOL INTEL (PERPLEXITY)</button>
+        <button class="pplx-btn" style="margin-left:auto" onclick="NX.askPerplexity('darkpool')">🔍 DARK POOL INTEL (PERPLEXITY)</button>
       </div>
       <div id="dp-content"></div>
     </div>
@@ -514,6 +532,19 @@ tr:hover{background:var(--bg2)}
     </div>
   </div>
 </div>
+</div>
+<!-- Perplexity Panel -->
+<div id="pplx-overlay" onclick="NX.closePplx()"></div>
+<div id="pplx-panel">
+  <div style="padding:16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+    <div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px">🔍</span><span style="font-size:12px;font-weight:700;letter-spacing:1px;color:var(--purple)">PERPLEXITY RESEARCH</span></div>
+    <button class="btn btn-sm" onclick="NX.closePplx()" style="font-size:14px;padding:2px 8px">✕</button>
+  </div>
+  <div style="padding:12px 16px">
+    <div id="pplx-context" style="font-size:10px;color:var(--text-dim);margin-bottom:8px"></div>
+    <div id="pplx-result" style="font-size:12px;color:var(--text-muted);line-height:1.7"></div>
+    <div id="pplx-citations" style="margin-top:12px;font-size:10px;color:var(--text-dim)"></div>
+  </div>
 </div>
 
 <script>
@@ -2161,6 +2192,53 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
   // Legacy compat
   filterDP(){NX._renderDP()},
 
+  // ═══ PERPLEXITY — Universal Research Panel ═══
+  _pplxOpen:false,
+  closePplx(){
+    NX._pplxOpen=false;
+    const p=$('#pplx-panel'),o=$('#pplx-overlay');
+    if(p)p.classList.remove('open');if(o)o.classList.remove('open');
+  },
+  async askPerplexity(context,ticker,customQuery){
+    NX._pplxOpen=true;
+    const p=$('#pplx-panel'),o=$('#pplx-overlay'),res=$('#pplx-result'),ctx=$('#pplx-context'),cit=$('#pplx-citations');
+    if(p)p.classList.add('open');if(o)o.classList.add('open');
+    const contextLabels={trading:'MARKET CONTEXT',darkpool:'DARK POOL INTEL',earnings:'EARNINGS INTEL',macro:'MACRO ANALYSIS'};
+    if(ctx)ctx.textContent=`${contextLabels[context]||'RESEARCH'} ${ticker?'· '+ticker:''} · ${new Date().toLocaleTimeString()}`;
+    if(res)res.innerHTML='<div class="loading">Querying Perplexity…</div>';
+    if(cit)cit.innerHTML='';
+
+    const queries={
+      trading:`Give me a comprehensive technical and fundamental analysis of ${ticker||'SPY'}. Include current Weinstein stage, key support/resistance levels, relative strength vs SPY, institutional ownership changes, and any notable options activity. What is the actionable trade setup?`,
+      darkpool:`Analyze recent dark pool activity and institutional flow for ${ticker||'the broad market'}. What are the largest block prints? Is there net accumulation or distribution? Identify hidden support/resistance from dark pool levels. Any whale alerts or unusual institutional positioning?`,
+      earnings:`Analyze the pre-earnings setup for ${ticker||'upcoming earnings'}. What is the implied move vs historical gaps? What options strategies are optimal given current IV rank? What are consensus estimates and whisper numbers? Any insider activity or unusual options flow ahead of the report?`,
+      macro:`Analyze the current macro environment. What are the latest FRED indicators showing (yields, unemployment, CPI, fed funds)? Is the yield curve inverted? What is the recession probability? How should traders position given current macro regime?`,
+    };
+    const query=customQuery||queries[context]||queries.trading;
+
+    try{
+      const d=await NX.apiPost('/api/perplexity',{query,ticker:ticker||null,context});
+      if(d&&d.text){
+        // Parse markdown-ish text into HTML
+        let html=d.text
+          .replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text)">$1</strong>')
+          .replace(/\n\n/g,'</p><p style="margin-bottom:10px">')
+          .replace(/\n- /g,'<br/>• ')
+          .replace(/\n/g,'<br/>');
+        html='<p style="margin-bottom:10px">'+html+'</p>';
+        if(d.source)html=`<div style="display:inline-block;margin-bottom:12px"><span class="badge b-purple" style="font-size:9px">SOURCE: ${d.source.toUpperCase()}</span>${d.fallback?'<span class="badge b-amber" style="font-size:9px;margin-left:4px">FALLBACK</span>':''}</div>`+html;
+        if(res)res.innerHTML=html;
+        if(d.citations&&d.citations.length&&cit){
+          cit.innerHTML='<div style="font-weight:600;margin-bottom:4px;color:var(--text-dim)">SOURCES</div>'+d.citations.map((c,i)=>`<div style="margin-bottom:3px"><span style="color:var(--accent)">[${i+1}]</span> <a href="${c}" target="_blank" rel="noopener" style="color:var(--text-muted);text-decoration:none;font-size:10px">${c.length>60?c.slice(0,60)+'…':c}</a></div>`).join('');
+        }
+      }else{
+        if(res)res.innerHTML='<div style="color:var(--text-dim)">No results returned.</div>';
+      }
+    }catch(e){
+      if(res)res.innerHTML=`<div class="error-msg">Perplexity error: ${e.message}</div>`;
+    }
+  },
+
   // ─── Market Heatmap ───
   _heatmapData:null,
   loadHeatmap(){
@@ -2397,6 +2475,48 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
   document.getElementById('main').addEventListener('click',()=>{
     const sb=$('#sidebar');if(sb&&sb.classList.contains('open'))sb.classList.remove('open');
   });
+
+  // ─── Inject Perplexity buttons into pages ───
+  const pplxPages=[
+    {page:'pg-stage',context:'trading',tickerInput:'stage-ticker',label:'MARKET CONTEXT'},
+    {page:'pg-options',context:'trading',tickerInput:'opt-ticker',label:'OPTIONS INTEL'},
+    {page:'pg-earnings',context:'earnings',tickerInput:'earn-ticker',label:'EARNINGS INTEL'},
+    {page:'pg-sectors',context:'trading',tickerInput:null,label:'SECTOR CONTEXT'},
+    {page:'pg-tradetools',context:'trading',tickerInput:'tt-ticker',label:'TRADE CONTEXT'},
+    {page:'pg-macro',context:'macro',tickerInput:null,label:'MACRO ANALYSIS'},
+    {page:'pg-quant',context:'trading',tickerInput:'hmm-idx-input',label:'REGIME CONTEXT'},
+    {page:'pg-deepdive',context:'trading',tickerInput:'dd-ticker',label:'MARKET CONTEXT'},
+    {page:'pg-news',context:'trading',tickerInput:'news-ticker',label:'NEWS CONTEXT'},
+  ];
+  pplxPages.forEach(cfg=>{
+    const page=document.getElementById(cfg.page);if(!page)return;
+    const row=page.querySelector('.input-row')||page.querySelector('.tab-row');
+    if(!row)return;
+    const btn=document.createElement('button');
+    btn.className='pplx-btn';
+    btn.innerHTML=`🔍 ${cfg.label} (PERPLEXITY)`;
+    btn.onclick=()=>{
+      const ti=cfg.tickerInput?document.getElementById(cfg.tickerInput):null;
+      const ticker=ti?(ti.value||'').trim().toUpperCase():'';
+      NX.askPerplexity(cfg.context,ticker||null);
+    };
+    // Insert after input-row
+    if(row.classList.contains('input-row')){
+      const wrap=document.createElement('div');
+      wrap.style.cssText='margin-bottom:12px';
+      wrap.appendChild(btn);
+      row.parentNode.insertBefore(wrap,row.nextSibling);
+    }else{
+      const wrap=document.createElement('div');
+      wrap.style.cssText='margin-bottom:12px';
+      wrap.appendChild(btn);
+      page.insertBefore(wrap,page.children[1]||null);
+    }
+  });
+
+  // Wire existing dark pool Perplexity button
+  const dpBtn=document.querySelector('#pg-darkpool .pplx-btn, #pg-darkpool [onclick=""]');
+  // Already handled by injected button above
 })();
 </script>
 </body>

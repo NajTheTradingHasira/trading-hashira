@@ -2012,6 +2012,9 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     else if(af==='WHALE')filtered=filtered.filter(s=>s.alerts.includes('WHALE ALERT'));
     else if(af==='UNUSUAL')filtered=filtered.filter(s=>s.alerts.includes('UNUSUAL VOL'));
     else if(af==='SQ SETUP')filtered=filtered.filter(s=>s.alerts.includes('SQ SETUP'));
+    else if(af==='BUY')filtered=filtered.filter(s=>s.sent>50);
+    else if(af==='SELL')filtered=filtered.filter(s=>s.sent<=50);
+    if(NX._dpSectorFilt!=='ALL')filtered=filtered.filter(s=>s.sector===NX._dpSectorFilt);
 
     el.innerHTML=`
     <div class="card" style="border-color:${regClr}30">
@@ -2051,9 +2054,14 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
       }).join('')}
     </div>
     <div style="display:flex;gap:6px;margin-bottom:14px;align-items:center;flex-wrap:wrap">
-      ${['ALL','ALERTS','ACCUM','DISTRIB','WHALE','UNUSUAL','SQ SETUP'].map((s,i)=>{
-        const cnt=s==='ALL'?scored.length:s==='ALERTS'?alertNames.length:scored.filter(x=>x.alerts.includes(s==='ACCUM'?'ACCUMULATION':s==='DISTRIB'?'DISTRIBUTION':s)).length;
-        return `<button class="btn btn-sm" style="${NX._dpAlertFilt===s?'background:var(--accent);color:var(--bg0);border-color:var(--accent)':''}" onclick="NX._dpAlertFilt='${s}';NX._renderDP()">${s}${cnt?' ('+cnt+')':''}</button>`;
+      ${['ALL','ALERTS','BUY','SELL','ACCUM','DISTRIB','WHALE','UNUSUAL','SQ SETUP'].map((s,i)=>{
+        const cnt=s==='ALL'?scored.length:s==='ALERTS'?alertNames.length:s==='BUY'?scored.filter(x=>x.sent>50).length:s==='SELL'?scored.filter(x=>x.sent<=50).length:scored.filter(x=>x.alerts.includes(s==='ACCUM'?'ACCUMULATION':s==='DISTRIB'?'DISTRIBUTION':s)).length;
+        const isActive=NX._dpAlertFilt===s;
+        const buyClr=s==='BUY'&&isActive?'background:var(--green);color:var(--bg0);border-color:var(--green)':'';
+        const sellClr=s==='SELL'&&isActive?'background:var(--red);color:var(--bg0);border-color:var(--red)':'';
+        const defClr=isActive?'background:var(--accent);color:var(--bg0);border-color:var(--accent)':'';
+        const style=buyClr||sellClr||defClr;
+        return `<button class="btn btn-sm" style="${style}" onclick="NX._dpAlertFilt='${s}';NX._renderDP()">${s==='BUY'?'▲ BUY':s==='SELL'?'▼ SELL':s}${cnt?' ('+cnt+')':''}</button>`;
       }).join('')}
       <select class="nx-input" style="margin-left:auto;font-size:10px;padding:4px 8px" onchange="NX._dpSectorFilt=this.value;NX._renderDP()">
         <option value="ALL">ALL SECTORS</option>

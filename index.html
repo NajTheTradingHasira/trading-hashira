@@ -814,18 +814,18 @@ const NX={
 
   // ═══ WATCHLIST — 6-Category CRUD ═══
   _wlCategories:[
-    {id:'shorts',label:'SHORTS',color:'var(--red)',dot:'🔴',desc:'stage 4 declines · short candidates',defaultStage:'S4 — Declining',defaultSetup:'Distribution'},
-    {id:'focus',label:'FOCUS LIST',color:'var(--accent)',dot:'🔵',desc:'high-conviction names · core positions',defaultStage:'S2 — Advancing',defaultSetup:'Consolidation'},
-    {id:'rs',label:'RELATIVE STRENGTH',color:'var(--green)',dot:'🟢',desc:'RS leaders · new highs in RS line',defaultStage:'S2 — Advancing',defaultSetup:'RS New High'},
+    {id:'topdawg',label:'TOP DAWG',color:'var(--green)',dot:'⭐',desc:'best of the best · maximum conviction',defaultStage:'S2 — Advancing',defaultSetup:'Leading'},
     {id:'daily',label:'DAILY',color:'var(--amber)',dot:'🟡',desc:'daily monitoring · active setups',defaultStage:'S2 — Advancing',defaultSetup:'Breakout'},
+    {id:'focus',label:'FOCUS LIST',color:'var(--accent)',dot:'🔵',desc:'high-conviction names · core positions',defaultStage:'S2 — Advancing',defaultSetup:'Consolidation'},
     {id:'ondeck',label:'ON DECK',color:'var(--purple)',dot:'🟣',desc:'building positions · not yet triggered',defaultStage:'Stage 1',defaultSetup:'Basing'},
-    {id:'topdawg',label:'TOP DAWG',color:'var(--green)',dot:'⭐',desc:'best of the best · maximum conviction',defaultStage:'S2 — Advancing',defaultSetup:'Leading'}
+    {id:'shorts',label:'SHORTS',color:'var(--red)',dot:'🔴',desc:'stage 4 declines · short candidates',defaultStage:'S4 — Declining',defaultSetup:'Distribution'},
+    {id:'rs',label:'RELATIVE STRENGTH',color:'var(--green)',dot:'🟢',desc:'RS leaders · new highs in RS line',defaultStage:'S2 — Advancing',defaultSetup:'RS New High'},
   ],
   _wlStages:['Stage 1','Stage 1A','Stage 1B','Stage 2','Stage 2A','Stage 2B','Stage 3','Stage 3A','Stage 3B','Stage 4','Stage 4A','Stage 4B'],
   _wlSetups:['Breakout','Consolidation','Basing','Distribution','RS New High','Wedge Pop','Pullback','Base Break','Follow-Through','Pocket Pivot'],
   _wlGetData(){try{return JSON.parse(localStorage.getItem('hashira_watchlist')||'{}')}catch{return{}}},
   _wlSaveData(d){localStorage.setItem('hashira_watchlist',JSON.stringify(d))},
-  _wlActiveTab:'shorts',
+  _wlActiveTab:'topdawg',
   switchWLTab(catId){NX._wlActiveTab=catId;NX.renderWatchlist()},
   addWLItem(catId){
     const ti=$('#wl-add-ticker-'+catId),si=$('#wl-add-stage-'+catId),ri=$('#wl-add-rs-'+catId),se=$('#wl-add-setup-'+catId);
@@ -840,25 +840,56 @@ const NX={
     const newNotes=prompt('Setup / Notes:',item.setup||item.notes||'');
     if(newNotes!==null){item.setup=newNotes;NX._wlSaveData(data);NX.renderWatchlist()}
   },
+  _wlPriceCache:{},_wlFetching:false,
   async loadWatchlist(){
-    // Try API first to get live prices
-    try{
-      const d=await NX.apiFetch('/api/watchlist');
-      const items=d.watchlist||d.items||d||[];
-      // Merge API data into local
-      const data=NX._wlGetData();
-      items.forEach(w=>{
-        const t=w.ticker||w.symbol;
-        Object.values(data).flat().filter(i=>i.ticker===t).forEach(i=>{
-          i.price=w.price||w.current_price||i.price||0;
-          i.dayPct=w.change_pct||w.day_pct||0;
-          i.weekPct=w.week_pct||0;
-          i.monthPct=w.month_pct||0;
+    NX.renderWatchlist();
+    // Batch fetch live prices for all watchlist tickers
+    const data=NX._wlGetData();
+    const allTickers=[...new Set(Object.values(data).flat().map(i=>i.ticker).filter(Boolean))];
+    if(!allTickers.length)return;
+    NX._wlFetching=true;
+    const status=$('#wl-fetch-status');
+    if(status)status.innerHTML=`<span style="color:var(--amber)">⟳ Fetching ${allTickers.length} tickers…</span>`;
+
+    // Fetch in batches of 5 with concurrency control
+    const batchSize=5;
+    let fetched=0;
+    for(let i=0;i<allTickers.length;i+=batchSize){
+      const batch=allTickers.slice(i,i+batchSize);
+      const results=await Promise.allSettled(batch.map(t=>
+        NX.apiFetch('/api/market-data/'+t).then(d=>{
+          const md=d.data||d;
+          return{ticker:t,price:md.price||md.close||md.regularMarketPrice||0,
+            dayPct:md.change_pct||md.regularMarketChangePercent||md.changePct||0,
+            weekPct:md.week_pct||md.weekChangePercent||0,
+            monthPct:md.month_pct||md.monthChangePercent||0};
+        }).catch(()=>null)
+      ));
+      results.forEach(r=>{
+        if(r.status==='fulfilled'&&r.value){
+          NX._wlPriceCache[r.value.ticker]=r.value;
+          fetched++;
+        }
+      });
+      // Update prices in localStorage as we go
+      const fresh=NX._wlGetData();
+      Object.entries(fresh).forEach(([cat,items])=>{
+        items.forEach(item=>{
+          const cached=NX._wlPriceCache[item.ticker];
+          if(cached){
+            item.price=cached.price||item.price;
+            item.dayPct=cached.dayPct||item.dayPct;
+            item.weekPct=cached.weekPct||item.weekPct;
+            item.monthPct=cached.monthPct||item.monthPct;
+          }
         });
       });
-      NX._wlSaveData(data);
-    }catch{}
-    NX.renderWatchlist();
+      NX._wlSaveData(fresh);
+      if(status)status.innerHTML=`<span style="color:var(--accent)">⟳ ${fetched}/${allTickers.length} loaded</span>`;
+      NX.renderWatchlist();
+    }
+    NX._wlFetching=false;
+    if(status)status.innerHTML=fetched?`<span style="color:var(--green)">● Live · ${fetched} tickers</span>`:`<span style="color:var(--text-dim)">○ Offline</span>`;
   },
   renderWatchlist(){
     const el=$('#wl-content');const data=NX._wlGetData();const tab=NX._wlActiveTab;
@@ -880,6 +911,7 @@ const NX={
         <span style="font-size:13px;font-weight:700;letter-spacing:1px">${cat.label}</span>
         <span style="font-size:11px;color:var(--text-dim)">— ${cat.desc}</span>
         <span style="background:var(--bg3);padding:2px 8px;border-radius:10px;font-size:10px;color:var(--text-muted)">${items.length}</span>
+        <span id="wl-fetch-status" style="font-size:10px;margin-left:8px"></span>
       </div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
         <input id="wl-add-ticker-${tab}" type="text" placeholder="TICKER" style="width:90px;text-transform:uppercase;background:var(--bg2);border:1px solid var(--border);color:var(--text);font-family:var(--font-mono);font-size:11px;padding:6px 10px;border-radius:3px"/>
@@ -891,6 +923,7 @@ const NX={
           ${NX._wlSetups.map(s=>`<option value="${s}"${s===cat.defaultSetup?' selected':''}>${s}</option>`).join('')}
         </select>
         <button class="btn" style="padding:6px 14px" onclick="NX.addWLItem('${tab}')">+ Add</button>
+        <button class="btn btn-sm" style="color:var(--accent);border-color:var(--accent-dim)" onclick="NX.loadWatchlist()">↻ Refresh</button>
       </div>
     </div>
     ${items.length?`<div class="card" style="padding:0"><div style="overflow-x:auto"><table>
@@ -2012,9 +2045,6 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     else if(af==='WHALE')filtered=filtered.filter(s=>s.alerts.includes('WHALE ALERT'));
     else if(af==='UNUSUAL')filtered=filtered.filter(s=>s.alerts.includes('UNUSUAL VOL'));
     else if(af==='SQ SETUP')filtered=filtered.filter(s=>s.alerts.includes('SQ SETUP'));
-    else if(af==='BUY')filtered=filtered.filter(s=>s.sent>50);
-    else if(af==='SELL')filtered=filtered.filter(s=>s.sent<=50);
-    if(NX._dpSectorFilt!=='ALL')filtered=filtered.filter(s=>s.sector===NX._dpSectorFilt);
 
     el.innerHTML=`
     <div class="card" style="border-color:${regClr}30">
@@ -2054,14 +2084,9 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
       }).join('')}
     </div>
     <div style="display:flex;gap:6px;margin-bottom:14px;align-items:center;flex-wrap:wrap">
-      ${['ALL','ALERTS','BUY','SELL','ACCUM','DISTRIB','WHALE','UNUSUAL','SQ SETUP'].map((s,i)=>{
-        const cnt=s==='ALL'?scored.length:s==='ALERTS'?alertNames.length:s==='BUY'?scored.filter(x=>x.sent>50).length:s==='SELL'?scored.filter(x=>x.sent<=50).length:scored.filter(x=>x.alerts.includes(s==='ACCUM'?'ACCUMULATION':s==='DISTRIB'?'DISTRIBUTION':s)).length;
-        const isActive=NX._dpAlertFilt===s;
-        const buyClr=s==='BUY'&&isActive?'background:var(--green);color:var(--bg0);border-color:var(--green)':'';
-        const sellClr=s==='SELL'&&isActive?'background:var(--red);color:var(--bg0);border-color:var(--red)':'';
-        const defClr=isActive?'background:var(--accent);color:var(--bg0);border-color:var(--accent)':'';
-        const style=buyClr||sellClr||defClr;
-        return `<button class="btn btn-sm" style="${style}" onclick="NX._dpAlertFilt='${s}';NX._renderDP()">${s==='BUY'?'▲ BUY':s==='SELL'?'▼ SELL':s}${cnt?' ('+cnt+')':''}</button>`;
+      ${['ALL','ALERTS','ACCUM','DISTRIB','WHALE','UNUSUAL','SQ SETUP'].map((s,i)=>{
+        const cnt=s==='ALL'?scored.length:s==='ALERTS'?alertNames.length:scored.filter(x=>x.alerts.includes(s==='ACCUM'?'ACCUMULATION':s==='DISTRIB'?'DISTRIBUTION':s)).length;
+        return `<button class="btn btn-sm" style="${NX._dpAlertFilt===s?'background:var(--accent);color:var(--bg0);border-color:var(--accent)':''}" onclick="NX._dpAlertFilt='${s}';NX._renderDP()">${s}${cnt?' ('+cnt+')':''}</button>`;
       }).join('')}
       <select class="nx-input" style="margin-left:auto;font-size:10px;padding:4px 8px" onchange="NX._dpSectorFilt=this.value;NX._renderDP()">
         <option value="ALL">ALL SECTORS</option>
@@ -2137,6 +2162,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
   filterDP(){NX._renderDP()},
 
   // ─── Market Heatmap ───
+  _heatmapData:null,
   loadHeatmap(){
     const el=$('#heatmap-content');
     const sectors=[
@@ -2149,20 +2175,37 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
       {name:'UTILITIES',tickers:['NEE','DUK','SO','D','AEP','EXC']},
       {name:'MATERIALS / MACRO',tickers:['LIN','APD','NEM','FCX','SHW','DD']}
     ];
-    const rng=()=>Math.random();
-    el.innerHTML=`<div class="card"><div class="card-header">MARKET HEATMAP</div>
-    ${sectors.map(sec=>{
-      const changes=sec.tickers.map(()=>(rng()-.42)*6);
-      const avg=changes.reduce((s,v)=>s+v,0)/changes.length;
-      return `<div style="padding:12px 0;border-bottom:1px solid var(--border-subtle)">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;cursor:pointer">
+    // Seeded mock per day
+    const h=NX._tickerHash('heatmap'+new Date().toDateString()),rng=NX._seededRng(h);const r=()=>rng();
+    NX._heatmapData=sectors.map(sec=>{
+      const data=sec.tickers.map(t=>{const chg=+((r()-.42)*6).toFixed(2);return{ticker:t,change:chg}});
+      const avg=data.reduce((s,d)=>s+d.change,0)/data.length;
+      return{name:sec.name,avg:+avg.toFixed(2),tickers:data};
+    });
+    NX._renderHeatmap();
+  },
+  _renderHeatmap(){
+    const el=$('#heatmap-content');if(!el||!NX._heatmapData)return;
+    el.innerHTML=`<div class="card"><div class="card-header" style="color:var(--accent)">MARKET HEATMAP</div>
+    ${NX._heatmapData.map((sec,si)=>{
+      const barClr=c=>c>=2?'var(--green)':c>0?'#00e67660':c>-2?'#ff525260':'var(--red)';
+      return `<div style="padding:14px 0;border-bottom:1px solid var(--border-subtle)">
+        <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.querySelector('.hm-arrow').textContent=this.nextElementSibling.style.display==='none'?'▾':'▴'">
           <div style="display:flex;align-items:center;gap:10px">
-            <span style="font-size:12px;font-weight:700;letter-spacing:1px">${sec.name}</span>
-            <span class="badge ${avg>=0?'b-green':'b-red'}">${avg>=0?'+':''}${avg.toFixed(2)}% avg</span>
+            <span style="font-size:13px;font-weight:700;letter-spacing:1px">${sec.name}</span>
+            <span class="badge ${sec.avg>=0?'b-green':'b-red'}">${sec.avg>=0?'+':''}${sec.avg.toFixed(2)}% avg</span>
           </div>
-          <span style="font-size:11px;color:var(--text-dim)">▾</span>
+          <span class="hm-arrow" style="font-size:12px;color:var(--text-dim)">▾</span>
         </div>
-        <div style="display:flex;gap:3px;flex-wrap:wrap">${changes.map((c,i)=>`<div style="width:${Math.max(40,60+Math.abs(c)*8)}px;height:12px;border-radius:2px;background:${c>=0?(c>2?'var(--green)':'#00e67660'):(c<-2?'var(--red)':'#ff525260')}" title="${sec.tickers[i]}: ${c>=0?'+':''}${c.toFixed(2)}%"></div>`).join('')}</div>
+        <div style="display:flex;gap:3px;margin-top:8px;flex-wrap:wrap">${sec.tickers.map(d=>`<div style="width:${Math.max(45,65+Math.abs(d.change)*8)}px;height:14px;border-radius:2px;background:${barClr(d.change)}" title="${d.ticker}: ${d.change>=0?'+':''}${d.change.toFixed(2)}%"></div>`).join('')}</div>
+        <div style="display:none;margin-top:12px;padding:10px;background:var(--bg2);border-radius:4px">
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px">
+            ${sec.tickers.map(d=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;border-radius:3px;background:var(--bg1);border:1px solid var(--border-subtle)">
+              <span style="font-weight:600;font-size:11px">${d.ticker}</span>
+              <span style="font-size:11px;font-weight:600;color:${d.change>=0?'var(--green)':'var(--red)'}">${d.change>=0?'+':''}${d.change.toFixed(2)}%</span>
+            </div>`).join('')}
+          </div>
+        </div>
       </div>`;
     }).join('')}</div>`;
   },

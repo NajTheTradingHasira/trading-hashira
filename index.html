@@ -933,8 +933,46 @@ const NX={
       const rsSig=rsAttr?rsAttr.stage_signal:0;
       const rsConf=rsAttr?rsAttr.confidence:0;
 
-      // Conflicts
+      // Helper: find attr by name
+      const aByName=n=>attrs.find(a=>a.name===n)||{};
+
+      // Action badge
+      const actionMap={'1':'Accumulate on volume','1A':'Accumulate on volume','1B':'Accumulate on volume',
+        '2':'Buy breakouts','2A':'Buy breakouts','2B':'Hold / trail stops',
+        '3':'Sell into strength','3A':'Sell into strength','3B':'Reduce exposure',
+        '4':'Avoid / short only','4A':'Avoid / short only','4B':'Avoid / short only'};
+      const actionText=actionMap[sub]||actionMap[String(s)]||'—';
+      const actionClr=sn<=2&&sub!=='2B'?'var(--green)':(sn===2||sn===3&&sub==='3A')?'var(--amber)':'var(--red)';
+
+      // Trend Quality Checklist
+      const checks=[
+        {label:'Price above 10-week MA',desc:'Momentum intact',pass:(aByName('momentum_10w').stage_signal||9)<=2},
+        {label:'Price above 30-week MA',desc:'Primary trend bullish',pass:(aByName('price_vs_30w').stage_signal||9)<=2},
+        {label:'10W MA above 30W MA',desc:'MA stack aligned',pass:(aByName('sma_30w_slope').stage_signal||9)<=2&&(aByName('momentum_10w').stage_signal||9)<=2},
+        {label:'30-week MA rising',desc:'Trend direction up',pass:(aByName('sma_30w_slope').stage_signal||9)<=2},
+        {label:'Mansfield RS > 0',desc:'Outperforming benchmark',pass:(aByName('mansfield_rs').stage_signal||9)<=2},
+        {label:'Near 52-week highs',desc:'Price structure strong',pass:(aByName('price_structure').stage_signal||9)<=2},
+        {label:'Volume confirms',desc:'Institutional participation',pass:(aByName('volume').stage_signal||9)<=2},
+      ];
+      const tqScore=checks.filter(c=>c.pass).length;
+      const tqLabel=tqScore>=6?'Favorable — buy setups valid':tqScore>=4?'Neutral — selective':'Unfavorable — avoid longs';
+      const tqClr=tqScore>=6?'var(--green)':tqScore>=4?'var(--amber)':'var(--red)';
+      const checklistHTML=checks.map(c=>`<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:14px;width:20px;text-align:center;color:${c.pass?'var(--green)':'var(--red)'}">${c.pass?'✓':'✗'}</span>
+        <span style="flex:1;font-size:12px;color:${c.pass?'var(--text)':'var(--text-dim)'}">${c.label}</span>
+        <span style="font-size:10px;color:var(--text-dim)">${c.desc}</span>
+      </div>`).join('');
+
+      // Extract depth % from price_vs_30w detail
+      const pvDetail=aByName('price_vs_30w').detail||'';
+      const depthMatch=pvDetail.match(/([-+]?\d+\.?\d*)%/);
+      const depthPct=depthMatch?depthMatch[1]+'%':'—';
+
+      // Bottom metrics
       const conflicts=d.conflicts||[];
+      const conflictSev=conflicts.length>=3?'var(--red)':conflicts.length>=1?'var(--amber)':'var(--green)';
+
+      // Conflicts HTML
       let conflictHTML='';
       if(conflicts.length){
         conflictHTML=`<div class="card" style="border-left:3px solid var(--amber)"><div class="card-header" style="color:var(--amber)">⚠ CONFLICTS (${conflicts.length})</div>${conflicts.map(c=>`<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;padding-left:8px;border-left:2px solid var(--amber);opacity:.8">${c.replace(/CONFLICT:\s*/,'')}</div>`).join('')}</div>`;
@@ -957,6 +995,7 @@ const NX={
   <div><div style="font-size:10px;color:var(--text-dim);letter-spacing:1px;margin-bottom:6px">WEINSTEIN STAGE</div>
     <span class="stage-badge ${sc}">STAGE ${s}${sub?' — '+sub:''}</span>
     ${stageLabel?'<div style="font-size:11px;color:var(--text-muted);margin-top:4px">'+stageLabel+'</div>':''}
+    <div style="margin-top:8px"><span class="badge" style="background:${actionClr}18;color:${actionClr};border:1px solid ${actionClr}40;font-size:11px;padding:3px 10px;font-weight:700">${actionText.toUpperCase()}</span></div>
   </div>
   <div class="m-card" style="border:none;padding:0;background:none"><div class="label">CONFIDENCE</div><div class="value accent-c">${(conf*100).toFixed(0)}%</div></div>
   <div class="m-card" style="border:none;padding:0;background:none"><div class="label">TICKER</div><div class="value neutral">${t}</div></div>
@@ -978,7 +1017,21 @@ const NX={
     </div>
   </div>
 </div>
-${conflictHTML}${blockedHTML}${transHTML}`;
+<div class="card"><div class="card-header">TREND QUALITY CHECKLIST</div>
+  ${checklistHTML}
+  <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+    <span style="font-size:13px;font-weight:700;color:${tqClr}">Score: ${tqScore}/7</span>
+    <span style="font-size:12px;color:${tqClr};font-weight:600">${tqLabel}</span>
+  </div>
+</div>
+${conflictHTML}${blockedHTML}${transHTML}
+<div class="metrics-row g5" style="margin-top:4px">
+  <div class="m-card"><div class="label">DEPTH vs 30W</div><div class="value ${depthPct.startsWith('-')?'down':'up'}">${depthPct}</div></div>
+  <div class="m-card"><div class="label">SUB-STAGE</div><div class="value neutral">${sub||'—'}</div><div class="sub">${actionText}</div></div>
+  <div class="m-card"><div class="label">CONFLICTS</div><div class="value" style="color:${conflictSev}">${conflicts.length}</div><div class="sub">${conflicts.length===0?'Clean':conflicts.length>=3?'High divergence':'Minor'}</div></div>
+  <div class="m-card"><div class="label">TREND SCORE</div><div class="value" style="color:${tqClr}">${tqScore}/7</div></div>
+  <div class="m-card"><div class="label">STAGE SIGNAL</div><div class="value" style="color:${stgClr(sn)}">S${s}</div><div class="sub">${(conf*100).toFixed(0)}% conf</div></div>
+</div>`;
     }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}
   },
 

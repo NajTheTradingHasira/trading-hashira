@@ -895,35 +895,90 @@ const NX={
     const el=$('#stage-content');el.innerHTML=`<div class="loading">Classifying ${t}…</div>`;
     try{
       const d=await NX.apiFetch('/api/stage/classify/'+t);
-      const s=d.stage||d.classification?.stage||'?';
-      const sub=d.sub_stage||d.classification?.sub_stage||'';
-      const conf=d.confidence||d.classification?.confidence||0;
-      const attrs=d.attributes||d.classification?.attributes||{};
-      const rs=d.rs||d.relative_strength||{};
+      if(d.error){el.innerHTML='<div class="error-msg">'+d.error+'</div>';return;}
+      const s=d.stage||'?';
+      const sub=d.sub_stage||'';
+      const stageLabel=d.stage_label||'';
+      const conf=d.confidence||0;
+      const attrs=Array.isArray(d.attributes)?d.attributes:[];
       const sn=parseInt(s);
-      const sc=sn<=2?'s2':sn===3?'s3':'s4';
+      const sc=sn<=1?'s1':sn===2?'s2':sn===3?'s3':'s4';
+      const stgClr=n=>[null,'var(--green)','var(--green)','var(--amber)','var(--red)'][n]||'var(--text-dim)';
 
+      // Attribute rows
       let attrHTML='';
-      for(const[k,v]of Object.entries(attrs)){
-        const pct=typeof v==='number'?Math.min(Math.abs(v)*100,100):50;
-        const c=v>0?'var(--green)':v<0?'var(--red)':'var(--amber)';
-        attrHTML+=`<div style="margin-bottom:10px"><span style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px">${k.replace(/_/g,' ')}</span><div class="attr-bar"><div class="attr-fill" style="width:${pct}%;background:${c}"></div></div><span style="font-size:11px;color:${c}">${typeof v==='number'?fmt(v):v}</span></div>`;
+      attrs.forEach(a=>{
+        const sig=a.stage_signal||0;
+        const w=a.weight||0;
+        const c=a.confidence||0;
+        const col=stgClr(sig);
+        const name=(a.name||'').replace(/_/g,' ').toUpperCase();
+        const detail=a.detail||'';
+        attrHTML+=`<div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+            <span style="font-size:10px;color:var(--text-dim);letter-spacing:1px;font-weight:600">${name}</span>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="badge" style="background:${col}20;color:${col};border:1px solid ${col}40;font-size:10px;padding:1px 6px">S${sig}</span>
+              <span style="font-size:10px;color:var(--text-dim)">w:${(w*100).toFixed(0)}%</span>
+            </div>
+          </div>
+          <div class="attr-bar"><div class="attr-fill" style="width:${c*100}%;background:${col}"></div></div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:3px">${detail}</div>
+        </div>`;
+      });
+
+      // Extract Mansfield RS from attributes
+      const rsAttr=attrs.find(a=>a.name==='mansfield_rs');
+      const rsDetail=rsAttr?rsAttr.detail:'—';
+      const rsSig=rsAttr?rsAttr.stage_signal:0;
+      const rsConf=rsAttr?rsAttr.confidence:0;
+
+      // Conflicts
+      const conflicts=d.conflicts||[];
+      let conflictHTML='';
+      if(conflicts.length){
+        conflictHTML=`<div class="card" style="border-left:3px solid var(--amber)"><div class="card-header" style="color:var(--amber)">⚠ CONFLICTS (${conflicts.length})</div>${conflicts.map(c=>`<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;padding-left:8px;border-left:2px solid var(--amber);opacity:.8">${c.replace(/CONFLICT:\s*/,'')}</div>`).join('')}</div>`;
+      }
+
+      // Blocked
+      let blockedHTML='';
+      if(d.blocked){
+        blockedHTML=`<div class="card" style="border-left:3px solid var(--red)"><div class="card-header" style="color:var(--red)">🚫 BLOCKED</div><div style="font-size:12px;color:var(--text-muted)">${d.block_reason||'Stage transition blocked'}</div></div>`;
+      }
+
+      // Transition watch
+      let transHTML='';
+      if(d.transition_watch){
+        transHTML=`<div class="card" style="border-left:3px solid var(--purple)"><div class="card-header" style="color:var(--purple)">👁 TRANSITION WATCH</div><div style="font-size:12px;color:var(--text-muted)">${d.transition_watch}</div></div>`;
       }
 
       el.innerHTML=`
 <div class="card" style="display:flex;align-items:center;gap:24px;flex-wrap:wrap">
-  <div><div style="font-size:10px;color:var(--text-dim);letter-spacing:1px;margin-bottom:6px">WEINSTEIN STAGE</div><span class="stage-badge ${sc}">STAGE ${s}${sub?' — '+sub:''}</span></div>
-  <div class="m-card" style="border:none;padding:0;background:none"><div class="label">CONFIDENCE</div><div class="value accent-c">${typeof conf==='number'?fmt(conf*100,0)+'%':conf}</div></div>
+  <div><div style="font-size:10px;color:var(--text-dim);letter-spacing:1px;margin-bottom:6px">WEINSTEIN STAGE</div>
+    <span class="stage-badge ${sc}">STAGE ${s}${sub?' — '+sub:''}</span>
+    ${stageLabel?'<div style="font-size:11px;color:var(--text-muted);margin-top:4px">'+stageLabel+'</div>':''}
+  </div>
+  <div class="m-card" style="border:none;padding:0;background:none"><div class="label">CONFIDENCE</div><div class="value accent-c">${(conf*100).toFixed(0)}%</div></div>
   <div class="m-card" style="border:none;padding:0;background:none"><div class="label">TICKER</div><div class="value neutral">${t}</div></div>
+  <div class="m-card" style="border:none;padding:0;background:none"><div class="label">RS VERIFIED</div><div class="value ${d.rs_verified?'up':'down'}">${d.rs_verified?'YES':'NO'}</div></div>
+  <div class="m-card" style="border:none;padding:0;background:none"><div class="label">WANDA</div><div class="value ${d.wanda_override?'up':'neutral'}">${d.wanda_override?'OVERRIDE':'—'}</div></div>
 </div>
 <div class="grid g2">
-  <div class="card"><div class="card-header">STAGE ATTRIBUTES</div>${attrHTML||'<div class="empty-state">No attribute data</div>'}</div>
-  <div class="card"><div class="card-header">RELATIVE STRENGTH</div><div class="grid g3">
-    <div><span style="font-size:10px;color:var(--text-dim)">MANSFIELD RS</span><br/><span class="value ${pc(rs.mansfield)}" style="font-size:16px;font-weight:600">${fmt(rs.mansfield)}</span></div>
-    <div><span style="font-size:10px;color:var(--text-dim)">RS LINE TREND</span><br/><span style="font-size:16px;font-weight:600">${rs.rs_line_trend||'—'}</span></div>
-    <div><span style="font-size:10px;color:var(--text-dim)">IBD PERCENTILE</span><br/><span style="font-size:16px;font-weight:600">${rs.ibd_percentile||rs.percentile||'—'}</span></div>
-  </div></div>
-</div>`;
+  <div class="card"><div class="card-header">STAGE ATTRIBUTES (${attrs.length})</div>${attrHTML||'<div class="empty-state">No attribute data</div>'}</div>
+  <div class="card"><div class="card-header">RELATIVE STRENGTH</div>
+    <div style="margin-bottom:12px">
+      <div style="font-size:10px;color:var(--text-dim);margin-bottom:4px">MANSFIELD RS</div>
+      <div style="font-size:14px;font-weight:700;color:${stgClr(rsSig)}">${rsDetail}</div>
+      <div class="attr-bar" style="margin-top:4px"><div class="attr-fill" style="width:${rsConf*100}%;background:${stgClr(rsSig)}"></div></div>
+      <div style="font-size:10px;color:var(--text-dim);margin-top:4px">Stage signal: S${rsSig} · Confidence: ${(rsConf*100).toFixed(0)}%</div>
+    </div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      <div><span style="font-size:10px;color:var(--text-dim)">RS VERIFIED</span><br/><span style="font-size:14px;font-weight:600;color:${d.rs_verified?'var(--green)':'var(--text-dim)'}">${d.rs_verified?'✓ Verified':'Not verified'}</span></div>
+      <div><span style="font-size:10px;color:var(--text-dim)">WANDA OVERRIDE</span><br/><span style="font-size:14px;font-weight:600">${d.wanda_override?'Active':'—'}</span></div>
+    </div>
+  </div>
+</div>
+${conflictHTML}${blockedHTML}${transHTML}`;
     }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}
   },
 

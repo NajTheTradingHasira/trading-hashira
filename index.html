@@ -1003,6 +1003,10 @@ const NX={
   <div class="m-card" style="border:none;padding:0;background:none"><div class="label">WANDA</div><div class="value ${d.wanda_override?'up':'neutral'}">${d.wanda_override?'OVERRIDE':'—'}</div></div>
 </div>
 <div class="grid g2">
+  <div class="card"><div class="card-header">${t} WEEKLY PRICE + MOVING AVERAGES</div><div class="chart-box chart-box-lg"><canvas id="cv-stage-price"></canvas></div></div>
+  <div class="card"><div class="card-header">MANSFIELD RELATIVE STRENGTH vs SPY</div><div class="chart-box chart-box-lg"><canvas id="cv-stage-mrs"></canvas></div></div>
+</div>
+<div class="grid g2">
   <div class="card"><div class="card-header">STAGE ATTRIBUTES (${attrs.length})</div>${attrHTML||'<div class="empty-state">No attribute data</div>'}</div>
   <div class="card"><div class="card-header">RELATIVE STRENGTH</div>
     <div style="margin-bottom:12px">
@@ -1032,6 +1036,31 @@ ${conflictHTML}${blockedHTML}${transHTML}
   <div class="m-card"><div class="label">TREND SCORE</div><div class="value" style="color:${tqClr}">${tqScore}/7</div></div>
   <div class="m-card"><div class="label">STAGE SIGNAL</div><div class="value" style="color:${stgClr(sn)}">S${s}</div><div class="sub">${(conf*100).toFixed(0)}% conf</div></div>
 </div>`;
+
+      // ── Render charts after DOM is set ──
+      const ws=d.weekly_series||[];
+      if(ws.length){
+        const priceLabels=ws.map(w=>w.date);
+        const closeData=ws.map(w=>w.close);
+        const sma10Data=d.sma_10w||[];
+        const sma30Data=d.sma_30w||[];
+        makeChart('cv-stage-price',{type:'line',data:{labels:priceLabels,datasets:[
+          {label:'Close',data:closeData,borderColor:'#00b8d4',backgroundColor:'#00b8d412',fill:true,tension:.2,pointRadius:0,borderWidth:1.5},
+          {label:'10W EMA',data:sma10Data,borderColor:'#ffc107',backgroundColor:'transparent',fill:false,tension:.3,pointRadius:0,borderWidth:1.5,spanGaps:true},
+          {label:'30W MA',data:sma30Data,borderColor:'#ff5252',backgroundColor:'transparent',fill:false,tension:.3,pointRadius:0,borderWidth:1.5,borderDash:[5,3],spanGaps:true},
+        ]},options:{plugins:{legend:{labels:{boxWidth:10,padding:8,font:{size:10},color:'#c8d6e5'}}},scales:{x:{ticks:{maxTicksToLimit:10,font:{size:9}}},y:{ticks:{callback:v=>'$'+fmt(v)}}},interaction:{mode:'index',intersect:false},maintainAspectRatio:false}});
+      }
+      const mrs=d.mansfield_series||[];
+      if(mrs.length){
+        const mrsLabels=mrs.map(m=>m.date);
+        const mrsData=mrs.map(m=>m.value);
+        const mrsColors=mrsData.map(v=>v>=0?'#00e67660':'#ff525260');
+        makeChart('cv-stage-mrs',{type:'bar',data:{labels:mrsLabels,datasets:[
+          {label:'Mansfield RS',data:mrsData,backgroundColor:mrsColors,borderRadius:1},
+          {label:'Zero',data:mrsLabels.map(()=>0),type:'line',borderColor:'#ffffff30',borderDash:[4,4],pointRadius:0,borderWidth:1},
+        ]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksToLimit:10,font:{size:9}}},y:{ticks:{font:{size:9}}}},interaction:{mode:'index',intersect:false},maintainAspectRatio:false}});
+      }
+
     }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}
   },
 

@@ -141,7 +141,6 @@ body::after{
 .b-amber{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-dim)}
 .b-accent{background:var(--accent-bg);color:var(--accent);border:1px solid var(--accent-dim)}
 .b-purple{background:var(--purple-bg);color:var(--purple);border:1px solid var(--purple-dim)}
-.b-purple{background:var(--purple-bg);color:var(--purple);border:1px solid var(--purple-dim)}
 
 /* Tables */
 table{width:100%;border-collapse:collapse;font-size:12px}
@@ -250,6 +249,7 @@ tr:hover{background:var(--bg2)}
 @media(max-width:640px){
   #sidebar{position:absolute;left:-100%;transition:left .2s;z-index:100}
   #sidebar.open{left:0}
+  #mobile-menu{display:inline-block!important}
   .g2,.g3{grid-template-columns:1fr}
 }
 </style>
@@ -279,6 +279,7 @@ tr:hover{background:var(--bg2)}
 <div id="main">
   <div id="topbar">
     <div style="display:flex;align-items:center">
+      <button id="mobile-menu" class="btn btn-sm" style="display:none;margin-right:10px;font-size:14px;padding:4px 8px" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
       <span class="page-title" id="page-title">PORTFOLIO</span>
       <span class="page-sub" id="page-sub"></span>
     </div>
@@ -573,8 +574,10 @@ buildNav();
 function tick(){
   const now=new Date();
   $('#clock').textContent=now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true});
-  const h=now.getHours(),m=now.getMinutes(),t=h*60+m;
-  const open=t>=570&&t<960&&now.getDay()>0&&now.getDay()<6;
+  // Use ET for market hours
+  const et=new Date(now.toLocaleString('en-US',{timeZone:'America/New_York'}));
+  const h=et.getHours(),m=et.getMinutes(),t=h*60+m;
+  const open=t>=570&&t<960&&et.getDay()>0&&et.getDay()<6;
   $('#mkt-status').innerHTML=open
     ?'<span class="live-dot"></span> <span class="open">MARKET OPEN</span>'
     :'<span class="closed">● MARKET CLOSED</span>';
@@ -891,7 +894,7 @@ const NX={
     const t=$('#stage-ticker').value.trim().toUpperCase();if(!t)return;
     const el=$('#stage-content');el.innerHTML=`<div class="loading">Classifying ${t}…</div>`;
     try{
-      const d=await NX.apiPost('/api/stage/classify',{ticker:t});
+      const d=await NX.apiFetch('/api/stage/classify/'+t);
       const s=d.stage||d.classification?.stage||'?';
       const sub=d.sub_stage||d.classification?.sub_stage||'';
       const conf=d.confidence||d.classification?.confidence||0;
@@ -1007,7 +1010,6 @@ const NX={
       el.innerHTML=`<div class="card"><div class="card-header">BACKTEST — ${t} — ${strat.toUpperCase()}</div><div class="grid g4">${Object.entries(r).filter(([,v])=>typeof v==='number').slice(0,12).map(([k,v])=>`<div class="m-card"><div class="label">${k.replace(/_/g,' ').toUpperCase()}</div><div class="value neutral">${fmt(v,2)}</div></div>`).join('')}</div></div>`;
     }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}
   },
-};
 
   // ═══ DEEP DIVE — 4-Agent Research Pipeline ═══
   _ddAgents:[
@@ -1363,7 +1365,7 @@ const NX={
     const s2pct=(data.filter(s=>s.stage===2).length/data.length*100).toFixed(0);
     const s4pct=(data.filter(s=>s.stage===4).length/data.length*100).toFixed(0);
     const triple=sorted.filter(s=>s.stage===2&&s.rs4w>0&&s.mansfield>0);
-    const stgClr=s=>[null,'var(--amber)','var(--green)','var(--red)','var(--red)'][s]||'var(--text-dim)';
+    const stgClr=s=>[null,'var(--green)','var(--green)','var(--amber)','var(--red)'][s]||'var(--text-dim)';
     const rsClr=v=>v>4?'var(--green)':v>1?'var(--green)':v>-1?'var(--amber)':v>-4?'var(--red)':'var(--red)';
 
     el.innerHTML=`<div class="metrics-row g4">
@@ -1495,11 +1497,12 @@ const NX={
       <td><span class="badge ${d.aboveVwap?'b-green':'b-red'}">${d.aboveVwap?'▲ BUY':'▼ SELL'}</span></td>
     </tr>`).join('')}</tbody></table></div></div>`;
   },
+};
 // ─── Enter-key bindings ───
-['chart-ticker','opt-ticker','news-ticker','vix-ticker','stage-ticker','bt-ticker','dd-ticker','tt-ticker','earn-ticker','dp-ticker'].forEach(id=>{
+['chart-ticker','opt-ticker','news-ticker','vix-ticker','stage-ticker','bt-ticker','dd-ticker','tt-ticker','earn-ticker','dp-ticker','cs-ticker'].forEach(id=>{
   const el=$('#'+id);
   if(el)el.addEventListener('keydown',e=>{if(e.key==='Enter'){
-    const map={'chart-ticker':'loadChart','opt-ticker':'loadOptions','news-ticker':'loadNews','vix-ticker':'loadVol','stage-ticker':'loadStage','bt-ticker':'loadBacktest','dd-ticker':'runDeepDive','tt-ticker':'runTradeTools','earn-ticker':'loadEarnings','dp-ticker':'loadDarkPool'};
+    const map={'chart-ticker':'loadChart','opt-ticker':'loadOptions','news-ticker':'loadNews','vix-ticker':'loadVol','stage-ticker':'loadStage','bt-ticker':'loadBacktest','dd-ticker':'runDeepDive','tt-ticker':'runTradeTools','earn-ticker':'loadEarnings','dp-ticker':'loadDarkPool','cs-ticker':'resetCANSLIM'};
     NX[map[id]]();
   }});
 });

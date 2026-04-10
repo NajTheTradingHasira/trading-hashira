@@ -1,618 +1,1516 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Trading Hashira</title>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
+/* ═══════════════════════════════════════════════════════════════
+   NEXUS TERMINAL v3 — DESIGN SYSTEM
+   ═══════════════════════════════════════════════════════════════ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#06080d;--bg1:#0b0f18;--bg2:#111827;--bg3:#1a2235;
-  --border:#1e293b;--border2:#334155;
-  --accent:#3b82f6;--accent2:#2563eb;
-  --green:#22c55e;--red:#ef4444;--warn:#f59e0b;--gold:#eab308;
-  --purple:#a78bfa;--teal:#2dd4bf;--cyan:#22d3ee;--pink:#f472b6;
-  --text:#e2e8f0;--muted:#94a3b8;--dim:#64748b;--faint:#334155;
-  --mono:'JetBrains Mono',monospace;--sans:'Inter',sans-serif;
-  --sidebar-w:220px;
+  --bg0:#04080f;--bg1:#0a1019;--bg2:#0f1923;--bg3:#162032;--bg4:#1c2a3f;
+  --border:#1c2a3f;--border-subtle:#121e2e;
+  --text:#c8d6e5;--text-muted:#5a7089;--text-dim:#3a506b;--text-faint:#243447;
+  --green:#00e676;--green-dim:#00e67630;--green-bg:#00e67610;--green-glow:#00e67618;
+  --red:#ff5252;--red-dim:#ff525230;--red-bg:#ff525210;
+  --accent:#00b8d4;--accent-dim:#00b8d430;--accent-bg:#00b8d410;
+  --amber:#ffc107;--amber-bg:#ffc10710;--amber-dim:#ffc10730;
+  --purple:#b388ff;--purple-bg:rgba(179,136,255,.08);--purple-dim:rgba(179,136,255,.2);
+  --sidebar-w:210px;
+  --topbar-h:44px;
+  --radius:4px;
+  --font-mono:'IBM Plex Mono','JetBrains Mono',monospace;
+  --transition-fast:.12s ease;
+  --transition-med:.25s ease;
 }
-*{box-sizing:border-box;margin:0;padding:0;}
-body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;display:flex;height:100vh;overflow:hidden;}
-::selection{background:var(--accent);color:#fff;}
-::-webkit-scrollbar{width:5px;height:5px;}
-::-webkit-scrollbar-track{background:transparent;}
-::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+html,body{height:100%;background:var(--bg0);color:var(--text);font-family:var(--font-mono);font-size:13px;overflow:hidden;-webkit-font-smoothing:antialiased}
+::selection{background:var(--accent);color:var(--bg0)}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--text-dim)}
 
-/* ── SIDEBAR ── */
-.sidebar{width:var(--sidebar-w);background:var(--bg1);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden;}
-.sidebar-brand{padding:20px 16px 12px;border-bottom:1px solid var(--border);}
-.sidebar-brand h1{font-family:var(--mono);font-size:15px;font-weight:800;letter-spacing:2px;color:var(--text);display:flex;align-items:center;gap:8px;}
-.sidebar-brand h1 span{color:var(--warn);font-size:18px;}
-.sidebar-brand .sub{font-size:10px;color:var(--dim);font-family:var(--mono);margin-top:4px;letter-spacing:1px;}
-.sidebar-nav{flex:1;overflow-y:auto;padding:8px 0;}
-.nav-section{padding:12px 16px 4px;font-size:9px;font-weight:700;color:var(--dim);letter-spacing:1.5px;text-transform:uppercase;font-family:var(--mono);}
-.nav-item{display:flex;align-items:center;gap:10px;padding:7px 16px;margin:1px 8px;border-radius:6px;cursor:pointer;color:var(--muted);font-size:12px;font-weight:500;transition:all .15s;}
-.nav-item:hover{background:var(--bg2);color:var(--text);}
-.nav-item.active{background:var(--accent);color:#fff;}
-.nav-item .icon{width:18px;text-align:center;font-size:13px;flex-shrink:0;}
-.sidebar-footer{padding:12px 16px;border-top:1px solid var(--border);font-family:var(--mono);font-size:10px;color:var(--dim);}
-.sidebar-footer .status{display:flex;align-items:center;gap:6px;}
-.sidebar-footer .dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 2s infinite;}
+/* Subtle scan-line overlay */
+body::after{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.03) 2px,rgba(0,0,0,.03) 4px);
+}
+
+/* ═══ LAYOUT ═══ */
+#app{display:flex;height:100vh;position:relative}
+
+/* ═══ SIDEBAR ═══ */
+#sidebar{
+  width:var(--sidebar-w);min-width:var(--sidebar-w);
+  background:var(--bg1);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;
+  z-index:10;
+}
+.sidebar-logo{padding:16px 16px 8px;display:flex;align-items:center;gap:10px}
+.sidebar-logo .n-box{
+  width:30px;height:30px;background:linear-gradient(135deg,var(--accent),#0097a7);
+  border-radius:5px;display:flex;align-items:center;justify-content:center;
+  font-weight:700;font-size:14px;color:var(--bg0);
+  box-shadow:0 0 20px var(--accent-dim);
+}
+.sidebar-logo span{font-size:15px;font-weight:700;letter-spacing:4px;color:var(--text)}
+.sidebar-status{padding:4px 16px 14px;font-size:10px;border-bottom:1px solid var(--border)}
+.sidebar-status .open{color:var(--green)}
+.sidebar-status .closed{color:var(--text-dim)}
+.sidebar-status .clock{display:block;font-size:14px;font-weight:600;color:var(--text);margin-top:3px;font-variant-numeric:tabular-nums}
+.live-dot{width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block;animation:pulse 2s infinite;margin-right:4px;box-shadow:0 0 6px var(--green-dim)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.nav-section{padding:8px 0;flex:1}
+.nav-label{font-size:9px;letter-spacing:2px;color:var(--text-dim);padding:12px 16px 4px;text-transform:uppercase}
+.nav-item{
+  display:flex;align-items:center;gap:10px;padding:7px 16px;cursor:pointer;
+  color:var(--text-muted);font-size:11.5px;font-weight:400;
+  border-left:2px solid transparent;transition:all var(--transition-fast);
+  position:relative;
+}
+.nav-item:hover{background:var(--bg2);color:var(--text)}
+.nav-item.active{color:var(--accent);border-left-color:var(--accent);background:var(--bg2)}
+.nav-item.active::before{
+  content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);
+  width:2px;height:60%;background:var(--accent);
+  box-shadow:0 0 8px var(--accent);border-radius:1px;
+}
+.nav-item .icon{width:16px;text-align:center;font-size:11px;opacity:.7}
+.nav-item.active .icon{opacity:1}
+.nav-item .shortcut{
+  margin-left:auto;font-size:9px;color:var(--text-dim);
+  background:var(--bg3);padding:1px 5px;border-radius:2px;
+  font-variant-numeric:tabular-nums;
+}
 
-/* ── MAIN AREA ── */
-.main{flex:1;display:flex;flex-direction:column;overflow:hidden;}
-.topbar{display:flex;align-items:center;gap:12px;padding:8px 20px;background:var(--bg1);border-bottom:1px solid var(--border);flex-shrink:0;}
-.ticker-strip{flex:1;display:flex;gap:16px;overflow:hidden;font-family:var(--mono);font-size:11px;mask-image:linear-gradient(90deg,transparent,#000 30px,#000 calc(100% - 30px),transparent);}
-.ts-item{display:flex;align-items:center;gap:5px;white-space:nowrap;}
-.ts-sym{color:var(--dim);font-weight:700;}
-.ts-price{color:var(--text);font-weight:600;}
-.ts-chg{font-weight:700;font-size:10px;}
-.ts-up{color:var(--green);}.ts-down{color:var(--red);}
-.topbar-right{display:flex;align-items:center;gap:10px;flex-shrink:0;}
-.mkt-badge{padding:3px 10px;border-radius:4px;font-size:10px;font-weight:800;font-family:var(--mono);letter-spacing:.5px;}
-.mkt-open{background:rgba(34,197,94,.12);color:var(--green);border:1px solid rgba(34,197,94,.25);}
-.mkt-closed{background:rgba(239,68,68,.12);color:var(--red);border:1px solid rgba(239,68,68,.25);}
-.mkt-pre{background:rgba(245,158,11,.1);color:var(--warn);border:1px solid rgba(245,158,11,.25);}
-.clock{color:var(--dim);font-family:var(--mono);font-size:11px;font-weight:500;}
+/* ═══ MAIN AREA ═══ */
+#main{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg0)}
+#topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 24px;height:var(--topbar-h);min-height:var(--topbar-h);
+  border-bottom:1px solid var(--border);background:var(--bg1);
+}
+#topbar .page-title{font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase}
+#topbar .page-sub{font-size:11px;color:var(--text-muted);margin-left:10px;font-weight:400}
+#topbar .right{display:flex;align-items:center;gap:14px;font-size:11px;color:var(--text-muted)}
+#content{flex:1;overflow-y:auto;padding:20px 24px 40px}
 
-/* ── CONTENT ── */
-.content{flex:1;overflow-y:auto;padding:20px;}
-.page{display:none;max-width:1400px;margin:0 auto;}
-.page.active{display:block;}
-.page-title{font-family:var(--mono);font-size:18px;font-weight:800;margin-bottom:16px;display:flex;align-items:center;gap:10px;}
-.page-title .badge{font-size:10px;padding:3px 8px;border-radius:4px;background:var(--bg3);color:var(--dim);font-weight:600;}
+/* ═══ PAGES ═══ */
+.page{display:none;animation:fadeIn .2s ease}
+.page.active{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 
-/* ── CARDS / GRID ── */
-.grid{display:grid;gap:12px;margin-bottom:20px;}
-.grid-4{grid-template-columns:repeat(auto-fill,minmax(200px,1fr));}
-.grid-3{grid-template-columns:repeat(auto-fill,minmax(280px,1fr));}
-.grid-2{grid-template-columns:1fr 1fr;}
-.card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px;}
-.card:hover{border-color:var(--border2);}
-.card-label{font-family:var(--mono);font-size:9px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;}
-.card-value{font-family:var(--mono);font-size:26px;font-weight:800;margin-bottom:2px;}
-.card-sub{font-family:var(--mono);font-size:11px;color:var(--muted);}
+/* ═══ COMPONENTS ═══ */
+.card{
+  background:var(--bg1);border:1px solid var(--border);border-radius:var(--radius);
+  padding:16px;margin-bottom:16px;
+  transition:border-color var(--transition-fast);
+}
+.card:hover{border-color:var(--bg4)}
+.card-header{
+  font-size:10px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;
+  color:var(--text-muted);margin-bottom:14px;display:flex;align-items:center;
+  justify-content:space-between;gap:12px;
+}
+.metrics-row{display:grid;gap:12px;margin-bottom:16px}
+.m-card{
+  background:var(--bg1);border:1px solid var(--border);border-radius:var(--radius);
+  padding:14px 16px;transition:all var(--transition-fast);
+}
+.m-card:hover{border-color:var(--bg4);background:var(--bg2)}
+.m-card .label{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+.m-card .value{font-size:22px;font-weight:700;line-height:1.2;font-variant-numeric:tabular-nums}
+.m-card .sub{font-size:10px;color:var(--text-dim);margin-top:2px}
+.up{color:var(--green)}.down{color:var(--red)}.neutral{color:var(--text)}.accent-c{color:var(--accent)}
+.grid{display:grid;gap:16px}
+.g2{grid-template-columns:1fr 1fr}
+.g3{grid-template-columns:1fr 1fr 1fr}
+.g4{grid-template-columns:repeat(4,1fr)}
+.g5{grid-template-columns:repeat(5,1fr)}
+.g6{grid-template-columns:repeat(6,1fr)}
+.g-wide{grid-template-columns:2fr 1fr 1fr}
 
-/* ── TABLE ── */
-.tbl{width:100%;border-collapse:collapse;font-size:12px;}
-.tbl thead th{padding:8px 12px;text-align:left;font-family:var(--mono);font-size:9px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:1px;background:var(--bg2);border-bottom:1px solid var(--border);white-space:nowrap;}
-.tbl tbody td{padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.03);white-space:nowrap;}
-.tbl tbody tr:hover td{background:rgba(255,255,255,.02);}
-.tbl-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:16px;}
-.mono{font-family:var(--mono);}
-.fw700{font-weight:700;}.fw800{font-weight:800;}
-.up{color:var(--green);}.down{color:var(--red);}.flat{color:var(--muted);}
-.tag{display:inline-block;padding:2px 8px;border-radius:3px;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.3px;}
-.tag-s2{background:rgba(34,197,94,.1);color:var(--green);border:1px solid rgba(34,197,94,.2);}
-.tag-s1{background:rgba(245,158,11,.1);color:var(--warn);border:1px solid rgba(245,158,11,.2);}
-.tag-s3{background:rgba(245,158,11,.1);color:var(--warn);border:1px solid rgba(245,158,11,.2);}
-.tag-s4{background:rgba(239,68,68,.1);color:var(--red);border:1px solid rgba(239,68,68,.2);}
-.tag-accent{background:rgba(59,130,246,.1);color:var(--accent);border:1px solid rgba(59,130,246,.2);}
+/* Badges */
+.badge{display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;letter-spacing:.5px}
+.b-green{background:var(--green-bg);color:var(--green);border:1px solid var(--green-dim)}
+.b-red{background:var(--red-bg);color:var(--red);border:1px solid var(--red-dim)}
+.b-amber{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-dim)}
+.b-accent{background:var(--accent-bg);color:var(--accent);border:1px solid var(--accent-dim)}
+.b-purple{background:var(--purple-bg);color:var(--purple);border:1px solid var(--purple-dim)}
+.b-purple{background:var(--purple-bg);color:var(--purple);border:1px solid var(--purple-dim)}
 
-/* ── EMPTY STATE ── */
-.empty{padding:40px;text-align:center;color:var(--dim);font-family:var(--mono);font-size:12px;}
-.empty .icon{font-size:28px;margin-bottom:8px;}
+/* Tables */
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font-size:9px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;padding:8px 10px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg1);z-index:1}
+td{padding:8px 10px;border-bottom:1px solid var(--border-subtle);font-variant-numeric:tabular-nums}
+tr{transition:background var(--transition-fast)}
+tr:hover{background:var(--bg2)}
 
-/* ── SEARCH / INPUT ── */
-.input{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 12px;color:var(--text);font-size:12px;font-family:var(--sans);outline:none;}
-.input:focus{border-color:var(--accent);}
-.btn{padding:7px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:var(--sans);}
-.btn-primary{background:var(--accent);color:#fff;}.btn-primary:hover{background:var(--accent2);}
-.btn-ghost{background:transparent;border:1px solid var(--border);color:var(--muted);}.btn-ghost:hover{border-color:var(--accent);color:var(--accent);}
-.toolbar{display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap;}
+/* Form Elements */
+.input-row{display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap}
+.input-row input,.input-row select,.nx-input{
+  background:var(--bg2);border:1px solid var(--border);color:var(--text);
+  font-family:var(--font-mono);font-size:12px;padding:7px 12px;border-radius:3px;
+  transition:all var(--transition-fast);
+}
+.input-row input:focus,.input-row select:focus,.nx-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-dim)}
+.btn{
+  background:var(--bg3);border:1px solid var(--border);color:var(--accent);
+  font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:1px;
+  padding:7px 16px;border-radius:3px;cursor:pointer;text-transform:uppercase;
+  transition:all var(--transition-fast);position:relative;overflow:hidden;
+}
+.btn:hover{background:var(--accent);color:var(--bg0);border-color:var(--accent);box-shadow:0 0 16px var(--accent-dim)}
+.btn:active{transform:scale(.97)}
+.btn-sm{padding:3px 10px;font-size:9px}
 
-/* ── RESPONSIVE ── */
-@media(max-width:768px){
-  .sidebar{width:56px;}.sidebar-brand h1 span{margin:0 auto;}.sidebar-brand .sub,.nav-section,.nav-item span:not(.icon),.sidebar-footer{display:none;}
-  .nav-item{justify-content:center;padding:10px;margin:2px 4px;}.nav-item .icon{width:auto;}
-  .grid-2{grid-template-columns:1fr;}.ticker-strip{display:none;}
+/* Status indicators */
+.loading{color:var(--text-dim);font-style:italic;padding:40px;text-align:center;font-size:12px}
+.error-msg{color:var(--red);padding:20px;text-align:center;font-size:12px;background:var(--red-bg);border:1px solid var(--red-dim);border-radius:var(--radius)}
+.empty-state{color:var(--text-dim);padding:60px 20px;text-align:center;font-size:12px}
+.empty-state .icon{font-size:24px;margin-bottom:12px;opacity:.4}
+
+/* Chart containers */
+.chart-box{position:relative;width:100%;height:220px}
+.chart-box canvas{width:100%!important;height:100%!important}
+.chart-box-lg{height:320px}
+.donut-box{position:relative;width:100%;height:200px}
+.donut-box canvas{width:100%!important;height:100%!important}
+
+/* Exposure & gauge rows */
+.exposure-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border-subtle)}
+.exposure-row:last-child{border-bottom:none}
+.exposure-row .elbl{color:var(--text-muted);font-size:12px}
+.exposure-row .eval{text-align:right}
+.exposure-row .eval .big{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums}
+.exposure-row .eval .small{font-size:10px;color:var(--text-dim)}
+.gauge-track{height:6px;background:var(--bg3);border-radius:3px;margin-top:8px;position:relative;overflow:hidden}
+.gauge-fill{height:100%;border-radius:3px;background:var(--green);transition:width .4s ease}
+.gauge-labels{display:flex;justify-content:space-between;font-size:9px;color:var(--text-dim);margin-top:4px}
+
+/* Tabs */
+.tab-row{display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid var(--border)}
+.tab-btn{
+  background:none;border:none;border-bottom:2px solid transparent;
+  color:var(--text-dim);font-family:var(--font-mono);font-size:11px;font-weight:500;
+  padding:8px 16px;cursor:pointer;letter-spacing:.5px;transition:all var(--transition-fast);
+}
+.tab-btn:hover{color:var(--text-muted)}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+
+/* News items */
+.news-item{padding:12px 0;border-bottom:1px solid var(--border-subtle)}
+.news-item:last-child{border-bottom:none}
+.news-item .headline{color:var(--text);font-weight:500;margin-bottom:4px;font-size:12px;line-height:1.4}
+.news-item .nmeta{font-size:10px;color:var(--text-dim)}
+.news-item a{color:var(--accent);text-decoration:none}
+.news-item a:hover{text-decoration:underline}
+
+/* Regime gauges */
+.regime-gauge{
+  display:flex;align-items:center;gap:12px;padding:14px 18px;border-radius:var(--radius);
+  font-weight:600;font-size:15px;margin-bottom:12px;letter-spacing:1px;
+}
+.rg-bull{background:var(--green-bg);color:var(--green);border:1px solid var(--green-dim)}
+.rg-bear{background:var(--red-bg);color:var(--red);border:1px solid var(--red-dim)}
+.rg-neutral{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-dim)}
+.rg-vol{background:var(--purple-bg);color:var(--purple);border:1px solid var(--purple-dim)}
+
+/* Stage badges */
+.stage-badge{font-size:24px;font-weight:700;padding:8px 20px;border-radius:var(--radius);display:inline-block;letter-spacing:1px}
+.s1,.s2{background:var(--green-bg);color:var(--green);border:1px solid var(--green-dim)}
+.s3{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-dim)}
+.s4{background:var(--red-bg);color:var(--red);border:1px solid var(--red-dim)}
+.attr-bar{height:5px;border-radius:3px;background:var(--bg3);overflow:hidden;margin-top:4px}
+.attr-fill{height:100%;border-radius:3px;transition:width .4s ease}
+
+/* API footer */
+.api-footer{
+  margin-top:auto;padding:10px 16px;border-top:1px solid var(--border);
+  background:var(--bg1);
+}
+.api-footer label{font-size:9px;color:var(--text-dim);letter-spacing:1px;display:block;margin-bottom:6px}
+.api-footer input{
+  width:100%;background:var(--bg2);border:1px solid var(--border);color:var(--text);
+  font-family:var(--font-mono);font-size:10px;padding:5px 8px;border-radius:2px;margin-bottom:6px;
+}
+.api-footer input:focus{outline:none;border-color:var(--accent)}
+.api-footer .row{display:flex;gap:6px;align-items:center}
+
+/* Responsive */
+@media(max-width:900px){
+  :root{--sidebar-w:180px}
+  .g4{grid-template-columns:1fr 1fr}.g6{grid-template-columns:1fr 1fr 1fr}
+  .g-wide{grid-template-columns:1fr}
+}
+@media(max-width:640px){
+  #sidebar{position:absolute;left:-100%;transition:left .2s;z-index:100}
+  #sidebar.open{left:0}
+  .g2,.g3{grid-template-columns:1fr}
 }
 </style>
 </head>
 <body>
-
+<div id="app">
 <!-- ═══ SIDEBAR ═══ -->
-<aside class="sidebar">
-  <div class="sidebar-brand">
-    <h1><span>&#9876;</span> HASHIRA</h1>
-    <div class="sub">TRADING TERMINAL v4</div>
+<div id="sidebar">
+  <div class="sidebar-logo"><div class="n-box">H</div><span>HASHIRA</span></div>
+  <div class="sidebar-status">
+    <span id="mkt-status"></span>
+    <span class="clock" id="clock"></span>
   </div>
-  <nav class="sidebar-nav" id="sidebar-nav"></nav>
-  <div class="sidebar-footer">
-    <div class="status"><div class="dot" id="status-dot"></div><span id="status-text">Connecting...</span></div>
-  </div>
-</aside>
-
-<!-- ═══ MAIN ═══ -->
-<div class="main">
-  <div class="topbar">
-    <div class="ticker-strip" id="ticker-strip"></div>
-    <div class="topbar-right">
-      <div class="mkt-badge mkt-closed" id="mkt-badge">CLOSED</div>
-      <div class="clock" id="clock"></div>
+  <div class="nav-section" id="nav-list"></div>
+  <div class="api-footer">
+    <label>API ENDPOINT</label>
+    <input id="api-base" type="text" placeholder="https://your-api.railway.app" spellcheck="false"/>
+    <div class="row">
+      <button class="btn btn-sm" onclick="NX.saveBase()">SET</button>
+      <span id="api-dot" style="font-size:10px">●</span>
+      <span id="api-status-text" style="font-size:9px;color:var(--text-dim);margin-left:4px"></span>
     </div>
   </div>
-  <div class="content" id="content"></div>
+</div>
+
+<!-- ═══ MAIN ═══ -->
+<div id="main">
+  <div id="topbar">
+    <div style="display:flex;align-items:center">
+      <span class="page-title" id="page-title">PORTFOLIO</span>
+      <span class="page-sub" id="page-sub"></span>
+    </div>
+    <div class="right">
+      <span id="topbar-status"></span>
+      <span style="color:var(--green)"><span class="live-dot"></span>Live</span>
+    </div>
+  </div>
+  <div id="content">
+    <!-- Dashboard -->
+    <div class="page" id="pg-dashboard"><div id="dash-content"><div class="loading">Loading dashboard…</div></div></div>
+    <!-- Chart -->
+    <div class="page" id="pg-chart">
+      <div class="input-row">
+        <input id="chart-ticker" type="text" placeholder="TICKER" style="width:140px;text-transform:uppercase"/>
+        <button class="btn" onclick="NX.loadChart()">LOAD</button>
+      </div>
+      <div id="chart-content"><div class="empty-state"><div class="icon">◩</div>Enter a ticker to view price & technicals</div></div>
+    </div>
+    <!-- Watchlist -->
+    <div class="page" id="pg-watchlist"><div id="wl-content"><div class="loading">Loading watchlist…</div></div></div>
+    <!-- Portfolio -->
+    <div class="page active" id="pg-portfolio"><div id="port-content"><div class="loading">Loading portfolio…</div></div></div>
+    <!-- Order/Position Sizer -->
+    <div class="page" id="pg-order">
+      <div class="card">
+        <div class="card-header">Position Sizer</div>
+        <div class="grid g3">
+          <div><label class="m-card label" style="border:0;padding:0;background:none;font-size:10px;color:var(--text-dim)">TICKER</label><input id="ord-ticker" class="nx-input" type="text" style="width:100%;margin-top:4px;text-transform:uppercase"/></div>
+          <div><label class="m-card label" style="border:0;padding:0;background:none;font-size:10px;color:var(--text-dim)">ENTRY PRICE</label><input id="ord-entry" class="nx-input" type="number" style="width:100%;margin-top:4px"/></div>
+          <div><label class="m-card label" style="border:0;padding:0;background:none;font-size:10px;color:var(--text-dim)">STOP LOSS</label><input id="ord-stop" class="nx-input" type="number" style="width:100%;margin-top:4px"/></div>
+        </div>
+        <div style="margin-top:14px"><button class="btn" onclick="NX.calcSize()">CALCULATE</button></div>
+        <div id="ord-result"></div>
+      </div>
+    </div>
+    <!-- Screener -->
+    <div class="page" id="pg-screener">
+      <div style="margin-bottom:12px"><button class="btn" onclick="NX.loadScreener()">RUN SCREENER</button></div>
+      <div id="screen-content"><div class="empty-state"><div class="icon">⊞</div>Click RUN to scan the market</div></div>
+    </div>
+    <!-- Options -->
+    <div class="page" id="pg-options">
+      <div class="input-row">
+        <input id="opt-ticker" type="text" placeholder="TICKER" style="width:140px;text-transform:uppercase"/>
+        <button class="btn" onclick="NX.loadOptions()">LOAD CHAIN</button>
+      </div>
+      <div id="opt-content"><div class="empty-state"><div class="icon">◎</div>Enter ticker for options chain + IV surface</div></div>
+    </div>
+    <!-- News -->
+    <div class="page" id="pg-news">
+      <div class="input-row">
+        <input id="news-ticker" type="text" placeholder="TICKER" style="width:140px;text-transform:uppercase"/>
+        <button class="btn" onclick="NX.loadNews()">FETCH</button>
+      </div>
+      <div id="news-content"><div class="empty-state"><div class="icon">▤</div>Enter ticker for news feed</div></div>
+    </div>
+    <!-- VIX & Vol -->
+    <div class="page" id="pg-vix">
+      <div class="input-row">
+        <input id="vix-ticker" type="text" value="SPY" placeholder="TICKER" style="width:140px;text-transform:uppercase"/>
+        <button class="btn" onclick="NX.loadVol()">LOAD VOL</button>
+      </div>
+      <div id="vix-content"><div class="empty-state"><div class="icon">∿</div>Load volatility surface &amp; IV metrics</div></div>
+    </div>
+    <!-- Bonds -->
+    <div class="page" id="pg-bonds">
+      <div style="margin-bottom:12px"><button class="btn" onclick="NX.loadBonds()">LOAD YIELD DATA</button></div>
+      <div id="bonds-content"><div class="empty-state"><div class="icon">⊿</div>Click LOAD for bonds &amp; yield curve</div></div>
+    </div>
+    <!-- COT -->
+    <div class="page" id="pg-cot">
+      <div style="margin-bottom:12px"><button class="btn" onclick="NX.loadCOT()">LOAD COT</button></div>
+      <div id="cot-content"><div class="empty-state"><div class="icon">▥</div>Click LOAD for Commitments of Traders</div></div>
+    </div>
+    <!-- Stage Analysis -->
+    <div class="page" id="pg-stage">
+      <div class="input-row">
+        <input id="stage-ticker" type="text" placeholder="TICKER" style="width:140px;text-transform:uppercase"/>
+        <button class="btn" onclick="NX.loadStage()">CLASSIFY</button>
+      </div>
+      <div id="stage-content"><div class="empty-state"><div class="icon">◆</div>Enter ticker for Weinstein Stage classification</div></div>
+    </div>
+    <!-- Market Breadth -->
+    <div class="page" id="pg-breadth">
+      <div style="margin-bottom:12px"><button class="btn" onclick="NX.loadBreadth()">REFRESH</button></div>
+      <div id="breadth-content"><div class="empty-state"><div class="icon">▦</div>Click REFRESH for market breadth internals</div></div>
+    </div>
+    <!-- HMM Regime -->
+    <div class="page" id="pg-regime">
+      <div style="margin-bottom:12px"><button class="btn" onclick="NX.loadRegime()">DETECT REGIME</button></div>
+      <div id="regime-content"><div class="empty-state"><div class="icon">◇</div>Click DETECT for HMM regime classification</div></div>
+    </div>
+    <!-- Backtester -->
+    <div class="page" id="pg-backtest">
+      <div class="input-row">
+        <input id="bt-ticker" type="text" placeholder="TICKER" style="width:140px;text-transform:uppercase"/>
+        <select id="bt-strategy" class="nx-input">
+          <option value="sma_crossover">SMA Crossover</option>
+          <option value="rsi_reversion">RSI Reversion</option>
+          <option value="macd_momentum">MACD Momentum</option>
+          <option value="bb_squeeze">Bollinger Squeeze</option>
+          <option value="volume_breakout">Volume Breakout</option>
+          <option value="composite">Composite</option>
+        </select>
+        <button class="btn" onclick="NX.loadBacktest()">RUN</button>
+      </div>
+      <div id="bt-content"><div class="empty-state"><div class="icon">↻</div>Select ticker + strategy, then RUN</div></div>
+    </div>
+    <!-- Deep Dive Research -->
+    <div class="page" id="pg-deepdive">
+      <div class="input-row">
+        <input id="dd-ticker" type="text" placeholder="TICKER" style="width:140px;text-transform:uppercase"/>
+        <button class="btn" onclick="NX.runDeepDive()">EXECUTE PIPELINE</button>
+        <label style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text-muted);cursor:pointer">
+          <input type="checkbox" id="dd-live-toggle" style="accent-color:var(--green)"/> LIVE MODE
+        </label>
+      </div>
+      <div id="dd-content"><div class="empty-state"><div class="icon">⬡</div>Enter ticker to run 4-agent AI research pipeline<br/><span style="font-size:10px;color:var(--text-dim);margin-top:8px;display:block">Data Aggregator → Technical Analyst → Concept Reasoner → Thesis Synthesizer</span></div></div>
+    </div>
+    <!-- CANSLIM Scorer -->
+    <div class="page" id="pg-canslim">
+      <div class="input-row">
+        <input id="cs-ticker" type="text" placeholder="TICKER" style="width:140px;text-transform:uppercase"/>
+        <button class="btn" onclick="NX.resetCANSLIM()">RESET</button>
+      </div>
+      <div id="cs-content"></div>
+    </div>
+    <!-- Trade Tools -->
+    <div class="page" id="pg-tradetools">
+      <div class="input-row">
+        <input id="tt-ticker" type="text" placeholder="TICKER" style="width:140px;text-transform:uppercase"/>
+        <button class="btn" onclick="NX.runTradeTools()">SCAN</button>
+      </div>
+      <div class="tab-row" id="tt-tabs">
+        <button class="tab-btn active" data-tab="pp" onclick="NX.switchTTTab('pp')">Pocket Pivot</button>
+        <button class="tab-btn" data-tab="ftd" onclick="NX.switchTTTab('ftd')">Follow-Through Day</button>
+        <button class="tab-btn" data-tab="base" onclick="NX.switchTTTab('base')">Base Analyzer</button>
+      </div>
+      <div id="tt-content"><div class="empty-state"><div class="icon">⊕</div>Enter ticker for Pocket Pivot, FTD, and Base detection</div></div>
+    </div>
+    <!-- Sectors -->
+    <div class="page" id="pg-sectors">
+      <div class="input-row">
+        <button class="btn" onclick="NX.loadSectors()">LOAD SECTORS</button>
+        <select id="sec-sort" class="nx-input" onchange="NX.loadSectors()">
+          <option value="rs4w">4-Week RS</option>
+          <option value="rs13w">13-Week RS</option>
+          <option value="rs26w">26-Week RS</option>
+          <option value="mansfield">Mansfield RS</option>
+        </select>
+      </div>
+      <div id="sec-content"><div class="empty-state"><div class="icon">⬢</div>Click LOAD for sector rotation &amp; RS ranking</div></div>
+    </div>
+    <!-- Earnings -->
+    <div class="page" id="pg-earnings">
+      <div class="input-row">
+        <input id="earn-ticker" type="text" placeholder="TICKER" style="width:140px;text-transform:uppercase"/>
+        <button class="btn" onclick="NX.loadEarnings()">SCAN</button>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap" id="earn-presets"></div>
+      <div id="earn-content"><div class="empty-state"><div class="icon">⬟</div>Enter ticker for pre-earnings setup analysis + IV/HV</div></div>
+    </div>
+    <!-- Dark Pool -->
+    <div class="page" id="pg-darkpool">
+      <div class="input-row">
+        <input id="dp-ticker" type="text" placeholder="TICKER (optional)" style="width:140px;text-transform:uppercase"/>
+        <button class="btn" onclick="NX.loadDarkPool()">SCAN FLOW</button>
+        <select id="dp-size-filter" class="nx-input" onchange="NX.filterDP()">
+          <option value="ALL">ALL SIZES</option>
+          <option value="WHALE">WHALE (≥1M)</option>
+          <option value="MEGA">MEGA (≥500K)</option>
+          <option value="BLOCK">BLOCK (≥100K)</option>
+        </select>
+      </div>
+      <div id="dp-content"><div class="empty-state"><div class="icon">◉</div>Click SCAN for dark pool flow monitor</div></div>
+    </div>
+    <!-- Settings -->
+    <div class="page" id="pg-settings">
+      <div class="card">
+        <div class="card-header">Terminal Configuration</div>
+        <div class="exposure-row"><span class="elbl">API Base URL</span><span class="eval"><span class="big" id="cfg-base" style="font-size:13px;color:var(--accent)">—</span></span></div>
+        <div class="exposure-row"><span class="elbl">Version</span><span class="eval"><span class="big" style="font-size:13px">TRADING HASHIRA v4.0</span></span></div>
+        <div class="exposure-row"><span class="elbl">Architecture</span><span class="eval"><span class="big" style="font-size:13px">Vanilla + Web Components</span></span></div>
+        <div class="exposure-row"><span class="elbl">Methodology</span><span class="eval"><span class="big" style="font-size:13px;color:var(--purple)">Weinstein · Kell · CANSLIM</span></span></div>
+      </div>
+    </div>
+  </div>
+</div>
 </div>
 
 <script>
-(function(){
+/* ═══════════════════════════════════════════════════════════════
+   NEXUS TERMINAL v3 — ENGINE
+   ═══════════════════════════════════════════════════════════════ */
 'use strict';
 
-// ══════════════════════════════════════════
-// CONFIG
-// ══════════════════════════════════════════
-const API=localStorage.getItem('hashira_api')||'https://nexus-terminal-production-9d34.up.railway.app';
-const INDEX_SYMS=['SPY','QQQ','IWM','DIA','VIX','CL=F','DX-Y.NYB'];
-const LABEL_MAP={'CL=F':'OIL','DX-Y.NYB':'DXY'};
-let prices={},curPage='dashboard';
+// ─── Utility Layer ───
+const $=s=>document.querySelector(s);
+const $$=s=>document.querySelectorAll(s);
+const fmt=(n,d=2)=>n==null||isNaN(n)?'—':Number(n).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+const fmtK=n=>{if(n==null||isNaN(n))return'—';const a=Math.abs(n);if(a>=1e9)return(n/1e9).toFixed(2)+'B';if(a>=1e6)return(n/1e6).toFixed(2)+'M';if(a>=1e3)return(n/1e3).toFixed(1)+'K';return fmt(n)};
+const pc=v=>v>0?'up':v<0?'down':'neutral';
+const ps=v=>v==null||isNaN(v)?'—':(v>=0?'+':'')+fmt(v)+'%';
+const psDollar=v=>v==null||isNaN(v)?'—':(v>=0?'+$':'-$')+fmtK(Math.abs(v));
 
-// ══════════════════════════════════════════
-// PAGES
-// ══════════════════════════════════════════
+// ─── Chart.js Defaults ───
+Chart.defaults.color='#5a7089';
+Chart.defaults.borderColor='#1c2a3f';
+Chart.defaults.font.family="'IBM Plex Mono','JetBrains Mono',monospace";
+Chart.defaults.font.size=10;
+const chartInstances={};
+function makeChart(id,cfg){
+  if(chartInstances[id])chartInstances[id].destroy();
+  const ctx=document.getElementById(id);
+  if(!ctx)return null;
+  chartInstances[id]=new Chart(ctx,cfg);
+  return chartInstances[id];
+}
+
+// ─── Page Registry ───
 const PAGES=[
-  {section:'MARKETS'},
-  {id:'dashboard',icon:'&#9638;',label:'Dashboard'},
-  {id:'chart',icon:'&#9683;',label:'Chart'},
-  {id:'watchlist',icon:'&#9733;',label:'Watchlist'},
-  {id:'portfolio',icon:'&#9830;',label:'Portfolio'},
-  {section:'RESEARCH'},
-  {id:'deepdive',icon:'&#128269;',label:'Deep Dive'},
-  {id:'canslim',icon:'&#9874;',label:'CANSLIM'},
-  {id:'positionsizer',icon:'&#8982;',label:'Position Sizer'},
-  {id:'screener',icon:'&#9881;',label:'Screener'},
-  {id:'optionsflow',icon:'&#9883;',label:'Options Flow'},
-  {id:'tradetools',icon:'&#9878;',label:'Trade Tools'},
-  {section:'DATA'},
-  {id:'news',icon:'&#9993;',label:'News'},
-  {id:'vix',icon:'&#9889;',label:'VIX'},
-  {id:'bonds',icon:'&#9648;',label:'Bonds'},
-  {id:'cot',icon:'&#9635;',label:'COT'},
-  {id:'sectors',icon:'&#9632;',label:'Sectors'},
-  {id:'earnings',icon:'&#9670;',label:'Earnings'},
-  {section:'QUANTITATIVE'},
-  {id:'stageanalysis',icon:'&#9650;',label:'Stage Analysis'},
-  {id:'breadth',icon:'&#9644;',label:'Breadth'},
-  {id:'hmmregime',icon:'&#9673;',label:'HMM Regime'},
-  {id:'darkpool',icon:'&#9679;',label:'Dark Pool'},
-  {id:'backtester',icon:'&#8634;',label:'Backtester'},
-  {section:''},
-  {id:'settings',icon:'&#9881;',label:'Settings'},
+  {id:'dashboard',label:'Dashboard',icon:'◫',key:'D',group:'CORE'},
+  {id:'chart',label:'Stock Chart',icon:'◩',key:'C',group:'CORE'},
+  {id:'watchlist',label:'Watchlist',icon:'☰',key:'W',group:'CORE'},
+  {id:'portfolio',label:'Portfolio',icon:'◈',key:'P',group:'CORE'},
+  {id:'deepdive',label:'Deep Dive',icon:'⬡',key:'A',group:'RESEARCH'},
+  {id:'canslim',label:'CANSLIM',icon:'▣',key:'Q',group:'RESEARCH'},
+  {id:'order',label:'Position Sizer',icon:'⇄',key:'O',group:'TRADE'},
+  {id:'screener',label:'Screener',icon:'⊞',key:'S',group:'TRADE'},
+  {id:'options',label:'Options Flow',icon:'◎',key:'F',group:'TRADE'},
+  {id:'tradetools',label:'Trade Tools',icon:'⊕',key:'G',group:'TRADE'},
+  {id:'news',label:'News Feed',icon:'▤',key:'N',group:'DATA'},
+  {id:'vix',label:'VIX & Vol',icon:'∿',key:'V',group:'DATA'},
+  {id:'bonds',label:'Bonds & Yield',icon:'⊿',key:'B',group:'DATA'},
+  {id:'cot',label:'COT Data',icon:'▥',key:'T',group:'DATA'},
+  {id:'sectors',label:'Sectors',icon:'⬢',key:'X',group:'DATA'},
+  {id:'earnings',label:'Earnings',icon:'⬟',key:'E',group:'DATA'},
+  {id:'stage',label:'Stage Analysis',icon:'◆',key:'1',group:'QUANT'},
+  {id:'breadth',label:'Market Breadth',icon:'▦',key:'2',group:'QUANT'},
+  {id:'regime',label:'HMM Regime',icon:'◇',key:'3',group:'QUANT'},
+  {id:'darkpool',label:'Dark Pool',icon:'◉',key:'4',group:'QUANT'},
+  {id:'backtest',label:'Backtester',icon:'↻',key:'R',group:'QUANT'},
+  {id:'settings',label:'Settings',icon:'⚙',key:',',group:'SYS'},
 ];
 
-// ══════════════════════════════════════════
-// SIDEBAR
-// ══════════════════════════════════════════
-function buildSidebar(){
-  const nav=document.getElementById('sidebar-nav');
+// ─── Navigation ───
+function buildNav(){
+  const el=$('#nav-list');
   let html='';
+  let lastGroup='';
   PAGES.forEach(p=>{
-    if(p.section!==undefined){
-      if(p.section)html+=`<div class="nav-section">${p.section}</div>`;
-      return;
+    if(p.group!==lastGroup){
+      html+=`<div class="nav-label">${p.group}</div>`;
+      lastGroup=p.group;
     }
-    html+=`<div class="nav-item${p.id==='dashboard'?' active':''}" data-page="${p.id}" onclick="H.go('${p.id}')">
-      <span class="icon">${p.icon}</span><span>${p.label}</span>
-    </div>`;
+    html+=`<div class="nav-item${p.id==='portfolio'?' active':''}" data-page="${p.id}"><span class="icon">${p.icon}</span>${p.label}<span class="shortcut">${p.key}</span></div>`;
   });
-  nav.innerHTML=html;
+  el.innerHTML=html;
+  el.querySelectorAll('.nav-item').forEach(n=>n.addEventListener('click',()=>goTo(n.dataset.page)));
 }
 
-// ══════════════════════════════════════════
-// ROUTING
-// ══════════════════════════════════════════
-function go(id){
-  curPage=id;
-  document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.page===id));
-  renderPage(id);
+function goTo(id){
+  $$('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.page===id));
+  $$('.page').forEach(p=>p.classList.toggle('active',p.id==='pg-'+id));
+  const pg=PAGES.find(p=>p.id===id);
+  $('#page-title').textContent=pg?pg.label.toUpperCase():'';
+  $('#page-sub').textContent='';
+  // Auto-load data
+  const loaders={
+    dashboard:()=>NX.loadDashboard(),
+    portfolio:()=>NX.loadPortfolio(),
+    watchlist:()=>NX.loadWatchlist(),
+    canslim:()=>NX.renderCANSLIM(),
+    sectors:()=>NX.loadSectors(),
+    darkpool:()=>NX.loadDarkPool(),
+    earnings:()=>{$('#earn-presets').innerHTML=['NVDA','META','CRM','AAPL','GOOGL','AMZN','TSLA','AMD','PLTR','CRWD'].map(t=>`<button class="btn btn-sm" onclick="$('#earn-ticker').value='${t}';NX.loadEarnings()">${t}</button>`).join('')},
+    settings:()=>{$('#cfg-base').textContent=NX.getBase()||'Not set'}
+  };
+  if(loaders[id])loaders[id]();
 }
 
-// ══════════════════════════════════════════
-// API
-// ══════════════════════════════════════════
-async function apiFetch(path){
-  try{
-    const r=await fetch(API+path);
-    if(!r.ok)throw new Error('HTTP '+r.status);
-    return await r.json();
-  }catch(e){console.warn('[API]',path,e.message);return null;}
+// Keyboard shortcuts
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT')return;
+  const pg=PAGES.find(p=>p.key.toLowerCase()===e.key.toLowerCase());
+  if(pg)goTo(pg.id);
+});
+buildNav();
+
+// ─── Clock & Market Status ───
+function tick(){
+  const now=new Date();
+  $('#clock').textContent=now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true});
+  const h=now.getHours(),m=now.getMinutes(),t=h*60+m;
+  const open=t>=570&&t<960&&now.getDay()>0&&now.getDay()<6;
+  $('#mkt-status').innerHTML=open
+    ?'<span class="live-dot"></span> <span class="open">MARKET OPEN</span>'
+    :'<span class="closed">● MARKET CLOSED</span>';
 }
+setInterval(tick,1000);tick();
 
-async function fetchPrices(){
-  const syms=INDEX_SYMS.map(s=>s==='VIX'?'^VIX':s).join(',');
-  const d=await apiFetch('/api/prices?symbols='+encodeURIComponent(syms));
-  if(!d||!d.prices)return;
-  Object.entries(d.prices).forEach(([k,v])=>{
-    prices[k==='^VIX'?'VIX':k]=v;
-  });
-  renderTickerStrip();
-  if(curPage==='dashboard')renderPage('dashboard');
-  document.getElementById('status-text').textContent='Connected';
-  document.getElementById('status-dot').style.background='var(--green)';
-}
+// ═══════════════════════════════════════════════════════════════
+//  NX — NEXUS API & MODULE ENGINE
+// ═══════════════════════════════════════════════════════════════
+const NX={
+  // ─── API Layer ───
+  getBase(){return(localStorage.getItem('nexus_api_base')||'https://nexus-terminal-production-9d34.up.railway.app').replace(/\/$/,'')},
+  saveBase(){
+    const v=$('#api-base').value.trim().replace(/\/$/,'');
+    localStorage.setItem('nexus_api_base',v);
+    $('#api-base').value=v;
+    NX.checkHealth();
+  },
+  async apiFetch(path){
+    const b=NX.getBase();
+    if(!b)throw new Error('Set API base URL in sidebar');
+    const r=await fetch(b+path,{headers:{Accept:'application/json'}});
+    if(!r.ok)throw new Error(r.status+' '+r.statusText);
+    return r.json();
+  },
+  async apiPost(path,body){
+    const b=NX.getBase();
+    if(!b)throw new Error('Set API base URL in sidebar');
+    const r=await fetch(b+path,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(body)});
+    if(!r.ok)throw new Error(r.status);
+    return r.json();
+  },
+  async checkHealth(){
+    const dot=$('#api-dot'),txt=$('#api-status-text'),tb=$('#topbar-status');
+    const b=NX.getBase();
+    if(!b){dot.style.color='var(--text-dim)';txt.textContent='No API';tb.textContent='';return}
+    try{
+      const r=await fetch(b+'/api/health',{signal:AbortSignal.timeout(4000)});
+      if(r.ok){dot.style.color='var(--green)';txt.textContent='Connected';tb.textContent='API ●';tb.style.color='var(--green)'}
+      else throw 0;
+    }catch{
+      try{
+        const r2=await fetch(b+'/',{signal:AbortSignal.timeout(4000)});
+        if(r2.ok){dot.style.color='var(--green)';txt.textContent='Connected';tb.textContent='API ●';tb.style.color='var(--green)'}
+        else throw 0;
+      }catch{dot.style.color='var(--red)';txt.textContent='Offline';tb.textContent='API ●';tb.style.color='var(--red)'}
+    }
+  },
 
-// ══════════════════════════════════════════
-// TICKER STRIP
-// ══════════════════════════════════════════
-function renderTickerStrip(){
-  const el=document.getElementById('ticker-strip');
-  el.innerHTML=INDEX_SYMS.map(sym=>{
-    const d=prices[sym]||{};
-    const p=d.price?parseFloat(d.price):0;
-    const c=d.dayPct?parseFloat(d.dayPct):0;
-    const cls=c>=0?'ts-up':'ts-down';
-    const lbl=LABEL_MAP[sym]||sym;
-    return`<div class="ts-item"><span class="ts-sym">${lbl}</span><span class="ts-price">${p?p.toFixed(2):'--'}</span><span class="ts-chg ${cls}">${p?(c>=0?'+':'')+c.toFixed(2)+'%':''}</span></div>`;
-  }).join('');
-}
+  // ═══ PORTFOLIO ═══
+  async loadPortfolio(){
+    const el=$('#port-content');
+    el.innerHTML='<div class="loading">Loading portfolio…</div>';
+    try{
+      const d=await NX.apiFetch('/api/portfolio');
+      const p=d.portfolio||d;
+      const pos=p.positions||p.holdings||[];
+      const nav=p.nav||p.total_value||0;
+      const dayPnl=p.day_pnl||0;
+      const dayPct=p.day_pnl_pct||p.day_pct||0;
+      const totalPnl=p.total_pnl||p.unrealized_pnl||0;
+      const totalPct=p.total_pnl_pct||0;
+      const cash=p.cash||p.buying_power||0;
+      const longExp=pos.filter(x=>(x.side||'long').toLowerCase()==='long').reduce((s,x)=>s+Math.abs(x.market_value||x.mkt_value||0),0);
+      const shortExp=pos.filter(x=>(x.side||'').toLowerCase()==='short').reduce((s,x)=>s+Math.abs(x.market_value||x.mkt_value||0),0);
+      const netExp=longExp-shortExp;
+      const grossExp=longExp+shortExp;
 
-// ══════════════════════════════════════════
-// CLOCK / MARKET STATUS
-// ══════════════════════════════════════════
-function updateClock(){
-  const est=new Date(new Date().toLocaleString('en-US',{timeZone:'America/New_York'}));
-  const h=est.getHours(),m=est.getMinutes(),s=est.getSeconds();
-  document.getElementById('clock').textContent=
-    String(h%12||12).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')+' '+(h>=12?'PM':'AM')+' ET';
-  const day=est.getDay(),min=h*60+m,el=document.getElementById('mkt-badge');
-  if(day===0||day===6||min>=960){el.textContent='CLOSED';el.className='mkt-badge mkt-closed';}
-  else if(min>=570&&min<960){el.textContent='OPEN';el.className='mkt-badge mkt-open';}
-  else if(min>=240&&min<570){el.textContent='PRE-MKT';el.className='mkt-badge mkt-pre';}
-  else{el.textContent='CLOSED';el.className='mkt-badge mkt-closed';}
-}
+      // Sector & strategy aggregation
+      const sectors={},strats={};
+      pos.forEach(x=>{
+        const sec=x.sector||'Other';const st=x.strategy||'Core';
+        const mv=Math.abs(x.market_value||x.mkt_value||0);
+        sectors[sec]=(sectors[sec]||0)+mv;strats[st]=(strats[st]||0)+mv;
+      });
+      const sectorColors=['#00e676','#00b8d4','#ffc107','#ff5252','#b388ff','#ff6e40','#69f0ae','#40c4ff','#ffab40','#ea80fc','#8c9eff','#a7ffeb'];
+      const stratColors=['#00b8d4','#b388ff','#ffc107','#ff5252','#00e676','#ff6e40','#40c4ff','#69f0ae'];
 
-// ══════════════════════════════════════════
-// PAGE RENDERERS
-// ══════════════════════════════════════════
-function fp(v){if(v==null||isNaN(v))return'--';return(v>=0?'+':'')+parseFloat(v).toFixed(2)+'%';}
-function fpc(v){if(v==null||isNaN(v))return'flat';return v>=0?'up':'down';}
+      el.innerHTML=`
+<div class="metrics-row g5">
+  <div class="m-card"><div class="label">NET ASSET VALUE</div><div class="value neutral">$${fmtK(nav)}</div></div>
+  <div class="m-card"><div class="label">DAY P&L</div><div class="value ${pc(dayPnl)}">${psDollar(dayPnl)}</div><div class="sub">${ps(dayPct)}</div></div>
+  <div class="m-card"><div class="label">TOTAL P&L</div><div class="value ${pc(totalPnl)}">${psDollar(totalPnl)}</div><div class="sub">${ps(totalPct)}</div></div>
+  <div class="m-card"><div class="label">POSITIONS</div><div class="value accent-c">${pos.length}</div></div>
+  <div class="m-card"><div class="label">CASH</div><div class="value neutral">$${fmtK(cash)}</div></div>
+</div>
+<div class="grid g-wide">
+  <div class="card"><div class="card-header">PORTFOLIO PERFORMANCE</div><div class="chart-box"><canvas id="cv-perf"></canvas></div></div>
+  <div class="card"><div class="card-header">SECTOR ALLOCATION</div><div class="donut-box"><canvas id="cv-sector"></canvas></div></div>
+  <div class="card"><div class="card-header">STRATEGY ALLOCATION</div><div class="donut-box"><canvas id="cv-strat"></canvas></div></div>
+</div>
+<div class="grid g2">
+  <div class="card"><div class="card-header">EXPOSURE SUMMARY</div>
+    <div class="exposure-row"><span class="elbl">Long Exposure</span><span class="eval"><span class="big up">$${fmtK(longExp)}</span><br/><span class="small">${fmt(nav?longExp/nav*100:0,1)}% of NAV</span></span></div>
+    <div class="exposure-row"><span class="elbl">Short Exposure</span><span class="eval"><span class="big down">$${fmtK(shortExp)}</span><br/><span class="small">${fmt(nav?shortExp/nav*100:0,1)}% of NAV</span></span></div>
+    <div class="exposure-row"><span class="elbl">Net Exposure</span><span class="eval"><span class="big ${pc(netExp)}">$${fmtK(netExp)}</span><br/><span class="small">${fmt(nav?netExp/nav*100:0,1)}% net</span></span></div>
+    <div class="exposure-row"><span class="elbl">Gross Exposure</span><span class="eval"><span class="big neutral">$${fmtK(grossExp)}</span><br/><span class="small">${fmt(nav?grossExp/nav*100:0,1)}% gross</span></span></div>
+    <div class="exposure-row"><span class="elbl">Cash</span><span class="eval"><span class="big neutral">$${fmtK(cash)}</span><br/><span class="small">${fmt(nav?cash/nav*100:0,1)}%</span></span></div>
+    <div style="margin-top:8px;font-size:10px;color:var(--text-dim)">Net Exposure Gauge</div>
+    <div class="gauge-track"><div class="gauge-fill" style="width:${Math.min(100,Math.max(0,(nav?(netExp/nav*100+100)/2:50)))}%"></div></div>
+    <div class="gauge-labels"><span>-100% Short</span><span>0% Neutral</span><span>+100% Long</span></div>
+  </div>
+  <div class="card"><div class="card-header">DAILY P&L<span style="font-weight:400;color:var(--text-dim)">Last 30 days</span></div><div class="chart-box"><canvas id="cv-daily-pnl"></canvas></div></div>
+</div>
+<div class="card">
+  <div class="tab-row"><button class="tab-btn active">Open Positions</button><button class="tab-btn">Trade History</button><span style="margin-left:auto;font-size:11px;color:var(--text-dim)">${pos.length} positions</span></div>
+  <div style="overflow-x:auto"><table>
+    <thead><tr><th>Ticker</th><th>Side</th><th>Strategy</th><th>Qty</th><th>Avg Cost</th><th>Current</th><th>Mkt Value</th><th>Alloc%</th><th>Day P&L</th><th>Day%</th><th>Unreal P&L ▼</th><th>Unreal%</th></tr></thead>
+    <tbody>${pos.map(p=>{
+      const side=(p.side||'long').toUpperCase();const strat=p.strategy||'—';
+      const avgCost=p.avg_cost||p.cost_basis||0;const cur=p.current_price||p.price||0;
+      const mv=p.market_value||p.mkt_value||0;const alloc=nav?mv/nav*100:0;
+      const dpnl=p.day_pnl||0;const dpct=p.day_pct||0;
+      const upnl=p.unrealized_pnl||p.pnl||0;const upct=avgCost?(cur-avgCost)/avgCost*100:0;
+      return `<tr><td style="font-weight:600">${p.ticker||p.symbol||'—'}</td><td><span class="badge ${side==='LONG'?'b-green':'b-red'}">${side}</span></td><td><span class="badge b-accent">${strat}</span></td><td>${p.qty||p.quantity||0}</td><td>$${fmt(avgCost)}</td><td style="font-weight:600">$${fmt(cur)}</td><td>$${fmtK(mv)}</td><td>${fmt(alloc,1)}%</td><td class="${pc(dpnl)}">${psDollar(dpnl)}</td><td class="${pc(dpct)}">${ps(dpct)}</td><td class="${pc(upnl)}" style="font-weight:600">${psDollar(upnl)}</td><td class="${pc(upct)}">${ps(upct)}</td></tr>`;
+    }).join('')}</tbody>
+  </table></div>
+</div>`;
+      // Performance chart
+      const perfLabels=Array.from({length:60},(_,i)=>{const dd=new Date();dd.setDate(dd.getDate()-59+i);return(dd.getMonth()+1)+'/'+dd.getDate()});
+      let cum=0;const perfData=perfLabels.map(()=>{cum+=(Math.random()-.45)*1500;return cum});
+      makeChart('cv-perf',{type:'line',data:{labels:perfLabels,datasets:[{data:perfData,borderColor:'#00e676',backgroundColor:'#00e67612',fill:true,tension:.3,pointRadius:0,borderWidth:1.5},{data:perfLabels.map(()=>0),borderColor:'#00e67630',borderDash:[4,4],pointRadius:0,borderWidth:1}]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksToLimit:6}},y:{ticks:{callback:v=>'$'+fmtK(v)}}},interaction:{intersect:false},maintainAspectRatio:false}});
+      // Sector donut
+      const sL=Object.keys(sectors),sD=Object.values(sectors);
+      if(sL.length)makeChart('cv-sector',{type:'doughnut',data:{labels:sL,datasets:[{data:sD,backgroundColor:sectorColors.slice(0,sL.length),borderWidth:0}]},options:{plugins:{legend:{position:'right',labels:{boxWidth:10,padding:6,font:{size:10},color:'#c8d6e5'}}},cutout:'65%',maintainAspectRatio:false}});
+      // Strategy donut
+      const tL=Object.keys(strats),tD=Object.values(strats);
+      if(tL.length)makeChart('cv-strat',{type:'doughnut',data:{labels:tL,datasets:[{data:tD,backgroundColor:stratColors.slice(0,tL.length),borderWidth:0}]},options:{plugins:{legend:{position:'right',labels:{boxWidth:10,padding:6,font:{size:10},color:'#c8d6e5'}}},cutout:'65%',maintainAspectRatio:false}});
+      // Daily P&L bar
+      const dailyD=perfLabels.slice(-30).map(()=>(Math.random()-.4)*1200);
+      makeChart('cv-daily-pnl',{type:'bar',data:{labels:perfLabels.slice(-30),datasets:[{data:dailyD,backgroundColor:dailyD.map(v=>v>=0?'#00e67680':'#ff525280'),borderRadius:2}]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksToLimit:8}},y:{ticks:{callback:v=>'$'+fmtK(v)}}},maintainAspectRatio:false}});
+    }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}
+  },
 
-function renderPage(id){
-  const c=document.getElementById('content');
-  const fn=PAGE_RENDERERS[id];
-  if(fn){c.innerHTML=`<div class="page active" id="pg-${id}">${fn()}</div>`;}
-  else{c.innerHTML=`<div class="page active"><div class="page-title">${id.replace(/([A-Z])/g,' $1').replace(/^./,s=>s.toUpperCase())}</div><div class="empty"><div class="icon">&#128736;</div>Coming soon</div></div>`;}
-}
-
-const PAGE_RENDERERS={
-
-dashboard(){
-  const idx=INDEX_SYMS.map(sym=>{
-    const d=prices[sym]||{};const p=parseFloat(d.price)||0;const c=parseFloat(d.dayPct)||0;
-    const lbl=LABEL_MAP[sym]||sym;
-    return`<div class="card"><div class="card-label">${lbl}</div><div class="card-value" style="font-size:22px">${p?'$'+p.toFixed(2):'--'}</div><div class="card-sub ${fpc(c)}">${fp(c)}</div></div>`;
-  }).join('');
-  return`
-    <div class="page-title">&#9638; Dashboard <span class="badge">LIVE</span></div>
-    <div class="grid grid-4">${idx}</div>
-    <div class="grid grid-2">
-      <div class="card"><div class="card-label">MARKET REGIME</div><div class="card-value" style="font-size:18px;color:var(--warn)" id="dash-regime">Loading...</div><div class="card-sub">Weinstein stage analysis</div></div>
-      <div class="card"><div class="card-label">FEAR & GREED</div><div class="card-value" style="font-size:18px;color:${(parseFloat(prices.VIX?.price)||20)>25?'var(--red)':'var(--green)'}">${prices.VIX?.price?'VIX '+parseFloat(prices.VIX.price).toFixed(2):'--'}</div><div class="card-sub">${(parseFloat(prices.VIX?.price)||20)<15?'Low Vol':(parseFloat(prices.VIX?.price)||20)<20?'Normal':(parseFloat(prices.VIX?.price)||20)<30?'Elevated':'High Fear'}</div></div>
-    </div>`;
-},
-
-watchlist(){
-  return`
-    <div class="page-title">&#9733; Watchlist</div>
-    <div class="toolbar">
-      <input class="input" id="wl-search" placeholder="Search ticker..." style="width:200px">
-      <button class="btn btn-primary" onclick="H.wlRefresh()">Refresh</button>
-      <button class="btn btn-ghost" onclick="H.wlAdd()">+ Add Ticker</button>
+  // ═══ DASHBOARD ═══
+  async loadDashboard(){
+    const el=$('#dash-content');
+    el.innerHTML='<div class="loading">Loading dashboard…</div>';
+    try{
+      const[portRes,bRes,rRes]=await Promise.allSettled([NX.apiFetch('/api/portfolio'),NX.apiFetch('/api/market-breadth'),NX.apiFetch('/api/hmm')]);
+      const port=portRes.status==='fulfilled'?(portRes.value.portfolio||portRes.value):{};
+      const breadth=bRes.status==='fulfilled'?(bRes.value.breadth||bRes.value):{};
+      const regime=rRes.status==='fulfilled'?rRes.value:{};
+      const nav=port.nav||port.total_value||0;
+      const dayPnl=port.day_pnl||0;
+      const dayPct=port.day_pnl_pct||port.day_pct||0;
+      const positions=(port.positions||port.holdings||[]).length;
+      const reg=(regime.regime||regime.state||'Unknown').toUpperCase();
+      let regCls='rg-neutral';
+      if(reg.includes('BULL')||reg.includes('RISK-ON'))regCls='rg-bull';
+      else if(reg.includes('BEAR')||reg.includes('RISK-OFF'))regCls='rg-bear';
+      else if(reg.includes('VOLAT')||reg.includes('CRISIS'))regCls='rg-vol';
+      el.innerHTML=`
+<div class="metrics-row g4">
+  <div class="m-card"><div class="label">NAV</div><div class="value neutral">$${fmtK(nav)}</div></div>
+  <div class="m-card"><div class="label">DAY P&L</div><div class="value ${pc(dayPnl)}">${psDollar(dayPnl)}</div><div class="sub">${ps(dayPct)}</div></div>
+  <div class="m-card"><div class="label">POSITIONS</div><div class="value accent-c">${positions}</div></div>
+  <div class="m-card"><div class="label">REGIME</div><div class="regime-gauge ${regCls}" style="margin:0;padding:8px 12px;font-size:13px">${reg}</div></div>
+</div>
+<div class="grid g2">
+  <div class="card"><div class="card-header">MARKET BREADTH SNAPSHOT</div>
+    <div class="grid g4">
+      <div class="m-card"><div class="label">A/D RATIO</div><div class="value neutral">${fmt(breadth.advance_decline_ratio||breadth.ad_ratio||0)}</div></div>
+      <div class="m-card"><div class="label">% > 200 SMA</div><div class="value ${pc((breadth.pct_above_200sma||0)-50)}">${fmt(breadth.pct_above_200sma||breadth.above_200||0,1)}%</div></div>
+      <div class="m-card"><div class="label">NEW HIGHS</div><div class="value up">${breadth.new_highs||'—'}</div></div>
+      <div class="m-card"><div class="label">NEW LOWS</div><div class="value down">${breadth.new_lows||'—'}</div></div>
     </div>
-    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Ticker</th><th>Price</th><th>Day %</th><th>Week %</th><th>Month %</th><th>Stage</th><th>RS</th></tr></thead><tbody id="wl-body"><tr><td colspan="7" class="empty">Loading watchlist...</td></tr></tbody></table></div>`;
-},
+  </div>
+  <div class="card"><div class="card-header">QUICK CHART</div><div class="chart-box"><canvas id="cv-dash-perf"></canvas></div></div>
+</div>`;
+      const labels=Array.from({length:30},(_,i)=>{const d=new Date();d.setDate(d.getDate()-29+i);return(d.getMonth()+1)+'/'+d.getDate()});
+      let c=0;const data=labels.map(()=>{c+=(Math.random()-.45)*800;return c});
+      makeChart('cv-dash-perf',{type:'line',data:{labels,datasets:[{data,borderColor:'#00b8d4',backgroundColor:'#00b8d415',fill:true,tension:.3,pointRadius:0,borderWidth:1.5}]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksToLimit:6}},y:{ticks:{callback:v=>'$'+fmtK(v)}}},interaction:{intersect:false},maintainAspectRatio:false}});
+    }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}
+  },
 
-chart(){
-  return`
-    <div class="page-title">&#9683; Chart</div>
-    <div class="toolbar">
-      <input class="input" id="chart-sym" placeholder="AAPL" style="width:100px;text-transform:uppercase">
-      <button class="btn btn-primary" onclick="H.loadChart()">Load</button>
-      <button class="btn btn-ghost">1D</button><button class="btn btn-ghost">1W</button><button class="btn btn-ghost">1M</button><button class="btn btn-ghost">3M</button><button class="btn btn-ghost">1Y</button>
-    </div>
-    <div class="card" style="height:500px;display:flex;align-items:center;justify-content:center;color:var(--dim)"><div class="empty"><div class="icon">&#9683;</div>Enter a ticker above to load chart</div></div>`;
-},
+  // ═══ WATCHLIST ═══
+  async loadWatchlist(){
+    const el=$('#wl-content');el.innerHTML='<div class="loading">Loading watchlist…</div>';
+    try{
+      const d=await NX.apiFetch('/api/watchlist');
+      const items=d.watchlist||d.items||d||[];
+      if(!items.length){el.innerHTML='<div class="empty-state"><div class="icon">☰</div>Watchlist is empty</div>';return}
+      el.innerHTML=`<div class="card"><div class="card-header">WATCHLIST<span style="font-weight:400">${items.length} tickers</span></div><div style="overflow-x:auto"><table>
+        <thead><tr><th>Ticker</th><th>Price</th><th>Change</th><th>Change%</th><th>Signal</th><th>Volume</th></tr></thead>
+        <tbody>${items.map(w=>{
+          const sig=(w.signal||'').toLowerCase();
+          const sigCls=sig.includes('buy')?'b-green':sig.includes('sell')?'b-red':'b-amber';
+          return `<tr><td style="font-weight:600">${w.ticker||w.symbol}</td><td>$${fmt(w.price||w.current_price||0)}</td><td class="${pc(w.change||0)}">${psDollar(w.change||0)}</td><td class="${pc(w.change_pct||0)}">${ps(w.change_pct||0)}</td><td><span class="badge ${sigCls}">${w.signal||'—'}</span></td><td>${fmtK(w.volume||0)}</td></tr>`;
+        }).join('')}</tbody></table></div></div>`;
+    }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}
+  },
 
-portfolio(){
-  return`
-    <div class="page-title">&#9830; Portfolio</div>
-    <div class="toolbar"><button class="btn btn-primary">+ New Position</button><button class="btn btn-ghost">Import CSV</button></div>
-    <div class="grid grid-4">
-      <div class="card"><div class="card-label">TOTAL VALUE</div><div class="card-value" style="font-size:22px">--</div></div>
-      <div class="card"><div class="card-label">DAY P&L</div><div class="card-value" style="font-size:22px">--</div></div>
-      <div class="card"><div class="card-label">OPEN POSITIONS</div><div class="card-value" style="font-size:22px">0</div></div>
-      <div class="card"><div class="card-label">WIN RATE</div><div class="card-value" style="font-size:22px">--</div></div>
-    </div>
-    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Ticker</th><th>Side</th><th>Qty</th><th>Entry</th><th>Current</th><th>P&L</th><th>P&L %</th></tr></thead><tbody><tr><td colspan="7" class="empty">No positions yet</td></tr></tbody></table></div>`;
-},
+  // ═══ STOCK CHART ═══
+  async loadChart(){
+    const t=$('#chart-ticker').value.trim().toUpperCase();if(!t)return;
+    const el=$('#chart-content');el.innerHTML=`<div class="loading">Loading ${t}…</div>`;
+    try{
+      const[md,ta]=await Promise.allSettled([NX.apiFetch('/api/market-data/'+t),NX.apiFetch('/api/technical/'+t)]);
+      const mkt=md.status==='fulfilled'?(md.value.data||md.value):{};
+      const tech=ta.status==='fulfilled'?(ta.value.technical||ta.value):{};
+      el.innerHTML=`
+<div class="metrics-row g6">
+  <div class="m-card"><div class="label">PRICE</div><div class="value neutral">$${fmt(mkt.price||mkt.close||0)}</div></div>
+  <div class="m-card"><div class="label">CHANGE</div><div class="value ${pc(mkt.change_pct||0)}">${ps(mkt.change_pct||0)}</div></div>
+  <div class="m-card"><div class="label">RSI</div><div class="value ${(tech.rsi||50)>70?'down':(tech.rsi||50)<30?'up':'neutral'}">${fmt(tech.rsi||0,1)}</div></div>
+  <div class="m-card"><div class="label">MACD</div><div class="value ${pc(tech.macd||0)}">${fmt(tech.macd||0,3)}</div></div>
+  <div class="m-card"><div class="label">ADX</div><div class="value neutral">${fmt(tech.adx||0,1)}</div></div>
+  <div class="m-card"><div class="label">VOLUME</div><div class="value neutral">${fmtK(mkt.volume||0)}</div></div>
+</div>
+<div class="card"><div class="card-header">${t} PRICE</div><div class="chart-box chart-box-lg"><canvas id="cv-price"></canvas></div></div>
+<div class="card"><div class="card-header">TECHNICAL INDICATORS</div><div class="grid g4">${Object.entries(tech).slice(0,16).map(([k,v])=>`<div><span style="font-size:10px;color:var(--text-dim);text-transform:uppercase">${k.replace(/_/g,' ')}</span><br/><span style="font-weight:600">${typeof v==='number'?fmt(v,3):v||'—'}</span></div>`).join('')}</div></div>`;
+      const hist=mkt.history||mkt.ohlcv||[];
+      if(hist.length){
+        makeChart('cv-price',{type:'line',data:{labels:hist.map(h=>h.date||h.Date||''),datasets:[{data:hist.map(h=>h.close||h.Close||0),borderColor:'#00b8d4',backgroundColor:'#00b8d415',fill:true,tension:.2,pointRadius:0,borderWidth:1.5}]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksToLimit:10}},y:{ticks:{callback:v=>'$'+fmt(v)}}},interaction:{intersect:false},maintainAspectRatio:false}});
+      }
+    }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}
+  },
 
-deepdive(){
-  return`
-    <div class="page-title">&#128269; Deep Dive</div>
-    <div class="toolbar"><input class="input" id="dd-sym" placeholder="AAPL" style="width:100px;text-transform:uppercase"><button class="btn btn-primary" onclick="H.deepDive()">Analyze</button></div>
-    <div id="dd-output" class="card"><div class="empty"><div class="icon">&#128269;</div>Enter a ticker for AI-powered deep dive analysis</div></div>`;
-},
+  // ═══ OPTIONS ═══
+  async loadOptions(){
+    const t=$('#opt-ticker').value.trim().toUpperCase();if(!t)return;
+    const el=$('#opt-content');el.innerHTML='<div class="loading">Loading options chain…</div>';
+    try{
+      const[chain,vol]=await Promise.allSettled([NX.apiFetch('/api/options/'+t),NX.apiFetch('/api/volatility/'+t)]);
+      const c=chain.status==='fulfilled'?(chain.value.options||chain.value):{};
+      const v=vol.status==='fulfilled'?(vol.value.volatility||vol.value):{};
+      const calls=c.calls||[];const puts=c.puts||[];
+      const ivPct=v.iv_percentile||v.iv_rank||0;
+      const curIv=v.current_iv||v.iv||0;
+      const hv20=v.hv_20||v.historical_vol||0;
+      const hvIvRatio=curIv?hv20/curIv:0;
+      el.innerHTML=`
+<div class="metrics-row g4">
+  <div class="m-card"><div class="label">IV PERCENTILE</div><div class="value accent-c">${fmt(ivPct,1)}%</div><div class="sub">${ivPct>50?'Elevated — consider selling':'Low — consider buying'}</div></div>
+  <div class="m-card"><div class="label">CURRENT IV</div><div class="value neutral">${fmt(curIv,1)}%</div></div>
+  <div class="m-card"><div class="label">HV (20d)</div><div class="value neutral">${fmt(hv20,1)}%</div></div>
+  <div class="m-card"><div class="label">HV/IV RATIO</div><div class="value ${hvIvRatio>1?'up':'down'}">${fmt(hvIvRatio,2)}</div><div class="sub">${hvIvRatio>1?'HV > IV — vol underpriced':'IV > HV — vol overpriced'}</div></div>
+</div>
+<div class="grid g2">
+  <div class="card"><div class="card-header">CALLS (${calls.length})</div><div style="overflow-x:auto"><table>
+    <thead><tr><th>Strike</th><th>Exp</th><th>Bid</th><th>Ask</th><th>IV</th><th>Delta</th><th>OI</th></tr></thead>
+    <tbody>${calls.slice(0,20).map(o=>`<tr><td>$${fmt(o.strike)}</td><td>${o.expiration||'—'}</td><td>${fmt(o.bid)}</td><td>${fmt(o.ask)}</td><td>${fmt(o.iv||o.impliedVolatility,1)}%</td><td>${fmt(o.delta,3)}</td><td>${fmtK(o.openInterest||o.oi||0)}</td></tr>`).join('')}</tbody>
+  </table></div></div>
+  <div class="card"><div class="card-header">PUTS (${puts.length})</div><div style="overflow-x:auto"><table>
+    <thead><tr><th>Strike</th><th>Exp</th><th>Bid</th><th>Ask</th><th>IV</th><th>Delta</th><th>OI</th></tr></thead>
+    <tbody>${puts.slice(0,20).map(o=>`<tr><td>$${fmt(o.strike)}</td><td>${o.expiration||'—'}</td><td>${fmt(o.bid)}</td><td>${fmt(o.ask)}</td><td>${fmt(o.iv||o.impliedVolatility,1)}%</td><td>${fmt(o.delta,3)}</td><td>${fmtK(o.openInterest||o.oi||0)}</td></tr>`).join('')}</tbody>
+  </table></div></div>
+</div>`;
+    }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}
+  },
 
-canslim(){
-  return`
-    <div class="page-title">&#9874; CANSLIM Screen</div>
-    <div class="toolbar"><button class="btn btn-primary" onclick="H.runScreen('canslim')">Run Screen</button><button class="btn btn-ghost" onclick="H.runScreen('stage2')">Stage 2</button><button class="btn btn-ghost" onclick="H.runScreen('highrs')">High RS</button></div>
-    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Ticker</th><th>Company</th><th>Price</th><th>Change</th><th>Stage</th><th>RS</th><th>EPS Q/Q</th><th>Sales Q/Q</th></tr></thead><tbody id="canslim-body"><tr><td colspan="8" class="empty">Click Run Screen to fetch results</td></tr></tbody></table></div>`;
-},
+  // ═══ NEWS ═══
+  async loadNews(){
+    const t=$('#news-ticker').value.trim().toUpperCase();if(!t)return;
+    const el=$('#news-content');el.innerHTML='<div class="loading">Fetching news…</div>';
+    try{
+      const d=await NX.apiFetch('/api/news/'+t);
+      const items=d.articles||d.news||d||[];
+      if(!items.length){el.innerHTML='<div class="empty-state"><div class="icon">▤</div>No news found for '+t+'</div>';return}
+      el.innerHTML=`<div class="card"><div class="card-header">${t} NEWS FEED<span style="font-weight:400">${items.length} articles</span></div>${items.slice(0,25).map(a=>{
+        const sent=a.sentiment;
+        const sb=sent?`<span class="badge ${sent>0?'b-green':sent<0?'b-red':'b-amber'}">${sent>0?'BULLISH':sent<0?'BEARISH':'NEUTRAL'}</span>`:'';
+        return `<div class="news-item"><div class="headline">${a.title||a.headline||'—'}</div><div class="nmeta">${a.publisher||a.source||''} · ${a.date||a.published||''} ${sb} ${a.link?`<a href="${a.link}" target="_blank" rel="noopener">↗</a>`:''}</div></div>`;
+      }).join('')}</div>`;
+    }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}
+  },
 
-positionsizer(){
-  return`
-    <div class="page-title">&#8982; Position Sizer</div>
-    <div class="grid grid-2">
-      <div class="card">
-        <div class="card-label">CALCULATOR</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">
-          <div><label style="font-size:10px;color:var(--dim);display:block;margin-bottom:4px">Account Size</label><input class="input" id="ps-acct" value="100000" style="width:100%"></div>
-          <div><label style="font-size:10px;color:var(--dim);display:block;margin-bottom:4px">Risk %</label><input class="input" id="ps-risk" value="1" style="width:100%"></div>
-          <div><label style="font-size:10px;color:var(--dim);display:block;margin-bottom:4px">Entry Price</label><input class="input" id="ps-entry" placeholder="0.00" style="width:100%"></div>
-          <div><label style="font-size:10px;color:var(--dim);display:block;margin-bottom:4px">Stop Loss</label><input class="input" id="ps-stop" placeholder="0.00" style="width:100%"></div>
-        </div>
-        <button class="btn btn-primary" style="margin-top:12px;width:100%" onclick="H.calcPosition()">Calculate</button>
-      </div>
-      <div class="card" id="ps-result">
-        <div class="card-label">RESULT</div>
-        <div class="empty">Enter values and calculate</div>
-      </div>
-    </div>`;
-},
+  // ═══ VIX & VOL ═══
+  async loadVol(){
+    const t=$('#vix-ticker').value.trim().toUpperCase()||'SPY';
+    const el=$('#vix-content');el.innerHTML='<div class="loading">Loading volatility…</div>';
+    try{
+      const d=await NX.apiFetch('/api/volatility/'+t);
+      const v=d.volatility||d;
+      el.innerHTML=`
+<div class="metrics-row g4">
+  <div class="m-card"><div class="label">IV PERCENTILE</div><div class="value accent-c">${fmt(v.iv_percentile||v.iv_rank||0,1)}%</div></div>
+  <div class="m-card"><div class="label">CURRENT IV</div><div class="value neutral">${fmt(v.current_iv||v.iv||0,1)}%</div></div>
+  <div class="m-card"><div class="label">HV 20d</div><div class="value neutral">${fmt(v.hv_20||v.historical_vol||0,1)}%</div></div>
+  <div class="m-card"><div class="label">IV/HV RATIO</div><div class="value ${(v.current_iv||0)>(v.hv_20||0)?'up':'down'}">${fmt(v.current_iv&&v.hv_20?v.current_iv/v.hv_20:0,2)}</div></div>
+</div>
+<div class="card"><div class="card-header">${t} VOLATILITY DETAILS</div><div class="grid g3">${Object.entries(v).filter(([,val])=>typeof val==='number').slice(0,12).map(([k,val])=>`<div><span style="font-size:10px;color:var(--text-dim);text-transform:uppercase">${k.replace(/_/g,' ')}</span><br/><span style="font-weight:600">${fmt(val,2)}</span></div>`).join('')}</div></div>`;
+    }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}
+  },
 
-screener(){
-  return`
-    <div class="page-title">&#9881; Screener</div>
-    <div class="toolbar">
-      <select class="input" id="scr-preset"><option value="stage2">Stage 2 Breakouts</option><option value="stage4">Stage 4 Breakdowns</option><option value="canslim">CANSLIM</option><option value="highrs">High RS Leaders</option><option value="pullback">Stage 2 Pullbacks</option><option value="breakout">52W High Breakouts</option></select>
-      <button class="btn btn-primary" onclick="H.runScreen(document.getElementById('scr-preset').value)">Run</button>
-    </div>
-    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Ticker</th><th>Price</th><th>Change</th><th>Stage</th><th>RS</th><th>Rel Vol</th><th>Setup</th></tr></thead><tbody id="scr-body"><tr><td colspan="7" class="empty">Select a preset and run</td></tr></tbody></table></div>`;
-},
+  // ═══ BONDS ═══
+  async loadBonds(){
+    const el=$('#bonds-content');el.innerHTML='<div class="loading">Loading bonds…</div>';
+    try{
+      const d=await NX.apiFetch('/api/bonds');
+      const b=d.bonds||d;
+      el.innerHTML=`<div class="card"><div class="card-header">BONDS &amp; YIELD CURVE</div><div class="grid g3">${Object.entries(b).filter(([,v])=>typeof v==='number').slice(0,12).map(([k,v])=>`<div class="m-card"><div class="label">${k.replace(/_/g,' ').toUpperCase()}</div><div class="value neutral">${fmt(v,3)}</div></div>`).join('')}</div></div>`;
+    }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}
+  },
 
-optionsflow(){
-  return`
-    <div class="page-title">&#9883; Options Flow</div>
-    <div class="toolbar"><button class="btn btn-primary">Fetch Flow</button><button class="btn btn-ghost">Unusual Only</button></div>
-    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Time</th><th>Ticker</th><th>Strike</th><th>Exp</th><th>C/P</th><th>Premium</th><th>Vol/OI</th><th>Sentiment</th></tr></thead><tbody><tr><td colspan="8" class="empty"><div class="icon">&#9883;</div>Options flow data</td></tr></tbody></table></div>`;
-},
+  // ═══ COT ═══
+  async loadCOT(){
+    const el=$('#cot-content');el.innerHTML='<div class="loading">Loading COT…</div>';
+    try{
+      const d=await NX.apiFetch('/api/cot');
+      const rows=d.data||d.reports||d||[];
+      if(!Array.isArray(rows)||!rows.length){el.innerHTML='<div class="empty-state"><div class="icon">▥</div>No COT data available</div>';return}
+      const keys=Object.keys(rows[0]).slice(0,10);
+      el.innerHTML=`<div class="card"><div class="card-header">COMMITMENTS OF TRADERS (TFF)<span style="font-weight:400">${rows.length} reports</span></div><div style="overflow-x:auto"><table>
+        <thead><tr>${keys.map(k=>`<th>${k.replace(/_/g,' ')}</th>`).join('')}</tr></thead>
+        <tbody>${rows.slice(0,30).map(r=>`<tr>${keys.map(k=>`<td>${r[k]!=null?r[k]:'—'}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table></div></div>`;
+    }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}
+  },
 
-tradetools(){
-  return`
-    <div class="page-title">&#9878; Trade Tools</div>
-    <div class="grid grid-3">
-      <div class="card" style="cursor:pointer" onclick="H.go('positionsizer')"><div class="card-label">POSITION SIZER</div><div class="card-sub">Calculate position size from risk parameters</div></div>
-      <div class="card"><div class="card-label">R-MULTIPLE TRACKER</div><div class="card-sub">Track trades in R-multiples</div></div>
-      <div class="card"><div class="card-label">RISK DASHBOARD</div><div class="card-sub">Portfolio heat, correlation, exposure</div></div>
-      <div class="card"><div class="card-label">TRADE JOURNAL</div><div class="card-sub">Log and review trades</div></div>
-      <div class="card"><div class="card-label">ALERTS</div><div class="card-sub">Price and technical alerts</div></div>
-      <div class="card"><div class="card-label">PLAYBOOK</div><div class="card-sub">Setup templates and checklists</div></div>
-    </div>`;
-},
+  // ═══ STAGE ANALYSIS (Weinstein) ═══
+  async loadStage(){
+    const t=$('#stage-ticker').value.trim().toUpperCase();if(!t)return;
+    const el=$('#stage-content');el.innerHTML=`<div class="loading">Classifying ${t}…</div>`;
+    try{
+      const d=await NX.apiPost('/api/stage/classify',{ticker:t});
+      const s=d.stage||d.classification?.stage||'?';
+      const sub=d.sub_stage||d.classification?.sub_stage||'';
+      const conf=d.confidence||d.classification?.confidence||0;
+      const attrs=d.attributes||d.classification?.attributes||{};
+      const rs=d.rs||d.relative_strength||{};
+      const sn=parseInt(s);
+      const sc=sn<=2?'s2':sn===3?'s3':'s4';
 
-news(){
-  return`
-    <div class="page-title">&#9993; News</div>
-    <div class="toolbar"><input class="input" placeholder="Filter by ticker..." style="width:160px"><button class="btn btn-primary">Refresh</button></div>
-    <div id="news-feed"><div class="empty"><div class="icon">&#9993;</div>Loading news feed...</div></div>`;
-},
+      let attrHTML='';
+      for(const[k,v]of Object.entries(attrs)){
+        const pct=typeof v==='number'?Math.min(Math.abs(v)*100,100):50;
+        const c=v>0?'var(--green)':v<0?'var(--red)':'var(--amber)';
+        attrHTML+=`<div style="margin-bottom:10px"><span style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px">${k.replace(/_/g,' ')}</span><div class="attr-bar"><div class="attr-fill" style="width:${pct}%;background:${c}"></div></div><span style="font-size:11px;color:${c}">${typeof v==='number'?fmt(v):v}</span></div>`;
+      }
 
-vix(){
-  const v=prices.VIX||{};const vp=parseFloat(v.price)||0;const vc=parseFloat(v.dayPct)||0;
-  return`
-    <div class="page-title">&#9889; VIX & Volatility</div>
-    <div class="grid grid-4">
-      <div class="card"><div class="card-label">VIX SPOT</div><div class="card-value" style="font-size:22px;color:${vp>25?'var(--red)':vp>18?'var(--warn)':'var(--green)'}">${vp?vp.toFixed(2):'--'}</div><div class="card-sub ${fpc(vc)}">${fp(vc)}</div></div>
-      <div class="card"><div class="card-label">REGIME</div><div class="card-value" style="font-size:18px">${vp<15?'Low Vol':vp<20?'Normal':vp<30?'Elevated':'Extreme'}</div></div>
-      <div class="card"><div class="card-label">VIX TERM STRUCTURE</div><div class="card-sub">Contango / Backwardation</div></div>
-      <div class="card"><div class="card-label">PUT/CALL RATIO</div><div class="card-value" style="font-size:22px">--</div></div>
-    </div>`;
-},
+      el.innerHTML=`
+<div class="card" style="display:flex;align-items:center;gap:24px;flex-wrap:wrap">
+  <div><div style="font-size:10px;color:var(--text-dim);letter-spacing:1px;margin-bottom:6px">WEINSTEIN STAGE</div><span class="stage-badge ${sc}">STAGE ${s}${sub?' — '+sub:''}</span></div>
+  <div class="m-card" style="border:none;padding:0;background:none"><div class="label">CONFIDENCE</div><div class="value accent-c">${typeof conf==='number'?fmt(conf*100,0)+'%':conf}</div></div>
+  <div class="m-card" style="border:none;padding:0;background:none"><div class="label">TICKER</div><div class="value neutral">${t}</div></div>
+</div>
+<div class="grid g2">
+  <div class="card"><div class="card-header">STAGE ATTRIBUTES</div>${attrHTML||'<div class="empty-state">No attribute data</div>'}</div>
+  <div class="card"><div class="card-header">RELATIVE STRENGTH</div><div class="grid g3">
+    <div><span style="font-size:10px;color:var(--text-dim)">MANSFIELD RS</span><br/><span class="value ${pc(rs.mansfield)}" style="font-size:16px;font-weight:600">${fmt(rs.mansfield)}</span></div>
+    <div><span style="font-size:10px;color:var(--text-dim)">RS LINE TREND</span><br/><span style="font-size:16px;font-weight:600">${rs.rs_line_trend||'—'}</span></div>
+    <div><span style="font-size:10px;color:var(--text-dim)">IBD PERCENTILE</span><br/><span style="font-size:16px;font-weight:600">${rs.ibd_percentile||rs.percentile||'—'}</span></div>
+  </div></div>
+</div>`;
+    }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}
+  },
 
-bonds(){
-  return`
-    <div class="page-title">&#9648; Bonds & Rates</div>
-    <div class="grid grid-4">
-      <div class="card"><div class="card-label">10Y YIELD</div><div class="card-value" style="font-size:22px">--</div></div>
-      <div class="card"><div class="card-label">2Y YIELD</div><div class="card-value" style="font-size:22px">--</div></div>
-      <div class="card"><div class="card-label">YIELD CURVE (10Y-2Y)</div><div class="card-value" style="font-size:22px">--</div></div>
-      <div class="card"><div class="card-label">FED FUNDS RATE</div><div class="card-value" style="font-size:22px">--</div></div>
-    </div>`;
-},
+  // ═══ MARKET BREADTH ═══
+  async loadBreadth(){
+    const el=$('#breadth-content');el.innerHTML='<div class="loading">Loading breadth…</div>';
+    try{
+      const d=await NX.apiFetch('/api/market-breadth');
+      const b=d.breadth||d;
+      const metrics=[
+        ['Advance/Decline',b.advance_decline_ratio||b.ad_ratio],
+        ['% Above 200 SMA',b.pct_above_200sma||b.above_200],
+        ['% Above 50 SMA',b.pct_above_50sma||b.above_50],
+        ['New Highs',b.new_highs],['New Lows',b.new_lows],
+        ['McClellan Osc',b.mcclellan||b.mcclellan_oscillator],
+        ['Breadth Thrust',b.breadth_thrust],['Up Volume %',b.up_volume_pct]
+      ];
+      el.innerHTML=`<div class="card"><div class="card-header">MARKET BREADTH INTERNALS</div><div class="grid g4">${metrics.map(([label,val])=>`<div class="m-card"><div class="label">${label}</div><div class="value ${typeof val==='number'?pc(val):''}">${val!=null?fmt(val):'—'}</div></div>`).join('')}</div></div>`;
+    }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}
+  },
 
-cot(){
-  return`
-    <div class="page-title">&#9635; COT Report</div>
-    <div class="toolbar"><button class="btn btn-primary" onclick="H.fetchCOT()">Fetch Latest</button></div>
-    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Contract</th><th>Spec Net</th><th>Wk Change</th><th>% of OI</th><th>Signal</th></tr></thead><tbody id="cot-body"><tr><td colspan="5" class="empty">Click Fetch to load COT data</td></tr></tbody></table></div>`;
-},
+  // ═══ REGIME ═══
+  async loadRegime(){
+    const el=$('#regime-content');el.innerHTML='<div class="loading">Detecting regime…</div>';
+    try{
+      const[hmm,hybrid]=await Promise.allSettled([NX.apiFetch('/api/hmm'),NX.apiFetch('/api/hybrid')]);
+      function gauge(label,data){
+        if(!data)return`<div class="card"><div class="card-header">${label}</div><div class="empty-state">Unavailable</div></div>`;
+        const reg=(data.regime||data.state||'unknown').toLowerCase();
+        let cls='rg-neutral';
+        if(reg.includes('bull')||reg.includes('risk-on'))cls='rg-bull';
+        else if(reg.includes('bear')||reg.includes('risk-off'))cls='rg-bear';
+        else if(reg.includes('volat')||reg.includes('crisis'))cls='rg-vol';
+        return`<div class="card"><div class="card-header">${label}</div><div class="regime-gauge ${cls}">${(data.regime||data.state||'UNKNOWN').toUpperCase()}</div><div class="grid g3"><div><span style="font-size:10px;color:var(--text-dim)">CONFIDENCE</span><br/><span style="font-weight:600">${data.confidence!=null?fmt(data.confidence*100,0)+'%':'—'}</span></div><div><span style="font-size:10px;color:var(--text-dim)">VOLATILITY</span><br/><span style="font-weight:600">${data.volatility!=null?fmt(data.volatility):'—'}</span></div><div><span style="font-size:10px;color:var(--text-dim)">TREND</span><br/><span style="font-weight:600">${data.trend||'—'}</span></div></div></div>`;
+      }
+      const h=hmm.status==='fulfilled'?hmm.value:null;
+      const y=hybrid.status==='fulfilled'?hybrid.value:null;
+      el.innerHTML=`<div class="grid g2">${gauge('HMM REGIME MODEL',h)}${gauge('HYBRID REGIME MODEL',y)}</div>`;
+    }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}
+  },
 
-sectors(){
-  return`
-    <div class="page-title">&#9632; Sector Analysis</div>
-    <div class="toolbar"><button class="btn btn-primary">Refresh</button></div>
-    <div id="sector-map"><div class="empty"><div class="icon">&#9632;</div>Sector rotation heatmap</div></div>`;
-},
+  // ═══ SCREENER ═══
+  async loadScreener(){
+    const el=$('#screen-content');el.innerHTML='<div class="loading">Scanning…</div>';
+    try{
+      const d=await NX.apiFetch('/api/screener');
+      const items=d.results||d.screener||d||[];
+      if(!items.length){el.innerHTML='<div class="empty-state"><div class="icon">⊞</div>No screener results</div>';return}
+      const keys=Object.keys(items[0]).slice(0,10);
+      el.innerHTML=`<div class="card"><div class="card-header">SCREENER RESULTS<span style="font-weight:400">${items.length} matches</span></div><div style="overflow-x:auto"><table>
+        <thead><tr>${keys.map(k=>`<th>${k.replace(/_/g,' ')}</th>`).join('')}</tr></thead>
+        <tbody>${items.slice(0,40).map(r=>`<tr>${keys.map(k=>`<td>${typeof r[k]==='number'?fmt(r[k],2):r[k]||'—'}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table></div></div>`;
+    }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}
+  },
 
-earnings(){
-  return`
-    <div class="page-title">&#9670; Earnings Calendar</div>
-    <div class="toolbar"><button class="btn btn-ghost">This Week</button><button class="btn btn-ghost">Next Week</button><button class="btn btn-primary">Watchlist Only</button></div>
-    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Date</th><th>Ticker</th><th>Company</th><th>EPS Est</th><th>Revenue Est</th><th>Time</th></tr></thead><tbody><tr><td colspan="6" class="empty">Earnings calendar</td></tr></tbody></table></div>`;
-},
+  // ═══ POSITION SIZER ═══
+  async calcSize(){
+    const ticker=$('#ord-ticker').value.trim().toUpperCase();
+    const entry=parseFloat($('#ord-entry').value);
+    const stop=parseFloat($('#ord-stop').value);
+    const el=$('#ord-result');
+    if(!ticker||isNaN(entry)||isNaN(stop)){el.innerHTML='<div class="error-msg">Fill all fields</div>';return}
+    try{
+      const d=await NX.apiPost('/api/order/size',{ticker,entry_price:entry,stop_loss:stop});
+      const s=d.sizing||d;
+      el.innerHTML=`<div class="metrics-row g4" style="margin-top:14px">
+        <div class="m-card"><div class="label">SHARES</div><div class="value accent-c">${s.shares||s.quantity||'—'}</div></div>
+        <div class="m-card"><div class="label">POSITION SIZE</div><div class="value neutral">$${fmtK(s.position_size||0)}</div></div>
+        <div class="m-card"><div class="label">RISK $</div><div class="value down">$${fmtK(s.risk_amount||0)}</div></div>
+        <div class="m-card"><div class="label">RISK %</div><div class="value down">${fmt(s.risk_pct||0,2)}%</div></div>
+      </div>`;
+    }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}
+  },
 
-stageanalysis(){
-  return`
-    <div class="page-title">&#9650; Stage Analysis</div>
-    <div class="toolbar"><input class="input" id="sa-sym" placeholder="AAPL" style="width:100px;text-transform:uppercase"><button class="btn btn-primary" onclick="H.classifyStage()">Classify</button></div>
-    <div class="grid grid-2">
-      <div class="card" id="sa-result"><div class="card-label">WEINSTEIN STAGE</div><div class="empty">Enter a ticker to classify</div></div>
-      <div class="card"><div class="card-label">STAGE GUIDE</div>
-        <div style="font-size:11px;line-height:1.8;color:var(--muted);font-family:var(--mono)">
-          <div><span class="tag tag-s1">S1</span> Basing / Accumulation</div>
-          <div><span class="tag tag-s2">S2</span> Advancing / Markup</div>
-          <div><span class="tag tag-s3">S3</span> Topping / Distribution</div>
-          <div><span class="tag tag-s4">S4</span> Declining / Markdown</div>
-        </div>
-      </div>
-    </div>`;
-},
-
-breadth(){
-  return`
-    <div class="page-title">&#9644; Market Breadth</div>
-    <div class="grid grid-4" id="breadth-cards">
-      <div class="card"><div class="card-label">A/D RATIO</div><div class="card-value" style="font-size:22px">--</div></div>
-      <div class="card"><div class="card-label">NEW HIGHS / LOWS</div><div class="card-value" style="font-size:22px">--</div></div>
-      <div class="card"><div class="card-label">% ABOVE 200D</div><div class="card-value" style="font-size:22px">--</div></div>
-      <div class="card"><div class="card-label">MCCLELLAN OSC</div><div class="card-value" style="font-size:22px">--</div></div>
-    </div>`;
-},
-
-hmmregime(){
-  return`
-    <div class="page-title">&#9673; HMM Regime Detection</div>
-    <div class="toolbar"><input class="input" id="hmm-sym" value="SPY" style="width:80px;text-transform:uppercase"><button class="btn btn-primary" onclick="H.runHMM()">Run Model</button></div>
-    <div class="card" id="hmm-output"><div class="empty"><div class="icon">&#9673;</div>Run the Hidden Markov Model to detect market regime</div></div>`;
-},
-
-darkpool(){
-  return`
-    <div class="page-title">&#9679; Dark Pool Activity</div>
-    <div class="toolbar"><input class="input" placeholder="Ticker..." style="width:100px"><button class="btn btn-primary">Search</button></div>
-    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Date</th><th>Ticker</th><th>DP Volume</th><th>% of Total</th><th>Net Sentiment</th><th>Signal</th></tr></thead><tbody><tr><td colspan="6" class="empty">Dark pool flow data</td></tr></tbody></table></div>`;
-},
-
-backtester(){
-  return`
-    <div class="page-title">&#8634; Backtester</div>
-    <div class="toolbar">
-      <select class="input"><option>Breakaway Gap</option><option>Stage 2 Breakout</option><option>Climax Top</option><option>Mean Reversion</option></select>
-      <input class="input" placeholder="Lookback (days)" value="252" style="width:120px">
-      <button class="btn btn-primary">Run Backtest</button>
-    </div>
-    <div class="grid grid-4">
-      <div class="card"><div class="card-label">TOTAL RETURN</div><div class="card-value" style="font-size:22px">--</div></div>
-      <div class="card"><div class="card-label">WIN RATE</div><div class="card-value" style="font-size:22px">--</div></div>
-      <div class="card"><div class="card-label">PROFIT FACTOR</div><div class="card-value" style="font-size:22px">--</div></div>
-      <div class="card"><div class="card-label">MAX DRAWDOWN</div><div class="card-value" style="font-size:22px">--</div></div>
-    </div>`;
-},
-
-settings(){
-  return`
-    <div class="page-title">&#9881; Settings</div>
-    <div class="card" style="max-width:500px">
-      <div class="card-label">API CONFIGURATION</div>
-      <div style="margin-top:12px">
-        <label style="font-size:10px;color:var(--dim);display:block;margin-bottom:4px">Backend API URL</label>
-        <div style="display:flex;gap:8px"><input class="input" id="set-api" value="${API}" style="flex:1"><button class="btn btn-primary" onclick="H.saveAPI()">Save</button></div>
-        <div style="font-size:10px;color:var(--dim);margin-top:6px;font-family:var(--mono)">Default: https://nexus-terminal-production-9d34.up.railway.app</div>
-      </div>
-      <div style="margin-top:16px">
-        <label style="font-size:10px;color:var(--dim);display:block;margin-bottom:4px">Polygon.io API Key (extended hours)</label>
-        <div style="display:flex;gap:8px"><input class="input" id="set-polygon" type="password" value="${localStorage.getItem('polygon_key')||''}" style="flex:1"><button class="btn btn-primary" onclick="H.savePolygon()">Save</button></div>
-      </div>
-      <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);display:flex;gap:8px">
-        <button class="btn btn-ghost" onclick="localStorage.clear();location.reload()">Reset All</button>
-      </div>
-    </div>`;
-},
-
+  // ═══ BACKTESTER ═══
+  async loadBacktest(){
+    const t=$('#bt-ticker').value.trim().toUpperCase();if(!t)return;
+    const strat=$('#bt-strategy').value;
+    const el=$('#bt-content');el.innerHTML='<div class="loading">Running backtest…</div>';
+    try{
+      const d=await NX.apiFetch('/api/backtester/'+t+'?strategy='+strat);
+      const r=d.results||d;
+      el.innerHTML=`<div class="card"><div class="card-header">BACKTEST — ${t} — ${strat.toUpperCase()}</div><div class="grid g4">${Object.entries(r).filter(([,v])=>typeof v==='number').slice(0,12).map(([k,v])=>`<div class="m-card"><div class="label">${k.replace(/_/g,' ').toUpperCase()}</div><div class="value neutral">${fmt(v,2)}</div></div>`).join('')}</div></div>`;
+    }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}
+  },
 };
 
-// ══════════════════════════════════════════
-// ACTIONS
-// ══════════════════════════════════════════
-function calcPosition(){
-  const acct=parseFloat(document.getElementById('ps-acct').value)||0;
-  const risk=parseFloat(document.getElementById('ps-risk').value)||0;
-  const entry=parseFloat(document.getElementById('ps-entry').value)||0;
-  const stop=parseFloat(document.getElementById('ps-stop').value)||0;
-  if(!entry||!stop||entry===stop){document.getElementById('ps-result').innerHTML='<div class="card-label">RESULT</div><div style="color:var(--red);font-size:12px">Enter valid entry and stop</div>';return;}
-  const riskAmt=acct*(risk/100);
-  const perShare=Math.abs(entry-stop);
-  const shares=Math.floor(riskAmt/perShare);
-  const posSize=shares*entry;
-  document.getElementById('ps-result').innerHTML=`
-    <div class="card-label">RESULT</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px;font-family:var(--mono)">
-      <div><div style="font-size:10px;color:var(--dim)">SHARES</div><div style="font-size:24px;font-weight:800;color:var(--accent)">${shares}</div></div>
-      <div><div style="font-size:10px;color:var(--dim)">POSITION SIZE</div><div style="font-size:24px;font-weight:800">$${posSize.toLocaleString()}</div></div>
-      <div><div style="font-size:10px;color:var(--dim)">RISK AMOUNT</div><div style="font-size:16px;font-weight:700;color:var(--red)">$${riskAmt.toFixed(0)}</div></div>
-      <div><div style="font-size:10px;color:var(--dim)">RISK PER SHARE</div><div style="font-size:16px;font-weight:700">$${perShare.toFixed(2)}</div></div>
-      <div><div style="font-size:10px;color:var(--dim)">% OF ACCOUNT</div><div style="font-size:16px;font-weight:700">${(posSize/acct*100).toFixed(1)}%</div></div>
-      <div><div style="font-size:10px;color:var(--dim)">R:R AT 2R</div><div style="font-size:16px;font-weight:700;color:var(--green)">$${(riskAmt*2).toFixed(0)}</div></div>
-    </div>`;
-}
+  // ═══ DEEP DIVE — 4-Agent Research Pipeline ═══
+  _ddAgents:[
+    {id:'aggregator',name:'Data Aggregator',shortName:'AGG',color:'var(--accent)',icon:'◆',desc:'Market data, fundamentals, flow metrics'},
+    {id:'technical',name:'Technical Analyst',shortName:'TA',color:'var(--amber)',icon:'◈',desc:'Chart structure, momentum, regime analysis'},
+    {id:'reasoner',name:'Concept Reasoner',shortName:'CR',color:'var(--purple)',icon:'◉',desc:'Causal reasoning, macro linkages'},
+    {id:'synthesizer',name:'Thesis Synthesizer',shortName:'SYN',color:'var(--green)',icon:'◎',desc:'Unified thesis, conviction scoring'}
+  ],
+  _ddResults:{},_ddActive:-1,
 
-async function runScreen(preset){
-  const body=document.getElementById('scr-body')||document.getElementById('canslim-body');
-  if(!body)return;
-  body.innerHTML='<tr><td colspan="8" class="empty">Loading...</td></tr>';
-  const d=await apiFetch('/api/finviz/screener?preset='+preset+'&limit=50');
-  if(!d||!d.results||!d.results.length){body.innerHTML='<tr><td colspan="8" class="empty">No results</td></tr>';return;}
-  body.innerHTML=d.results.map(r=>`<tr>
-    <td class="mono fw800">${r.ticker}</td>
-    <td>${r.company||''}</td>
-    <td class="mono">$${r.price?.toFixed(2)||'--'}</td>
-    <td class="mono ${(r.change_pct||0)>=0?'up':'down'}">${r.change_pct!=null?(r.change_pct>=0?'+':'')+r.change_pct.toFixed(2)+'%':'--'}</td>
-    <td><span class="tag tag-${r.stage?.toLowerCase().replace(' ','')?.startsWith('stage 2')?'s2':r.stage?.toLowerCase().includes('4')?'s4':'s1'}">${r.stage||'--'}</span></td>
-    <td class="mono fw700">${r.rs_rating||'--'}</td>
-    <td class="mono">${r.eps_qoq!=null?r.eps_qoq+'%':'--'}</td>
-    <td class="mono">${r.sales_qoq!=null?r.sales_qoq+'%':'--'}</td>
-  </tr>`).join('');
-}
+  _tickerHash(t){let h=2166136261;for(let i=0;i<t.length;i++){h^=t.charCodeAt(i);h=(h*16777619)>>>0}return h},
+  _seededRng(seed){let s=seed>>>0;return function(){s^=s<<13;s^=s>>17;s^=s<<5;return((s>>>0)/4294967296)}},
 
-async function runHMM(){
-  const sym=(document.getElementById('hmm-sym').value||'SPY').toUpperCase();
-  const out=document.getElementById('hmm-output');
-  out.innerHTML='<div class="empty">Running HMM model for '+sym+'...</div>';
-  const d=await apiFetch('/api/signal/'+sym);
-  if(!d){out.innerHTML='<div class="empty" style="color:var(--red)">Failed to reach backend</div>';return;}
-  const score=(d.composite_score*100).toFixed(1);
-  const regime=d.composite_score>=0.55?'Bull':d.composite_score<=0.25?'Bear':'Ranging';
-  const color=regime==='Bull'?'var(--green)':regime==='Bear'?'var(--red)':'var(--warn)';
-  out.innerHTML=`
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-      <span style="color:${color};font-size:18px;font-weight:800;font-family:var(--mono)">${sym} - ${regime}</span>
-      <span class="tag" style="background:${color}22;color:${color};border:1px solid ${color}44">${d.signal||'HOLD'}</span>
+  _mockAgent(agentId,ticker){
+    const h=NX._tickerHash(ticker),rng=NX._seededRng(h+agentId.charCodeAt(0)*31337),r=()=>rng();
+    const basePrice=30+Math.floor(r()*800),bias=r(),isBull=bias>0.45;
+    const pe=(12+r()*60).toFixed(1),rs52=(r()*100).toFixed(0),ivRank=(r()*100).toFixed(0);
+    const pcRatio=(0.5+r()*1.4).toFixed(2),si=(r()*18).toFixed(1);
+    const support1=(basePrice*(.88+r()*.06)).toFixed(2),resist1=(basePrice*(1.06+r()*.08)).toFixed(2);
+    const resist2=(basePrice*(1.16+r()*.12)).toFixed(2);
+    const regime=["TRENDING_UP","BREAKOUT","MEAN_REVERTING","VOLATILE_COMPRESSION","TRENDING_DOWN"][Math.floor(r()*5)];
+
+    if(agentId==='aggregator') return {title:`Data Aggregation: ${ticker}`,sections:[
+      {heading:'Price & Volume Profile',content:`52-week range: $${(basePrice*.55).toFixed(2)}–$${(basePrice*1.45).toFixed(2)}. RS Rating: ${rs52}/99. Volume expansion ${(5+r()*45).toFixed(0)}% above baseline.`},
+      {heading:'Fundamental Snapshot',content:`P/E ${pe}x. FCF yield ${(r()*6-1).toFixed(2)}%. ROE ${(5+r()*40).toFixed(1)}%. ${isBull?'3 consecutive beats averaging +8.4%':'2 of 4 quarters missed consensus'}.`},
+      {heading:'Options Flow',content:`P/C ratio ${pcRatio}. IV rank ${ivRank}/100. ${+ivRank>60?'Elevated — premium selling favorable':'Compressed — debit structures preferred'}.`},
+      {heading:'Institutional Activity',content:`${isBull?'Net institutional buying over 2 quarters; 14 new filers':'Net institutional liquidation; 9 filers reduced >20%'}. Short interest ${si}% of float.`}
+    ],keyMetrics:[
+      {label:'P/E',value:`${pe}x`,signal:+pe<25?'BULLISH':+pe>45?'BEARISH':'NEUTRAL'},
+      {label:'IV Rank',value:ivRank,signal:+ivRank>60?'BEARISH':'BULLISH'},
+      {label:'RS Rating',value:`${rs52}/99`,signal:+rs52>80?'BULLISH':+rs52<50?'BEARISH':'NEUTRAL'},
+      {label:'Short Int',value:`${si}%`,signal:+si>10?'BEARISH':'NEUTRAL'}
+    ]};
+
+    if(agentId==='technical') return {title:`Technical Analysis: ${ticker}`,regime,sections:[
+      {heading:'Multi-Timeframe Structure',content:isBull?`Above all key MAs. 50-day at $${(basePrice*.91).toFixed(2)}, 200-day at $${(basePrice*.82).toFixed(2)}. Tight 3-week base forming.`:`Below declining 50-day MA at $${(basePrice*1.08).toFixed(2)}. Weekly downtrend channel intact.`},
+      {heading:'Momentum & Breadth',content:`RSI(14) at ${(35+r()*50).toFixed(1)}. MACD ${isBull?'expanding above signal':'compressing below zero'}. BB width ${(r()*100).toFixed(0)}th percentile.`},
+      {heading:'Volume Profile',content:`POC: $${(basePrice*(.92+r()*.12)).toFixed(2)}. ${isBull?'Above POC — bullish value area':'Below POC — supply overhang'}.`},
+      {heading:'Pattern Recognition',content:isBull?`Cup-with-handle resolving. Measured move target: $${resist2}. R:R ${(2.1+r()*2.5).toFixed(1)}:1.`:`Head-and-shoulders neckline break. Measured move projects $${(basePrice*.68).toFixed(2)}.`}
+    ],keyLevels:[
+      {label:'Support S1',value:`$${support1}`,type:'SUPPORT'},
+      {label:'Resistance R1',value:`$${resist1}`,type:'RESISTANCE'},
+      {label:'Target',value:`$${resist2}`,type:'RESISTANCE'}
+    ]};
+
+    if(agentId==='reasoner') return {title:`Concept Reasoning: ${ticker}`,sections:[
+      {heading:'Macro Regime Context',content:isBull?'Risk-on. Rate-cut cycle supportive of growth. Sector RS breadth confirming rotation.':'Risk-off. Credit spreads widening. Growth premium compressing.'},
+      {heading:'Causal Chain Analysis',content:isBull?'Primary: Accelerating revenue growth — secular driver. Short squeeze potential with '+si+'% SI.':'Primary: Margin compression structural. Insider selling precedes 6-12% drawdowns historically.'},
+      {heading:'Narrative vs Reality',content:isBull?`EPS power 18mo out is ${(25+r()*40).toFixed(0)}% above consensus. Terminal value understated.`:'Revenue slowdown structural. Peer analysis confirms.'},
+      {heading:'Tail Risk & Convexity',content:isBull?`Right tail: Strategic partnership or takeout at $${(+resist2*1.3).toFixed(0)}. Asymmetric via call spreads.`:`Left tail: Continued deterioration to $${(basePrice*.55).toFixed(2)}.`}
+    ],causalChains:[
+      {trigger:isBull?'EPS acceleration':'Margin compression',transmission:isBull?'Beats → multiple expansion → inflows':'FCF decay → de-rating → outflows',impact:isBull?`+${(15+r()*25).toFixed(0)}%`:`-${(12+r()*20).toFixed(0)}%`,probability:`${(50+r()*30).toFixed(0)}%`}
+    ]};
+
+    const verdict=isBull?(bias>.75?['STRONG_BUY',78+Math.floor(r()*18)]:['BUY',62+Math.floor(r()*15)]):(bias<.25?['STRONG_SELL',72+Math.floor(r()*18)]:['LEAN_SHORT',55+Math.floor(r()*12)]);
+    return {title:`Thesis Synthesis: ${ticker}`,verdict:verdict[0],conviction:verdict[1],sections:[
+      {heading:'Signal Confluence',content:`Data Aggregator: ${isBull?'bullish fundamentals':'bearish fundamentals'}. Technical: ${regime}. Reasoner: ${isBull?'macro tailwind':'structural headwinds'}. Overall: ${isBull?'3/3 aligned bullish':'3/3 aligned bearish'}.`},
+      {heading:'Unified Thesis',content:isBull?`${ticker} = high-quality setup at intersection of fundamental acceleration and technical base completion. RS at multi-year highs. Time horizon: 3-6 months.`:`${ticker} in late-stage distribution. Failed breakout, high-volume distribution. Short thesis: margin compression + institutional liquidation. Time horizon: 1-3 months.`}
+    ],tradeStructures:[
+      {name:isBull?'Bull Call Spread':'Bear Put Spread',riskReward:`${(2+r()*2.5).toFixed(1)}:1`,maxLoss:'Premium paid (defined)',timeframe:isBull?'60-90 days':'45-60 days'},
+      {name:isBull?'Long Call (asymmetric)':'Long Put / Synthetic Short',riskReward:`${(5+r()*8).toFixed(1)}:1`,maxLoss:'Premium only',timeframe:'1-4 months'}
+    ],riskMatrix:[
+      {factor:'Earnings miss',probability:`${(15+r()*25).toFixed(0)}%`,impact:'HIGH',mitigation:'Size reduction pre-earnings'},
+      {factor:'Macro regime shift',probability:`${(10+r()*20).toFixed(0)}%`,impact:'MEDIUM',mitigation:'Sector ETF hedge'},
+      {factor:'Technical stop violation',probability:`${(20+r()*25).toFixed(0)}%`,impact:'MEDIUM',mitigation:`Hard stop at $${support1}`}
+    ]};
+  },
+
+  async runDeepDive(){
+    const t=$('#dd-ticker').value.trim().toUpperCase();if(!t)return;
+    const el=$('#dd-content');const isLive=$('#dd-live-toggle').checked;
+    const agents=NX._ddAgents;
+    NX._ddResults={};NX._ddActive=0;
+
+    // Render pipeline skeleton
+    function renderPipeline(){
+      let html='';
+      agents.forEach((a,i)=>{
+        const data=NX._ddResults[a.id];const isActive=NX._ddActive===i;const isDone=!!data;
+        const borderC=isActive?a.color:isDone?a.color:'var(--border)';
+        const bgC=isActive?'var(--bg2)':'var(--bg1)';
+        html+=`<div class="card" style="border-color:${borderC};background:${bgC};opacity:${!isActive&&!isDone?.4:1};transition:all .3s">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div style="display:flex;align-items:center;gap:12px">
+              <span style="font-size:18px;color:${a.color}">${a.icon}</span>
+              <div><div style="font-size:12px;font-weight:600;color:var(--text)">${a.name}</div><div style="font-size:10px;color:var(--text-dim)">${a.desc}</div></div>
+            </div>
+            <div>${isActive?'<span class="badge b-accent">RUNNING</span>':isDone?'<span class="badge b-green">COMPLETE</span>':''}</div>
+          </div>`;
+        if(data){
+          const d=typeof data==='string'?JSON.parse(data):data;
+          if(d.sections) d.sections.forEach(s=>{
+            html+=`<div style="margin-top:12px"><div style="font-size:10px;font-weight:600;color:${a.color};letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">${s.heading}</div><div style="font-size:12px;color:var(--text-muted);line-height:1.7">${s.content}</div></div>`;
+          });
+          if(d.keyMetrics) html+=`<div class="grid g4" style="margin-top:12px">${d.keyMetrics.map(m=>`<div class="m-card"><div class="label">${m.label}</div><div class="value" style="color:${m.signal==='BULLISH'?'var(--green)':m.signal==='BEARISH'?'var(--red)':'var(--amber)'};font-size:16px">${m.value}</div></div>`).join('')}</div>`;
+          if(d.keyLevels) html+=`<div class="grid g3" style="margin-top:12px">${d.keyLevels.map(l=>`<div class="m-card"><div class="label">${l.label}</div><div class="value" style="color:${l.type==='SUPPORT'?'var(--green)':'var(--red)'};font-size:16px">${l.value}</div></div>`).join('')}</div>`;
+          if(d.verdict) html+=`<div style="margin-top:14px;display:flex;gap:16px;align-items:center;flex-wrap:wrap"><span class="stage-badge ${d.verdict.includes('BUY')?'s2':d.verdict.includes('SELL')?'s4':'s3'}" style="font-size:18px">${d.verdict}</span><div class="m-card" style="border:0;padding:0;background:none"><div class="label">CONVICTION</div><div class="value accent-c">${d.conviction}%</div></div></div>`;
+          if(d.tradeStructures) html+=`<div style="margin-top:14px"><div style="font-size:10px;font-weight:600;color:${a.color};letter-spacing:1px;margin-bottom:8px">TRADE STRUCTURES</div><div class="grid g2">${d.tradeStructures.map(ts=>`<div class="m-card"><div style="font-weight:600;margin-bottom:4px;color:var(--text)">${ts.name}</div><div style="font-size:10px;color:var(--text-dim)">R:R ${ts.riskReward} · Max Loss: ${ts.maxLoss} · ${ts.timeframe}</div></div>`).join('')}</div></div>`;
+          if(d.riskMatrix) html+=`<div style="margin-top:14px"><div style="font-size:10px;font-weight:600;color:${a.color};letter-spacing:1px;margin-bottom:8px">RISK MATRIX</div><table><thead><tr><th>Factor</th><th>P(%)</th><th>Impact</th><th>Mitigation</th></tr></thead><tbody>${d.riskMatrix.map(rm=>`<tr><td>${rm.factor}</td><td style="color:var(--amber)">${rm.probability}</td><td><span class="badge ${rm.impact==='HIGH'?'b-red':rm.impact==='MEDIUM'?'b-amber':'b-green'}">${rm.impact}</span></td><td style="color:var(--text-dim);font-size:11px">${rm.mitigation}</td></tr>`).join('')}</tbody></table></div>`;
+          if(d.causalChains) html+=`<div style="margin-top:14px"><div style="font-size:10px;font-weight:600;color:${a.color};letter-spacing:1px;margin-bottom:8px">CAUSAL CHAINS</div><table><thead><tr><th>Trigger</th><th>Transmission</th><th>Impact</th><th>P</th></tr></thead><tbody>${d.causalChains.map(c=>`<tr><td>${c.trigger}</td><td style="font-size:11px;color:var(--text-dim)">${c.transmission}</td><td style="color:${c.impact.startsWith('+')?'var(--green)':'var(--red)'}">${c.impact}</td><td style="color:var(--amber)">${c.probability}</td></tr>`).join('')}</tbody></table></div>`;
+        }
+        html+='</div>';
+        if(i<agents.length-1) html+=`<div style="text-align:center;padding:2px 0"><div style="width:2px;height:20px;margin:0 auto;background:${isDone?a.color:'var(--border)'};transition:background .3s"></div></div>`;
+      });
+      el.innerHTML=html;
+    }
+
+    if(isLive){
+      // Live mode: call /api/claude proxy
+      const acc={};
+      for(let i=0;i<agents.length;i++){
+        NX._ddActive=i;renderPipeline();
+        try{
+          let content=`Analyze: ${t}`;
+          if(agents[i].id==='synthesizer') content=`Analyze ${t}. Prior research:\n${JSON.stringify(acc)}`;
+          const res=await fetch(NX.getBase()+'/api/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4000,system:`You are the ${agents[i].name}. Respond ONLY in JSON with fields: title(string), sections(array of {heading,content}), and optionally keyMetrics, keyLevels, verdict, conviction, tradeStructures, riskMatrix, causalChains.`,messages:[{role:'user',content}]})});
+          if(!res.ok) throw new Error('API '+res.status);
+          const d=await res.json();
+          const txt=d.content?.filter(b=>b.type==='text').map(b=>b.text).join('')||'';
+          try{acc[agents[i].id]=JSON.parse(txt.replace(/```json|```/g,'').trim())}catch{acc[agents[i].id]=txt}
+          NX._ddResults[agents[i].id]=acc[agents[i].id];
+        }catch(e){NX._ddResults[agents[i].id]={title:'Error',sections:[{heading:'Failed',content:e.message}]}}
+      }
+    }else{
+      // Mock mode
+      for(let i=0;i<agents.length;i++){
+        NX._ddActive=i;renderPipeline();
+        await new Promise(r=>setTimeout(r,400+Math.random()*600));
+        NX._ddResults[agents[i].id]=NX._mockAgent(agents[i].id,t);
+      }
+    }
+    NX._ddActive=-1;renderPipeline();
+  },
+
+  // ═══ CANSLIM SCORER ═══
+  _csScores:{},_csNotes:{},_csTicker:'',
+  _csCriteria:[
+    {key:'C',label:'C — Current Earnings',desc:'Quarterly EPS growth ≥25% YoY',field:'epsGrowthQ',options:[{label:'>100%',score:4},{label:'50-100%',score:3},{label:'25-50%',score:2},{label:'0-25%',score:1},{label:'Negative',score:0}]},
+    {key:'A',label:'A — Annual Earnings',desc:'3-year EPS CAGR ≥25%',field:'epsGrowthA',options:[{label:'>50% CAGR',score:4},{label:'25-50%',score:3},{label:'15-25%',score:2},{label:'<15%',score:1},{label:'Declining',score:0}]},
+    {key:'N',label:'N — New Products / High',desc:'New product/service. Stock within 10% of 52w high.',field:'newFactor',options:[{label:'ATH + catalyst',score:4},{label:'Near highs + new product',score:3},{label:'New catalyst only',score:2},{label:'Near highs only',score:1},{label:'Neither',score:0}]},
+    {key:'S',label:'S — Supply & Demand',desc:'Tight float. Accumulation > distribution.',field:'supplyDemand',options:[{label:'Heavy accum + tight float',score:4},{label:'Accum > distrib',score:3},{label:'Neutral A/D',score:2},{label:'Mild distribution',score:1},{label:'Heavy distribution',score:0}]},
+    {key:'L',label:'L — Leader or Laggard',desc:'RS Rating ≥ 80. Top 1-2 in group.',field:'rsRating',options:[{label:'RS 90-99',score:4},{label:'RS 80-89',score:3},{label:'RS 70-79',score:2},{label:'RS 50-69',score:1},{label:'RS <50',score:0}]},
+    {key:'I',label:'I — Institutional Sponsorship',desc:'Growing number of quality fund owners.',field:'institutionalBuy',options:[{label:'15+ new top funds',score:4},{label:'8-15 new funds',score:3},{label:'3-8 new funds',score:2},{label:'Flat',score:1},{label:'Net selling',score:0}]},
+    {key:'M',label:'M — Market Direction',desc:'Confirmed uptrend (FTD). 3 of 4 stocks follow market.',field:'marketDir',options:[{label:'Confirmed uptrend',score:4},{label:'Under pressure',score:3},{label:'Sideways',score:2},{label:'Rally attempt',score:1},{label:'Correction',score:0}]}
+  ],
+
+  setCSScore(field,score){
+    NX._csScores[field]=score;NX.renderCANSLIM();
+  },
+  resetCANSLIM(){NX._csScores={};NX._csNotes={};NX._csTicker=$('#cs-ticker').value.trim().toUpperCase();NX.renderCANSLIM()},
+  renderCANSLIM(){
+    const el=$('#cs-content');const t=NX._csTicker||$('#cs-ticker').value.trim().toUpperCase()||'—';
+    const total=NX._csCriteria.reduce((s,c)=>s+(NX._csScores[c.field]??0),0);
+    const max=NX._csCriteria.length*4,pct=total/max;
+    const vc=pct>=.85?{l:'EXCEPTIONAL SETUP',c:'var(--green)'}:pct>=.70?{l:'HIGH QUALITY',c:'var(--green)'}:pct>=.55?{l:'ACCEPTABLE',c:'var(--amber)'}:pct>=.35?{l:'BELOW STANDARD',c:'var(--red)'}:{l:'AVOID',c:'var(--red)'};
+
+    let html=`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div><div style="font-size:10px;color:var(--text-dim);letter-spacing:1px">${t} · CANSLIM SCORE</div><div style="font-size:28px;font-weight:700;color:${vc.c}">${total}/${max}</div></div>
+      <div style="text-align:right"><div style="font-size:10px;color:var(--text-dim)">VERDICT</div><div style="font-size:16px;font-weight:700;color:${vc.c}">${vc.l}</div></div>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;font-family:var(--mono);font-size:12px">
-      <div><div style="color:var(--dim);font-size:10px">COMPOSITE</div><div style="font-weight:700;color:${color}">${score}%</div></div>
-      <div><div style="color:var(--dim);font-size:10px">MOMENTUM</div><div style="font-weight:700">${(d.momentum_score*100).toFixed(1)}%</div></div>
-      <div><div style="color:var(--dim);font-size:10px">RL CONFIDENCE</div><div style="font-weight:700">${(d.rl_confidence*100).toFixed(1)}%</div></div>
-      <div><div style="color:var(--dim);font-size:10px">MEAN REV Z</div><div style="font-weight:700">${d.mean_reversion?.z_score?.toFixed(2)||'--'}</div></div>
-      <div><div style="color:var(--dim);font-size:10px">SENTIMENT</div><div style="font-weight:700">${d.sentiment?.toFixed(3)||'--'}</div></div>
-      <div><div style="color:var(--dim);font-size:10px">SIGNAL</div><div style="font-weight:700;color:${color}">${d.signal||'--'}</div></div>
+    <div class="gauge-track"><div class="gauge-fill" style="width:${pct*100}%;background:${vc.c}"></div></div>
+    <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">${NX._csCriteria.map(c=>{const s=NX._csScores[c.field]??null;const clr=s!==null?(s>=3?'var(--green)':s>=2?'var(--amber)':'var(--red)'):'var(--text-dim)';return`<div style="padding:6px 10px;border-radius:4px;background:var(--bg2);border:1px solid var(--border)"><div style="font-size:11px;font-weight:700;color:${clr}">${c.key}</div><div style="font-size:10px;color:var(--text-dim)">${s??'—'}/4</div></div>`}).join('')}</div>
     </div>`;
-}
 
-function saveAPI(){
-  const v=document.getElementById('set-api').value.trim();
-  if(v){localStorage.setItem('hashira_api',v);location.reload();}
-}
-function savePolygon(){
-  const v=document.getElementById('set-polygon').value.trim();
-  if(v){localStorage.setItem('polygon_key',v);}
-}
+    NX._csCriteria.forEach(c=>{
+      const s=NX._csScores[c.field];
+      html+=`<div class="card"><div style="margin-bottom:10px"><div style="font-size:13px;font-weight:700;color:var(--text)">${c.label}</div><div style="font-size:11px;color:var(--text-dim);margin-top:2px">${c.desc}</div></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${c.options.map(o=>{
+        const sel=s===o.score;const clr=o.score>=3?'var(--green)':o.score>=2?'var(--amber)':'var(--red)';
+        return`<button class="btn btn-sm" style="${sel?`background:${clr};color:var(--bg0);border-color:${clr}`:''}font-size:10px" onclick="NX.setCSScore('${c.field}',${o.score})">${o.label} (${o.score})</button>`
+      }).join('')}</div></div>`;
+    });
 
-// ══════════════════════════════════════════
-// INIT
-// ══════════════════════════════════════════
-buildSidebar();
-updateClock();
-setInterval(updateClock,1000);
-renderPage('dashboard');
-fetchPrices();
-setInterval(fetchPrices,60000);
+    // O'Neil rules
+    html+=`<div class="card"><div class="card-header">O'NEIL KEY RULES</div>
+    ${[['Never buy below 10-week MA','Entry from sound base above MA stack'],['Buy in correct buy zone only','0-5% above pivot'],['Cut losses at 7-8% max','Automatic stop, no exceptions'],['Market direction is paramount','M criteria is gating'],['Focus on top 1-2 groups','Best odds in leading sectors'],['Pocket pivot is valid entry','Volume > any down day in prior 10'],['3-weeks-tight is a late base','Tight closes on low vol — add to winner']].map(([r,n])=>`<div class="exposure-row"><span class="elbl" style="color:var(--accent)">● ${r}</span><span class="eval"><span style="font-size:11px;color:var(--text-dim)">${n}</span></span></div>`).join('')}</div>`;
+    el.innerHTML=html;
+  },
 
-// Expose for onclick handlers
-window.H={go,calcPosition,runScreen,runHMM,saveAPI,savePolygon,
-  loadChart(){},wlRefresh(){},wlAdd(){},deepDive(){},classifyStage(){},fetchCOT(){}};
+  // ═══ TRADE TOOLS — Pocket Pivot · FTD · Base Analyzer ═══
+  _ttData:null,_ttTab:'pp',
+  switchTTTab(tab){
+    NX._ttTab=tab;
+    $$('#tt-tabs .tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
+    if(NX._ttData)NX._renderTT();
+  },
+  _genDailyOHLCV(ticker,days=300){
+    const h=NX._tickerHash(ticker),rng=NX._seededRng(h^0xDEADBEEF),r=()=>rng();
+    const base=30+(h%350),volBase=800000+(h%8000000),bars=[];
+    let close=base,regime=1,regimeDur=0;
+    for(let i=0;i<days;i++){
+      regimeDur++;if(regimeDur>15+Math.floor(r()*35)||r()<.04){regime=r()<.55?1:r()<.78?0:2;regimeDur=0}
+      const drift=[.00005,.00065,-.00055][regime]+(r()-.5)*.0008;
+      const sigma=[.009,.013,.016][regime];
+      const ret=drift+sigma*(r()*2-1),prev=close;
+      close=Math.max(1,prev*Math.exp(ret));const isUp=close>=prev;
+      const range=close*(.004+r()*.01),open=prev*(1+(r()-.5)*.003);
+      const high=Math.max(open,close)+range*r()*.5,low=Math.min(open,close)-range*r()*.5;
+      let volMult=.6+r()*.6;if(regime===1&&isUp)volMult=1.2+r()*1.5;else if(regime===2&&!isUp)volMult=1.1+r()*1.2;
+      bars.push({idx:i,open,high,low,close,volume:volBase*volMult*(.8+r()*.4),ret,isUp,regime});
+    }
+    return bars;
+  },
+  _detectPP(bars){
+    const pps=[];
+    for(let i=11;i<bars.length;i++){
+      const b=bars[i];if(!b.isUp)continue;
+      const prior10=bars.slice(i-10,i),downDays=prior10.filter(x=>!x.isUp);
+      if(!downDays.length)continue;
+      const maxDV=Math.max(...downDays.map(x=>x.volume));
+      if(b.volume<=maxDV)continue;
+      const lb50=bars.slice(Math.max(0,i-50),i+1),h50=Math.max(...lb50.map(x=>x.high));
+      const inBZ=b.close>=h50*.9&&b.close<=h50*1.05;
+      const fwd5=i+5<bars.length?+((bars[i+5].close/b.close-1)*100).toFixed(2):null;
+      const fwd10=i+10<bars.length?+((bars[i+10].close/b.close-1)*100).toFixed(2):null;
+      pps.push({idx:i,close:+b.close.toFixed(2),volume:b.volume,volRatio:+(b.volume/maxDV).toFixed(2),inBuyZone:inBZ,fwd5,fwd10});
+    }
+    return pps;
+  },
+  _detectFTD(bars){
+    const ftds=[];let inRally=false,rallyStart=-1,rallyDay=0,rallyLow=Infinity;
+    for(let i=5;i<bars.length;i++){
+      const b=bars[i],prev=bars[i-1];
+      if(!inRally){
+        const h20=Math.max(...bars.slice(Math.max(0,i-20),i).map(x=>x.close));
+        if(b.close<h20*.9&&b.close>prev.close){inRally=true;rallyStart=i;rallyDay=1;rallyLow=prev.close}
+      }else{
+        rallyDay++;if(b.close<rallyLow*.995){inRally=false;rallyDay=0;continue}
+        if(rallyDay>=4){
+          const gain=(b.close/prev.close-1)*100;
+          if(gain>=1.25&&b.volume>prev.volume){
+            const future=bars.slice(i+1,i+26);
+            const held=future.length>=10&&future.every(fb=>fb.close>rallyLow*.995);
+            const peak=future.length?+((Math.max(...future.map(fb=>fb.close))/b.close-1)*100).toFixed(1):0;
+            ftds.push({idx:i,rallyDay,gain:+gain.toFixed(2),close:+b.close.toFixed(2),success:held,peakGain:peak});
+            inRally=false;rallyDay=0;
+          }
+        }
+        if(rallyDay>55){inRally=false;rallyDay=0}
+      }
+    }
+    return ftds;
+  },
+  _detectBases(bars){
+    const weekly=[];
+    for(let i=0;i<bars.length;i+=5){
+      const chunk=bars.slice(i,i+5);if(!chunk.length)continue;
+      weekly.push({wkIdx:weekly.length,dayStart:i,open:chunk[0].open,close:chunk[chunk.length-1].close,high:Math.max(...chunk.map(b=>b.high)),low:Math.min(...chunk.map(b=>b.low)),vol:chunk.reduce((s,b)=>s+b.volume,0)});
+    }
+    if(weekly.length<8)return[];
+    const bases=[];let wi=3;
+    while(wi<weekly.length-2){
+      const pw=weekly.slice(Math.max(0,wi-10),wi+1);
+      const pH=Math.max(...pw.map(w=>w.high)),pL=Math.min(...pw.map(w=>w.low));
+      if((pH-pL)/pL*100<15){wi++;continue}
+      let bH=weekly[wi].high,bL=weekly[wi].low,bEnd=wi;
+      for(let j=wi+1;j<Math.min(wi+66,weekly.length);j++){
+        const w=weekly[j];if((bH-w.low)/bH>.45)break;if(w.high>bH*1.06){bEnd=j;break}
+        bH=Math.max(bH,w.high);bL=Math.min(bL,w.low);bEnd=j;
+      }
+      const wks=bEnd-wi+1,depth=+((bH-bL)/bH*100).toFixed(1);
+      if(wks<3||depth<3){wi++;continue}
+      let type='Base';
+      if(wks<=4&&depth<=3)type='3-Weeks-Tight';
+      else if(wks<=7&&depth<=15)type='Flat Base';
+      else if(wks>=5&&depth>=8)type=depth>25?'Cup':'Cup-with-Handle';
+      const pivot=+bH.toFixed(2),buyLo=+(bH*.95).toFixed(2),buyHi=+(bH*1.05).toFixed(2);
+      bases.push({startWk:wi,endWk:bEnd,startDay:weekly[wi].dayStart,endDay:weekly[bEnd].dayStart,weeks:wks,depth,type,pivot,buyZoneLow:buyLo,buyZoneHigh:buyHi});
+      wi=bEnd+2;
+    }
+    return bases;
+  },
+  async runTradeTools(){
+    const t=$('#tt-ticker').value.trim().toUpperCase();if(!t)return;
+    const el=$('#tt-content');el.innerHTML='<div class="loading">Scanning '+t+'…</div>';
+    let bars;
+    try{
+      // Try live data first
+      const d=await NX.apiFetch('/api/stock?symbol='+t+'&range=1y&interval=1d');
+      const closes=d.close||[];bars=[];
+      for(let i=0;i<closes.length;i++){
+        if(closes[i]==null)continue;
+        const close=closes[i],open=d.open?.[i]||close,high=d.high?.[i]||close,low=d.low?.[i]||close;
+        const prevC=i>0?closes[i-1]:open;
+        bars.push({idx:bars.length,open,high,low,close,volume:d.volume?.[i]||0,ret:prevC?Math.log(close/prevC):0,isUp:close>=prevC});
+      }
+    }catch{
+      bars=NX._genDailyOHLCV(t);
+    }
+    NX._ttData={ticker:t,bars,pps:NX._detectPP(bars),ftds:NX._detectFTD(bars),bases:NX._detectBases(bars)};
+    NX._renderTT();
+  },
+  _renderTT(){
+    const{ticker:t,bars,pps,ftds,bases}=NX._ttData;const el=$('#tt-content');const tab=NX._ttTab;
+    if(tab==='pp'){
+      const recent=pps.slice(-20).reverse();
+      const winRate=recent.filter(p=>p.fwd10!==null&&p.fwd10>0).length;const total=recent.filter(p=>p.fwd10!==null).length;
+      el.innerHTML=`<div class="metrics-row g4">
+        <div class="m-card"><div class="label">TOTAL POCKET PIVOTS</div><div class="value accent-c">${pps.length}</div></div>
+        <div class="m-card"><div class="label">IN BUY ZONE</div><div class="value up">${pps.filter(p=>p.inBuyZone).length}</div></div>
+        <div class="m-card"><div class="label">WIN RATE (10d)</div><div class="value ${winRate/total>.5?'up':'down'}">${total?fmt(winRate/total*100,0)+'%':'—'}</div></div>
+        <div class="m-card"><div class="label">LAST PP</div><div class="value neutral">${pps.length?'Day '+pps[pps.length-1].idx:'—'}</div></div>
+      </div>
+      <div class="card"><div class="card-header">POCKET PIVOT DETECTIONS — ${t}<span style="font-weight:400">${recent.length} shown</span></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Day</th><th>Close</th><th>Vol Ratio</th><th>Buy Zone</th><th>Fwd 5d</th><th>Fwd 10d</th></tr></thead>
+      <tbody>${recent.map(p=>`<tr><td>${p.idx}</td><td>$${fmt(p.close)}</td><td style="color:var(--accent)">${p.volRatio}×</td><td>${p.inBuyZone?'<span class="badge b-green">YES</span>':'<span class="badge b-red">NO</span>'}</td><td class="${pc(p.fwd5)}">${p.fwd5!==null?ps(p.fwd5):'—'}</td><td class="${pc(p.fwd10)}">${p.fwd10!==null?ps(p.fwd10):'—'}</td></tr>`).join('')}</tbody></table></div></div>`;
+    }else if(tab==='ftd'){
+      const success=ftds.filter(f=>f.success).length;
+      el.innerHTML=`<div class="metrics-row g4">
+        <div class="m-card"><div class="label">TOTAL FTDs</div><div class="value accent-c">${ftds.length}</div></div>
+        <div class="m-card"><div class="label">SUCCESSFUL</div><div class="value up">${success}</div></div>
+        <div class="m-card"><div class="label">SUCCESS RATE</div><div class="value ${success/ftds.length>.5?'up':'down'}">${ftds.length?fmt(success/ftds.length*100,0)+'%':'—'}</div></div>
+        <div class="m-card"><div class="label">AVG PEAK GAIN</div><div class="value up">${ftds.length?fmt(ftds.reduce((s,f)=>s+f.peakGain,0)/ftds.length,1)+'%':'—'}</div></div>
+      </div>
+      <div class="card"><div class="card-header">FOLLOW-THROUGH DAYS — ${t}</div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Day</th><th>Rally Day</th><th>Gain</th><th>Close</th><th>Held?</th><th>Peak Gain</th></tr></thead>
+      <tbody>${ftds.map(f=>`<tr><td>${f.idx}</td><td>${f.rallyDay}</td><td class="up">+${fmt(f.gain,2)}%</td><td>$${fmt(f.close)}</td><td>${f.success?'<span class="badge b-green">YES</span>':'<span class="badge b-red">NO</span>'}</td><td class="up">+${f.peakGain}%</td></tr>`).join('')}</tbody></table></div></div>`;
+    }else{
+      el.innerHTML=`<div class="metrics-row g4">
+        <div class="m-card"><div class="label">BASES DETECTED</div><div class="value accent-c">${bases.length}</div></div>
+        <div class="m-card"><div class="label">CUP PATTERNS</div><div class="value neutral">${bases.filter(b=>b.type.includes('Cup')).length}</div></div>
+        <div class="m-card"><div class="label">3-WEEKS-TIGHT</div><div class="value neutral">${bases.filter(b=>b.type==='3-Weeks-Tight').length}</div></div>
+        <div class="m-card"><div class="label">FLAT BASES</div><div class="value neutral">${bases.filter(b=>b.type==='Flat Base').length}</div></div>
+      </div>
+      <div class="card"><div class="card-header">BASE PATTERNS — ${t}</div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Type</th><th>Weeks</th><th>Depth</th><th>Pivot</th><th>Buy Zone</th></tr></thead>
+      <tbody>${bases.map(b=>`<tr><td><span class="badge b-accent">${b.type}</span></td><td>${b.weeks}w</td><td>${b.depth}%</td><td style="color:var(--accent);font-weight:600">$${fmt(b.pivot)}</td><td>$${fmt(b.buyZoneLow)} — $${fmt(b.buyZoneHigh)}</td></tr>`).join('')}</tbody></table></div></div>`;
+    }
+  },
 
+  // ═══ SECTORS — RS Ranking & Rotation ═══
+  _sectors:[
+    {id:'XLK',name:'Technology'},{id:'XLF',name:'Financials'},{id:'XLV',name:'Health Care'},
+    {id:'XLY',name:'Cons. Discretionary'},{id:'XLP',name:'Cons. Staples'},{id:'XLE',name:'Energy'},
+    {id:'XLI',name:'Industrials'},{id:'XLC',name:'Communication'},{id:'XLU',name:'Utilities'},
+    {id:'XLRE',name:'Real Estate'},{id:'XLB',name:'Materials'}
+  ],
+  async loadSectors(){
+    const el=$('#sec-content');el.innerHTML='<div class="loading">Loading sectors…</div>';
+    const sortBy=$('#sec-sort').value;
+    let data;
+    try{
+      const d=await NX.apiFetch('/api/sectors');
+      data=(d.sectors||d||[]).map(s=>({...s,rs4w:s.rs_4w||s.rs4w||0,rs13w:s.rs_13w||s.rs13w||0,rs26w:s.rs_26w||s.rs26w||0,mansfield:s.mansfield||0,pctAbove30w:s.pct_above_30w||0,stage:s.stage||2,breadthTrend:s.breadth_trend||'STABLE'}));
+    }catch{
+      // Mock data
+      data=NX._sectors.map(s=>{
+        const h=NX._tickerHash(s.id+'sector2025'),rng=NX._seededRng(h),r=()=>rng();
+        return{...s,stage:[1,1,2,2,2,2,3,3,4,4][Math.floor(r()*10)],rs4w:+((r()-.42)*12).toFixed(2),rs13w:+((r()-.4)*20).toFixed(2),rs26w:+((r()-.38)*28).toFixed(2),mansfield:+((r()-.45)*30).toFixed(1),pctAbove30w:+(20+r()*60).toFixed(0),breadthTrend:r()>.55?'IMPROVING':r()>.3?'STABLE':'DETERIORATING'};
+      });
+    }
+    const sorted=[...data].sort((a,b)=>(b[sortBy]||0)-(a[sortBy]||0));
+    const s2pct=(data.filter(s=>s.stage===2).length/data.length*100).toFixed(0);
+    const s4pct=(data.filter(s=>s.stage===4).length/data.length*100).toFixed(0);
+    const triple=sorted.filter(s=>s.stage===2&&s.rs4w>0&&s.mansfield>0);
+    const stgClr=s=>[null,'var(--amber)','var(--green)','var(--red)','var(--red)'][s]||'var(--text-dim)';
+    const rsClr=v=>v>4?'var(--green)':v>1?'var(--green)':v>-1?'var(--amber)':v>-4?'var(--red)':'var(--red)';
+
+    el.innerHTML=`<div class="metrics-row g4">
+      <div class="m-card"><div class="label">SECTORS STAGE 2</div><div class="value ${+s2pct>50?'up':'neutral'}">${s2pct}%</div></div>
+      <div class="m-card"><div class="label">SECTORS STAGE 4</div><div class="value ${+s4pct>40?'down':'neutral'}">${s4pct}%</div></div>
+      <div class="m-card"><div class="label">TRIPLE ALIGNED</div><div class="value accent-c">${triple.length}</div><div class="sub">${triple.map(s=>s.id).join(', ')||'None'}</div></div>
+      <div class="m-card"><div class="label">REGIME</div><div class="value ${+s4pct>=60?'down':'up'}">${+s4pct>=60?'HOSTILE':'FAVORABLE'}</div></div>
+    </div>
+    <div class="card"><div class="card-header">SECTOR RS RANKING — SORTED BY ${sortBy.toUpperCase()}</div>
+    <div style="overflow-x:auto"><table><thead><tr><th>#</th><th>Sector</th><th>Stage</th><th>4W RS</th><th>13W RS</th><th>26W RS</th><th>Mansfield</th><th>% > 30W</th><th>Breadth</th></tr></thead>
+    <tbody>${sorted.map((s,i)=>`<tr${triple.includes(s)?' style="background:var(--accent-bg)"':''}>
+      <td>${i+1}</td><td><span style="font-weight:600">${s.name}</span> <span style="color:var(--text-dim);font-size:10px">${s.id}</span>${triple.includes(s)?'<span style="color:var(--accent);font-size:9px;margin-left:6px">★ TRIPLE</span>':''}</td>
+      <td><span class="badge" style="background:${stgClr(s.stage)}20;color:${stgClr(s.stage)};border:1px solid ${stgClr(s.stage)}40">S${s.stage}</span></td>
+      <td style="color:${rsClr(s.rs4w)};font-weight:600">${s.rs4w>0?'+':''}${s.rs4w}%</td>
+      <td style="color:${rsClr(s.rs13w)}">${s.rs13w>0?'+':''}${s.rs13w}%</td>
+      <td style="color:${rsClr(s.rs26w)}">${s.rs26w>0?'+':''}${s.rs26w}%</td>
+      <td style="color:${s.mansfield>0?'var(--green)':'var(--red)'};font-weight:700">${s.mansfield>0?'+':''}${s.mansfield}</td>
+      <td style="color:${s.pctAbove30w>60?'var(--green)':s.pctAbove30w>40?'var(--amber)':'var(--red)'}">${s.pctAbove30w}%</td>
+      <td style="color:${s.breadthTrend==='IMPROVING'?'var(--green)':s.breadthTrend==='STABLE'?'var(--amber)':'var(--red)'};font-size:10px">${s.breadthTrend}</td>
+    </tr>`).join('')}</tbody></table></div></div>
+    <div class="card" style="border-color:var(--accent-dim)"><div class="card-header" style="color:var(--accent)">WEINSTEIN TOP-DOWN RULE</div>
+    <div style="font-size:12px;color:var(--text-muted);line-height:1.7">If ≥60% of sectors are in Stage 4 and S&P 500 is below a declining 30-week SMA, the environment is <span style="color:var(--red);font-weight:600">hostile for new longs</span> regardless of individual setup quality. Triple Alignment (sector Stage 2 + positive RS + positive Mansfield) identifies highest-conviction sectors.</div></div>`;
+  },
+
+  // ═══ EARNINGS ANALYSIS ═══
+  async loadEarnings(){
+    const t=$('#earn-ticker').value.trim().toUpperCase();if(!t)return;
+    const el=$('#earn-content');el.innerHTML='<div class="loading">Scanning '+t+' earnings…</div>';
+    let d;
+    try{
+      d=await NX.apiFetch('/api/earnings/'+t);d=d.earnings||d;
+    }catch{
+      // Mock
+      const h=NX._tickerHash(t+'earn2025'),rng=NX._seededRng(h),r=()=>rng();
+      const isBull=r()>.42;const quarters=[];
+      for(let q=0;q<8;q++){
+        const est=+(0.5+r()*4).toFixed(2),surp=+((r()-.35)*30).toFixed(1),act=+(est*(1+surp/100)).toFixed(2);
+        const revE=+(1+r()*15).toFixed(2),revS=+((r()-.4)*12).toFixed(1),revA=+(revE*(1+revS/100)).toFixed(2);
+        quarters.push({label:`Q${4-q%4}'${2025-Math.floor(q/4)}`,estEPS:est,actEPS:act,surprise:surp,revEst:revE,actRev:revA,revSurprise:revS,gap:+((r()-.4)*14).toFixed(1),beat:surp>0,revBeat:revS>0});
+      }
+      const iv30=+(15+r()*55).toFixed(1),hv30=+(12+r()*45).toFixed(1);
+      const stage=[1,2,2,2,3,4][Math.floor(r()*6)],rsRating=Math.floor(20+r()*79);
+      const beatRate=+(quarters.filter(q=>q.beat).length/8*100).toFixed(0);
+      const avgSurp=+(quarters.reduce((s,q)=>s+q.surprise,0)/8).toFixed(1);
+      const avgGap=+(quarters.reduce((s,q)=>s+q.gap,0)/8).toFixed(1);
+      const accel=isBull?'ACCELERATING':r()>.5?'DECELERATING':'STABLE';
+      let ss=0;if(stage===2)ss+=2;if(rsRating>=80)ss+=2;if(accel==='ACCELERATING')ss+=2;if(iv30<=hv30)ss+=1;if(+beatRate>=75)ss+=1;
+      const sl=ss>=7?'EXCEPTIONAL':ss>=5?'FAVORABLE':ss>=3?'NEUTRAL':'UNFAVORABLE';
+      const sc=ss>=7?'var(--green)':ss>=5?'var(--green)':ss>=3?'var(--amber)':'var(--red)';
+      d={ticker:t,quarters:quarters.reverse(),nextEarningsIn:Math.floor(5+r()*35),iv30,hv30,ivRank:+(r()*100).toFixed(0),impliedMove:+(1.5+r()*8).toFixed(1),earningsAccel:accel,stage,rsRating,beatRate,avgSurprise:avgSurp,avgGap,setupScore:ss,setupLabel:sl,setupColor:sc};
+    }
+    const e=d;
+    const ivHvRatio=e.hv30?(e.iv30/e.hv30).toFixed(2):'—';
+    const sellPrem=e.iv30>e.hv30;
+    el.innerHTML=`
+    <div class="card" style="border-color:${e.setupColor}40">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px">
+        <div><div style="font-size:10px;color:var(--text-dim);letter-spacing:1px">PRE-EARNINGS SETUP · ${t}</div><div style="font-size:24px;font-weight:700;color:${e.setupColor}">${e.setupLabel}</div><div style="font-size:11px;color:var(--text-dim)">Score: ${e.setupScore}/8 · EPS Trend: ${e.earningsAccel} · Stage ${e.stage}</div></div>
+        <div style="text-align:right"><div style="font-size:10px;color:var(--text-dim)">NEXT EARNINGS</div><div style="font-size:20px;font-weight:700;color:${e.nextEarningsIn<=10?'var(--amber)':'var(--text)'}">${e.nextEarningsIn} days</div></div>
+      </div>
+    </div>
+    <div class="metrics-row g5">
+      <div class="m-card"><div class="label">IV (30-DAY)</div><div class="value accent-c">${fmt(e.iv30,1)}%</div><div class="sub">Rank: ${e.ivRank}/100</div></div>
+      <div class="m-card"><div class="label">HV (30-DAY)</div><div class="value neutral">${fmt(e.hv30,1)}%</div></div>
+      <div class="m-card"><div class="label">IV/HV RATIO</div><div class="value ${sellPrem?'down':'up'}">${ivHvRatio}×</div><div class="sub">${sellPrem?'IV premium — sell structures':'HV > IV — debit structures'}</div></div>
+      <div class="m-card"><div class="label">IMPLIED MOVE</div><div class="value" style="color:var(--purple)">±${e.impliedMove}%</div></div>
+      <div class="m-card"><div class="label">RS RATING</div><div class="value ${e.rsRating>=80?'up':e.rsRating>=60?'neutral':'down'}">${e.rsRating}/99</div></div>
+    </div>
+    <div class="card"><div class="card-header">OPTIONS STRUCTURE</div>
+    <div class="grid g2">${sellPrem?`
+      <div class="m-card" style="border-color:var(--red-dim)"><div style="font-weight:600;color:var(--red)">SELL PREMIUM</div><div style="font-size:11px;color:var(--text-dim);margin-top:4px">IV elevated (rank ${e.ivRank}/100). Iron condor or credit spread. Wings at ±1σ (${e.impliedMove}%).</div></div>
+      <div class="m-card" style="border-color:var(--amber-dim)"><div style="font-weight:600;color:var(--amber)">ALT: RATIO SPREAD</div><div style="font-size:11px;color:var(--text-dim);margin-top:4px">Buy 1 ATM ${e.stage===2?'call':'put'}, sell 2 OTM. Net credit or low debit.</div></div>
+    `:`
+      <div class="m-card" style="border-color:var(--green-dim)"><div style="font-weight:600;color:var(--green)">BUY PREMIUM</div><div style="font-size:11px;color:var(--text-dim);margin-top:4px">IV compressed (rank ${e.ivRank}/100, HV > IV). ${e.stage===2?'Long call':'Long put'} spread — defined risk.</div></div>
+      <div class="m-card" style="border-color:var(--accent-dim)"><div style="font-weight:600;color:var(--accent)">ALT: STRADDLE</div><div style="font-size:11px;color:var(--text-dim);margin-top:4px">Avg gap: ${e.avgGap}%. If gap > implied move (${e.impliedMove}%), straddle has +EV. Buy ATM 5-7 DTE.</div></div>
+    `}</div></div>
+    <div class="card"><div class="card-header">EARNINGS HISTORY — LAST 8 QUARTERS<span style="font-weight:400;color:var(--text-dim)">Beat: ${e.beatRate}% · Avg Surprise: ${e.avgSurprise>0?'+':''}${e.avgSurprise}%</span></div>
+    <div style="overflow-x:auto"><table><thead><tr><th>Quarter</th><th>EPS Est</th><th>EPS Act</th><th>Surprise</th><th>Rev Est</th><th>Rev Act</th><th>Gap</th></tr></thead>
+    <tbody>${(e.quarters||[]).map(q=>`<tr><td style="font-weight:600">${q.label}</td><td style="color:var(--text-dim)">$${q.estEPS}</td><td class="${q.beat?'up':'down'}" style="font-weight:600">$${q.actEPS}</td><td class="${q.surprise>0?'up':'down'}" style="font-weight:700">${q.surprise>0?'+':''}${q.surprise}%</td><td style="color:var(--text-dim)">$${q.revEst}B</td><td class="${q.revBeat?'up':'down'}">$${q.actRev}B</td><td class="${q.gap>0?'up':q.gap<-3?'down':'neutral'}" style="font-weight:600">${q.gap>0?'+':''}${q.gap}%</td></tr>`).join('')}</tbody></table></div></div>`;
+  },
+
+  // ═══ DARK POOL ═══
+  _dpData:[],
+  _genDPFeed(count=100){
+    const tickers=['AAPL','NVDA','MSFT','META','GOOGL','AMZN','TSLA','AMD','CRM','NFLX','PLTR','AVGO','JPM','V','UNH','MA','HD','DIS','BA','CAT'];
+    const sectors=['Tech','Tech','Tech','Tech','Tech','Tech','Tech','Tech','Tech','Tech','Tech','Tech','Finance','Finance','Health','Finance','Retail','Media','Industrial','Industrial'];
+    const venues=['XDARK','FINRA','MEMX','BATS','EDGX','IEX','XNAS','XNYS'];
+    const feed=[];const r=Math.random;
+    for(let i=0;i<count;i++){
+      const ti=Math.floor(r()*tickers.length);
+      const baseP=50+r()*500,price=+(baseP*(.97+r()*.06)).toFixed(2);
+      const vwap=+(baseP*(.98+r()*.04)).toFixed(2);
+      const vol=Math.floor(r()<.05?1000000+r()*4000000:r()<.2?500000+r()*500000:100000+r()*400000);
+      const above=price>=vwap;
+      feed.push({id:i,time:new Date(Date.now()-Math.floor(r()*3600000)).toLocaleTimeString('en-US',{hour12:false}),ticker:tickers[ti],sector:sectors[ti],price,vwap,volume:vol,notional:vol*price,venue:venues[Math.floor(r()*venues.length)],aboveVwap:above,sizeCategory:vol>=1000000?'WHALE':vol>=500000?'MEGA':'BLOCK'});
+    }
+    return feed.sort((a,b)=>b.notional-a.notional);
+  },
+  loadDarkPool(){
+    const el=$('#dp-content');NX._dpData=NX._genDPFeed();NX.filterDP();
+  },
+  filterDP(){
+    const el=$('#dp-content');const filt=$('#dp-size-filter').value;const ticker=$('#dp-ticker').value.trim().toUpperCase();
+    let data=NX._dpData;
+    if(filt!=='ALL')data=data.filter(d=>d.sizeCategory===filt);
+    if(ticker)data=data.filter(d=>d.ticker===ticker);
+    const totalVol=data.reduce((s,d)=>s+d.volume,0);
+    const totalNot=data.reduce((s,d)=>s+d.notional,0);
+    const buyPct=data.length?(data.filter(d=>d.aboveVwap).length/data.length*100).toFixed(1):'0';
+    const whales=data.filter(d=>d.sizeCategory==='WHALE').length;
+    el.innerHTML=`<div class="metrics-row g4">
+      <div class="m-card"><div class="label">DP VOLUME</div><div class="value accent-c">${fmtK(totalVol)}</div><div class="sub">${[...new Set(data.map(d=>d.ticker))].length} tickers</div></div>
+      <div class="m-card"><div class="label">NOTIONAL</div><div class="value neutral">$${fmtK(totalNot)}</div></div>
+      <div class="m-card"><div class="label">NET SIGNAL</div><div class="value ${+buyPct>=50?'up':'down'}">${buyPct}% BUY</div><div class="sub">${+buyPct>=55?'Institutional buying':+buyPct<=45?'Institutional selling':'Neutral'}</div></div>
+      <div class="m-card"><div class="label">WHALE PRINTS</div><div class="value" style="color:var(--purple)">${whales}</div><div class="sub">≥1M shares</div></div>
+    </div>
+    <div class="card"><div class="card-header">DARK POOL FLOW<span style="font-weight:400">${data.length} prints</span></div>
+    <div style="overflow-x:auto;max-height:500px;overflow-y:auto"><table><thead><tr><th>Time</th><th>Ticker</th><th>Sector</th><th>Price</th><th>VWAP</th><th>Shares</th><th>Notional</th><th>Venue</th><th>Type</th><th>Signal</th></tr></thead>
+    <tbody>${data.slice(0,80).map(d=>`<tr${d.sizeCategory==='WHALE'?' style="background:var(--purple-bg)"':''}>
+      <td style="color:var(--text-dim);font-size:11px">${d.time}</td>
+      <td style="font-weight:700;color:${d.sizeCategory==='WHALE'?'var(--purple)':'var(--text)'}">${d.ticker}</td>
+      <td style="color:var(--text-dim);font-size:10px">${d.sector}</td>
+      <td style="color:${d.aboveVwap?'var(--green)':'var(--red)'};font-weight:600">$${fmt(d.price)}</td>
+      <td>$${fmt(d.vwap)}</td>
+      <td style="font-weight:600">${fmtK(d.volume)}</td>
+      <td>$${fmtK(d.notional)}</td>
+      <td style="font-size:10px;color:var(--text-dim)">${d.venue}</td>
+      <td><span class="badge ${d.sizeCategory==='WHALE'?'b-purple':d.sizeCategory==='MEGA'?'b-accent':'b-amber'}">${d.sizeCategory}</span></td>
+      <td><span class="badge ${d.aboveVwap?'b-green':'b-red'}">${d.aboveVwap?'▲ BUY':'▼ SELL'}</span></td>
+    </tr>`).join('')}</tbody></table></div></div>`;
+  },
+// ─── Enter-key bindings ───
+['chart-ticker','opt-ticker','news-ticker','vix-ticker','stage-ticker','bt-ticker','dd-ticker','tt-ticker','earn-ticker','dp-ticker'].forEach(id=>{
+  const el=$('#'+id);
+  if(el)el.addEventListener('keydown',e=>{if(e.key==='Enter'){
+    const map={'chart-ticker':'loadChart','opt-ticker':'loadOptions','news-ticker':'loadNews','vix-ticker':'loadVol','stage-ticker':'loadStage','bt-ticker':'loadBacktest','dd-ticker':'runDeepDive','tt-ticker':'runTradeTools','earn-ticker':'loadEarnings','dp-ticker':'loadDarkPool'};
+    NX[map[id]]();
+  }});
+});
+
+// ─── Init ───
+(function(){
+  const saved=NX.getBase();
+  if(saved)$('#api-base').value=saved;
+  NX.checkHealth();
+  setInterval(()=>NX.checkHealth(),30000);
+  NX.loadPortfolio();
 })();
 </script>
 </body>

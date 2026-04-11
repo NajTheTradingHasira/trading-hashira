@@ -1241,66 +1241,61 @@ const NX={
   },
 
   // ═══ COT ═══
+  _cotWanted:{'13874':'E-Mini S&P 500','209742':'Nasdaq 100','239742':'Russell 2000','124603':'Dow Jones Mini','088691':'Gold (COMEX)','084691':'Silver (COMEX)','085692':'Copper','067651':'Crude Oil (WTI)','023651':'Natural Gas','099741':'Euro FX','097741':'Japanese Yen','096742':'British Pound','043602':'10-Year T-Note','044601':'2-Year T-Note','1170E1':'VIX Futures','001612':'Fed Funds'},
   async loadCOT(){
     const el=$('#cot-content');el.innerHTML='<div class="loading">Loading COT…</div>';
     try{
       const d=await NX.apiFetch('/api/cot');
-      const rows=d.data||d.reports||d||[];
-      const hasReal=Array.isArray(rows)&&rows.length&&rows.some(r=>(r.contract||r.name)&&(r.net_long||r.netLong||r.net_position));
-      if(!hasReal){
-        // Mock COT data matching APEX screenshot
-        const mock=[
-          {contract:'E-Mini S&P 500',netLong:-219069,wkChange:112795,pctOI:-8.0,signal:'NET SHORT'},
-          {contract:'Nasdaq 100',netLong:-34740,wkChange:2450,pctOI:-12.6,signal:'NET SHORT'},
-          {contract:'Russell 2000',netLong:-39472,wkChange:10223,pctOI:-9.5,signal:'NET SHORT'},
-          {contract:'Dow Jones Mini',netLong:8341,wkChange:-2100,pctOI:4.2,signal:'NET LONG'},
-          {contract:'Gold (COMEX)',netLong:292814,wkChange:1193,pctOI:25.7,signal:'NET LONG'},
-          {contract:'Silver (COMEX)',netLong:42518,wkChange:-3201,pctOI:18.3,signal:'NET LONG'},
-          {contract:'Copper',netLong:-11204,wkChange:5620,pctOI:-3.8,signal:'NET SHORT'},
-          {contract:'Crude Oil (WTI)',netLong:188432,wkChange:-24510,pctOI:6.1,signal:'NET LONG'},
-          {contract:'Natural Gas',netLong:-102347,wkChange:8912,pctOI:-15.4,signal:'NET SHORT'},
-          {contract:'Euro FX',netLong:-72184,wkChange:15230,pctOI:-9.7,signal:'NET SHORT'},
-          {contract:'Japanese Yen',netLong:47219,wkChange:12840,pctOI:8.5,signal:'NET LONG'},
-          {contract:'British Pound',netLong:21456,wkChange:-3120,pctOI:5.1,signal:'NET LONG'},
-          {contract:'10-Year T-Note',netLong:-541230,wkChange:42100,pctOI:-11.2,signal:'NET SHORT'},
-          {contract:'VIX Futures',netLong:-42246,wkChange:-1786,pctOI:-12.1,signal:'NET SHORT'},
-        ];
-        const dt=new Date();dt.setDate(dt.getDate()-((dt.getDay()+4)%7));
-        const dateStr=dt.toISOString().split('T')[0];
-        el.innerHTML=`<div class="card"><div class="card-header">COT REPORT — LARGE SPEC POSITIONING (AS OF ${dateStr})</div>
-        <div style="overflow-x:auto"><table>
-        <thead><tr><th>CONTRACT</th><th>NET LONG</th><th>WK CHANGE</th><th>% OF OI</th><th>SIGNAL</th></tr></thead>
-        <tbody>${mock.map(r=>{
-          const nlClr=r.netLong>=0?'var(--green)':'var(--red)';
-          const wcClr=r.wkChange>=0?'var(--green)':'var(--red)';
-          const sigClr=r.signal.includes('LONG')?'b-green':'b-red';
-          return `<tr>
-            <td style="font-weight:600;font-size:13px">${r.contract}</td>
-            <td style="color:${nlClr};font-weight:600">${r.netLong>=0?'+':''}${r.netLong.toLocaleString()}</td>
-            <td><span style="color:${wcClr}">${r.wkChange>=0?'▲':'▼'} ${r.wkChange>=0?'+':''}${r.wkChange.toLocaleString()}</span></td>
-            <td style="color:var(--text-muted)">${r.pctOI}%</td>
-            <td><span class="badge ${sigClr}" style="font-weight:700;letter-spacing:1px">${r.signal}</span></td>
-          </tr>`;
-        }).join('')}</tbody></table></div></div>`;
-        return;
+      let rows=d.data||d.reports||d||[];
+      if(!Array.isArray(rows))rows=[];
+      const isRaw=rows.length>0&&('noncomm_positions_long_all' in rows[0]||'noncommercial_positions_long_all' in rows[0]);
+      const isProcessed=rows.length>0&&('net_long' in rows[0]||'netLong' in rows[0]);
+      let processed=[],reportDate=d.report_date||'';
+
+      if(isRaw){
+        const dates=[...new Set(rows.map(r=>r.report_date_as_yyyy_mm_dd))].sort();
+        reportDate=dates[dates.length-1]||'';
+        const prevDate=dates[dates.length-2]||'';
+        const latest=rows.filter(r=>r.report_date_as_yyyy_mm_dd===reportDate);
+        const prev=rows.filter(r=>r.report_date_as_yyyy_mm_dd===prevDate);
+        const prevMap={};prev.forEach(r=>{prevMap[(r.cftc_contract_market_code||'').trim().replace(/\+$/,'')]=r});
+        const w=NX._cotWanted;
+        latest.forEach(r=>{
+          const code=(r.cftc_contract_market_code||'').trim().replace(/\+$/,'');
+          let name=null;
+          for(const[k,v]of Object.entries(w)){if(code.includes(k)||k===code){name=v;break;}}
+          if(!name)return;
+          const lf='noncomm_positions_long_all' in r?'noncomm_positions_long_all':'noncommercial_positions_long_all';
+          const sf='noncomm_positions_short_all' in r?'noncomm_positions_short_all':'noncommercial_positions_short_all';
+          const net=(parseInt(r[lf])||0)-(parseInt(r[sf])||0);
+          const oi=parseInt(r.open_interest_all)||1;
+          const pr=prevMap[code];
+          const prevNet=pr?((parseInt(pr[lf])||0)-(parseInt(pr[sf])||0)):0;
+          processed.push({contract:name,netLong:net,wkChange:net-prevNet,pctOI:Math.round(net/oi*1000)/10,signal:net>=0?'NET LONG':'NET SHORT'});
+        });
+        const order=['E-Mini','Nasdaq','Russell','Dow','Gold','Silver','Copper','Crude','Natural','Euro','Japanese','British','Fed','2-Year','5-Year','10-Year','VIX'];
+        processed.sort((a,b)=>{const ai=order.findIndex(o=>a.contract.includes(o));const bi=order.findIndex(o=>b.contract.includes(o));return(ai<0?99:ai)-(bi<0?99:bi)});
+      }else if(isProcessed){
+        processed=rows.map(r=>({contract:r.contract||r.name||'—',netLong:r.net_long||r.netLong||0,wkChange:r.wk_change||r.weekly_change||0,pctOI:r.pct_oi||r.pct_of_oi||0,signal:(r.net_long||r.netLong||0)>=0?'NET LONG':'NET SHORT'}));
       }
-      // Live data
-      el.innerHTML=`<div class="card"><div class="card-header">COT REPORT — LARGE SPEC POSITIONING</div>
+
+      if(!processed.length){
+        processed=[{contract:'E-Mini S&P 500',netLong:-219069,wkChange:112795,pctOI:-8.0,signal:'NET SHORT'},{contract:'Nasdaq 100',netLong:-34740,wkChange:2450,pctOI:-12.6,signal:'NET SHORT'},{contract:'Gold (COMEX)',netLong:292814,wkChange:1193,pctOI:25.7,signal:'NET LONG'},{contract:'10-Year T-Note',netLong:-541230,wkChange:42100,pctOI:-11.2,signal:'NET SHORT'},{contract:'VIX Futures',netLong:-42246,wkChange:-1786,pctOI:-12.1,signal:'NET SHORT'}];
+        const dt=new Date();dt.setDate(dt.getDate()-((dt.getDay()+4)%7));reportDate=dt.toISOString().split('T')[0];
+      }
+
+      el.innerHTML=`<div class="card"><div class="card-header">COT REPORT — LARGE SPEC POSITIONING${reportDate?' (AS OF '+reportDate+')':''}</div>
       <div style="overflow-x:auto"><table>
       <thead><tr><th>CONTRACT</th><th>NET LONG</th><th>WK CHANGE</th><th>% OF OI</th><th>SIGNAL</th></tr></thead>
-      <tbody>${rows.slice(0,20).map(r=>{
-        const nl=r.net_long||r.netLong||r.net_position||0;
-        const wc=r.wk_change||r.weekly_change||0;
-        const poi=r.pct_oi||r.pct_of_oi||0;
-        const sig=nl>=0?'NET LONG':'NET SHORT';
-        const nlClr=nl>=0?'var(--green)':'var(--red)';
-        const wcClr=wc>=0?'var(--green)':'var(--red)';
+      <tbody>${processed.map(r=>{
+        const nlClr=r.netLong>=0?'var(--green)':'var(--red)';
+        const wcClr=r.wkChange>=0?'var(--green)':'var(--red)';
         return `<tr>
-          <td style="font-weight:600;font-size:13px">${r.contract||r.name||'—'}</td>
-          <td style="color:${nlClr};font-weight:600">${nl>=0?'+':''}${nl.toLocaleString()}</td>
-          <td><span style="color:${wcClr}">${wc>=0?'▲':'▼'} ${wc>=0?'+':''}${wc.toLocaleString()}</span></td>
-          <td style="color:var(--text-muted)">${poi}%</td>
-          <td><span class="badge ${nl>=0?'b-green':'b-red'}" style="font-weight:700;letter-spacing:1px">${sig}</span></td>
+          <td style="font-weight:600;font-size:13px">${r.contract}</td>
+          <td style="color:${nlClr};font-weight:600">${r.netLong>=0?'+':''}${r.netLong.toLocaleString()}</td>
+          <td><span style="color:${wcClr}">${r.wkChange>=0?'▲':'▼'} ${r.wkChange>=0?'+':''}${r.wkChange.toLocaleString()}</span></td>
+          <td style="color:var(--text-muted)">${r.pctOI}%</td>
+          <td><span class="badge ${r.signal.includes('LONG')?'b-green':'b-red'}" style="font-weight:700;letter-spacing:1px">${r.signal}</span></td>
         </tr>`;
       }).join('')}</tbody></table></div></div>`;
     }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}

@@ -6,6 +6,7 @@
 <title>Trading Hashira</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://d3js.org/d3.v7.min.js"></script>
 <style>
 /* ═══════════════════════════════════════════════════════════════
    NEXUS TERMINAL v3 — DESIGN SYSTEM
@@ -2717,53 +2718,89 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     }
   },
 
-  // ─── Market Heatmap ───
+  // ─── Market Heatmap (D3 Treemap) ───
   _heatmapData:null,
-  loadHeatmap(){
+  async loadHeatmap(){
     const el=$('#heatmap-content');
-    const sectors=[
-      {name:'TECHNOLOGY',tickers:['AAPL','NVDA','MSFT','GOOGL','META','AMD','CRM','AVGO','ADBE','ORCL']},
-      {name:'CONSUMER DISC.',tickers:['AMZN','TSLA','HD','NKE','MCD','SBUX','TGT','LOW']},
-      {name:'HEALTHCARE',tickers:['UNH','JNJ','PFE','ABBV','MRK','LLY','TMO','ABT']},
-      {name:'FINANCIALS',tickers:['JPM','BAC','GS','MS','V','MA','AXP','BLK']},
-      {name:'ENERGY',tickers:['XOM','CVX','COP','SLB','EOG','OXY']},
-      {name:'INDUSTRIALS',tickers:['CAT','BA','HON','UPS','GE','RTX','LMT','DE']},
-      {name:'UTILITIES',tickers:['NEE','DUK','SO','D','AEP','EXC']},
-      {name:'MATERIALS / MACRO',tickers:['LIN','APD','NEM','FCX','SHW','DD']}
-    ];
-    // Seeded mock per day
-    const h=NX._tickerHash('heatmap'+new Date().toDateString()),rng=NX._seededRng(h);const r=()=>rng();
-    NX._heatmapData=sectors.map(sec=>{
-      const data=sec.tickers.map(t=>{const chg=+((r()-.42)*6).toFixed(2);return{ticker:t,change:chg}});
-      const avg=data.reduce((s,d)=>s+d.change,0)/data.length;
-      return{name:sec.name,avg:+avg.toFixed(2),tickers:data};
-    });
-    NX._renderHeatmap();
+    el.innerHTML='<div class="loading">Loading market treemap…</div>';
+    try{
+      const data=await NX.apiFetch('/api/heatmap/treemap');
+      if(data&&data.children){NX._heatmapData=data;NX._renderTreemap()}
+      else throw new Error('No treemap data');
+    }catch(e){
+      // Fallback to sector ETF heatmap
+      try{
+        const d=await NX.apiFetch('/api/heatmap');
+        const sectors=d.sectors||[];
+        const fallback={name:'Market',children:sectors.map(s=>({name:s.sector,children:[{name:s.ticker,value:100,change:s.change_pct||0,price:s.price||0}]}))};
+        NX._heatmapData=fallback;NX._renderTreemap();
+      }catch{el.innerHTML=`<div class="empty-state">Heatmap unavailable: ${e.message}</div>`}
+    }
   },
-  _renderHeatmap(){
+  _renderTreemap(){
     const el=$('#heatmap-content');if(!el||!NX._heatmapData)return;
-    el.innerHTML=`<div class="card"><div class="card-header" style="color:var(--accent)">MARKET HEATMAP</div>
-    ${NX._heatmapData.map((sec,si)=>{
-      const barClr=c=>c>=2?'var(--green)':c>0?'#00e67660':c>-2?'#ff525260':'var(--red)';
-      return `<div style="padding:14px 0;border-bottom:1px solid var(--border-subtle)">
-        <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.querySelector('.hm-arrow').textContent=this.nextElementSibling.style.display==='none'?'▾':'▴'">
-          <div style="display:flex;align-items:center;gap:10px">
-            <span style="font-size:13px;font-weight:700;letter-spacing:1px">${sec.name}</span>
-            <span class="badge ${sec.avg>=0?'b-green':'b-red'}">${sec.avg>=0?'+':''}${sec.avg.toFixed(2)}% avg</span>
-          </div>
-          <span class="hm-arrow" style="font-size:12px;color:var(--text-dim)">▾</span>
-        </div>
-        <div style="display:flex;gap:3px;margin-top:8px;flex-wrap:wrap">${sec.tickers.map(d=>`<div style="width:${Math.max(45,65+Math.abs(d.change)*8)}px;height:14px;border-radius:2px;background:${barClr(d.change)}" title="${d.ticker}: ${d.change>=0?'+':''}${d.change.toFixed(2)}%"></div>`).join('')}</div>
-        <div style="display:none;margin-top:12px;padding:10px;background:var(--bg2);border-radius:4px">
-          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px">
-            ${sec.tickers.map(d=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;border-radius:3px;background:var(--bg1);border:1px solid var(--border-subtle)">
-              <span style="font-weight:600;font-size:11px">${d.ticker}</span>
-              <span style="font-size:11px;font-weight:600;color:${d.change>=0?'var(--green)':'var(--red)'}">${d.change>=0?'+':''}${d.change.toFixed(2)}%</span>
-            </div>`).join('')}
-          </div>
-        </div>
-      </div>`;
-    }).join('')}</div>`;
+    const W=el.offsetWidth||900,H=650;
+    el.innerHTML=`<div class="card" style="padding:8px"><div class="card-header" style="color:var(--accent);margin-bottom:8px">MARKET HEATMAP — TREEMAP</div><div id="treemap-svg" style="width:100%;height:${H}px;position:relative;background:#000;border-radius:4px;overflow:hidden"></div></div>`;
+    const container=document.getElementById('treemap-svg');if(!container||typeof d3==='undefined')return;
+
+    const color=d3.scaleLinear().domain([-3,0,3]).range(['#f63538','#414554','#30cc5a']).clamp(true);
+
+    const root=d3.hierarchy(NX._heatmapData).sum(d=>d.value||0).sort((a,b)=>(b.value||0)-(a.value||0));
+    d3.treemap().size([W-16,H]).paddingInner(2).paddingTop(18).paddingOuter(2).round(true)(root);
+
+    const svg=d3.select(container).append('svg').attr('width',W-16).attr('height',H).style('font-family','JetBrains Mono, monospace');
+
+    // Sector group labels
+    root.children?.forEach(sector=>{
+      svg.append('text').attr('x',sector.x0+4).attr('y',sector.y0+13).text(sector.data.name.toUpperCase())
+        .style('fill','#aaa').style('font-size','10px').style('font-weight','700').style('letter-spacing','0.5px');
+    });
+
+    // Stock tiles
+    const leaves=root.leaves();
+    const cell=svg.selectAll('g.leaf').data(leaves).enter().append('g').attr('class','leaf')
+      .attr('transform',d=>`translate(${d.x0},${d.y0})`);
+
+    cell.append('rect')
+      .attr('width',d=>Math.max(0,d.x1-d.x0))
+      .attr('height',d=>Math.max(0,d.y1-d.y0))
+      .attr('rx',2)
+      .style('fill',d=>color(d.data.change||0))
+      .style('stroke','#000').style('stroke-width','1px')
+      .style('cursor','pointer')
+      .on('mouseover',function(ev,d){
+        d3.select(this).style('stroke','#fff').style('stroke-width','2px');
+        const tt=document.getElementById('hm-tooltip');
+        if(tt){
+          tt.style.display='block';
+          tt.style.left=(ev.pageX+12)+'px';tt.style.top=(ev.pageY-40)+'px';
+          const chg=d.data.change||0;
+          tt.innerHTML=`<strong>${d.data.name}</strong><br/>$${d.data.price||'—'} <span style="color:${chg>=0?'#30cc5a':'#f63538'}">${chg>=0?'+':''}${chg.toFixed(2)}%</span><br/><span style="color:#888">MCap: $${d.data.value?d.data.value.toLocaleString()+'M':'—'}</span>`;
+        }
+      })
+      .on('mouseout',function(){
+        d3.select(this).style('stroke','#000').style('stroke-width','1px');
+        const tt=document.getElementById('hm-tooltip');if(tt)tt.style.display='none';
+      });
+
+    // Ticker label (if tile big enough)
+    cell.append('text').attr('x',d=>(d.x1-d.x0)/2).attr('y',d=>(d.y1-d.y0)/2-4)
+      .attr('text-anchor','middle').style('fill','#fff').style('font-size',d=>{const w=d.x1-d.x0;return w>50?'11px':w>35?'9px':'0px'})
+      .style('font-weight','700').style('pointer-events','none')
+      .text(d=>d.data.name);
+
+    // Change % label
+    cell.append('text').attr('x',d=>(d.x1-d.x0)/2).attr('y',d=>(d.y1-d.y0)/2+10)
+      .attr('text-anchor','middle').style('fill','#ffffffcc').style('font-size',d=>(d.x1-d.x0)>45?'9px':'0px')
+      .style('pointer-events','none')
+      .text(d=>{const c=d.data.change||0;return(c>=0?'+':'')+c.toFixed(1)+'%'});
+
+    // Tooltip div
+    if(!document.getElementById('hm-tooltip')){
+      const tt=document.createElement('div');tt.id='hm-tooltip';
+      tt.style.cssText='display:none;position:absolute;z-index:9999;background:#1a1a2e;border:1px solid #333;border-radius:6px;padding:8px 12px;font-size:11px;color:#e0e0e0;font-family:JetBrains Mono,monospace;pointer-events:none;white-space:nowrap';
+      document.body.appendChild(tt);
+    }
   },
   _alertsData:[],
   loadAlerts(){

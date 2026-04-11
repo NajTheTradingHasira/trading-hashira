@@ -3903,17 +3903,23 @@ function getTradeHistoryHTML() {
   `;
 }
 
-// ── Storage (localStorage + backend sync) ─────────────────────────────────────
+// ── Storage: API-first with localStorage fallback ─────────────────────────────
 const TRADES_STORAGE_KEY = 'optionsTrades';
-let _tradesSyncState = 'unknown'; // unknown | synced | pending | error
+let _tradesSyncState = 'unknown';
+let _tradesCache = null; // in-memory cache, populated from API
+
+function _portfolioApi() {
+  return (typeof NX !== 'undefined' && NX.getBase) ? NX.getBase() : '';
+}
 
 function getTrades() {
-  try {
-    return JSON.parse(localStorage.getItem(TRADES_STORAGE_KEY) || '[]');
-  } catch { return []; }
+  // Return cache if available, else localStorage fallback
+  if (_tradesCache) return _tradesCache;
+  try { return JSON.parse(localStorage.getItem(TRADES_STORAGE_KEY) || '[]'); } catch { return []; }
 }
 
 function saveTrades(trades) {
+  _tradesCache = trades;
   localStorage.setItem(TRADES_STORAGE_KEY, JSON.stringify(trades));
 }
 
@@ -3921,82 +3927,105 @@ function generateTradeId() {
   return 'trd_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
 }
 
-// Backend sync helpers
-async function _tradeApiBase() {
-  return (typeof NX !== 'undefined' && NX.getBase) ? NX.getBase() : '';
+// ── API helpers ───────────────────────────────────────────────────────────────
+
+async function apiFetchTrades(type) {
+  const base = _portfolioApi(); if (!base) return getTrades();
+  try {
+    const url = base + '/api/portfolio/trades' + (type ? '?type=' + type : '');
+    const r = await fetch(url); if (!r.ok) throw 0;
+    const d = await r.json();
+    const trades = d.trades || [];
+    _tradesCache = trades;
+    localStorage.setItem(TRADES_STORAGE_KEY, JSON.stringify(trades));
+    return trades;
+  } catch { return getTrades(); }
 }
 
-async function syncTradeToBackend(trade) {
+async function apiSaveTrades(tradesArr) {
+  const base = _portfolioApi(); if (!base) return;
   try {
-    const base = await _tradeApiBase(); if (!base) return;
-    await fetch(base + '/api/trades', {
+    await fetch(base + '/api/portfolio/trades', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(trade)
+      body: JSON.stringify({ trades: tradesArr })
     });
-  } catch (e) { console.warn('Trade sync failed:', e.message); }
+  } catch (e) { console.warn('Save trades failed:', e.message); }
 }
 
-async function deleteTradeFromBackend(id) {
+async function apiDeleteTrade(id) {
+  const base = _portfolioApi(); if (!base) return;
+  try { await fetch(base + '/api/portfolio/trades/' + id, { method: 'DELETE' }); } catch {}
+}
+
+async function apiFetchSummary() {
+  const base = _portfolioApi(); if (!base) return null;
+  try { const r = await fetch(base + '/api/portfolio/summary'); return r.ok ? r.json() : null; } catch { return null; }
+}
+
+async function apiFetchPositions() {
+  const base = _portfolioApi(); if (!base) return null;
+  try { const r = await fetch(base + '/api/portfolio/positions'); return r.ok ? r.json() : null; } catch { return null; }
+}
+
+async function apiPreviewWebull(text) {
+  const base = _portfolioApi(); if (!base) return { parsed: [] };
   try {
-    const base = await _tradeApiBase(); if (!base) return;
-    await fetch(base + '/api/trades/' + id, { method: 'DELETE' });
-  } catch (e) { console.warn('Trade delete sync failed:', e.message); }
+    const r = await fetch(base + '/api/portfolio/import/webull', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ text })
+    });
+    return r.ok ? r.json() : { parsed: [] };
+  } catch { return { parsed: [] }; }
+}
+
+async function apiPreviewRobinhood(text) {
+  const base = _portfolioApi(); if (!base) return { parsed: [] };
+  try {
+    const r = await fetch(base + '/api/portfolio/import/robinhood', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ text })
+    });
+    return r.ok ? r.json() : { parsed: [] };
+  } catch { return { parsed: [] }; }
 }
 
 async function bulkSyncTrades() {
+  _updateSyncBadge('syncing');
   try {
-    const base = await _tradeApiBase(); if (!base) { _updateSyncBadge('error'); return; }
-    _updateSyncBadge('syncing');
+    // Migrate: push localStorage to new portfolio API
     const local = getTrades();
-    const resp = await fetch(base + '/api/trades/bulk', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ trades: local })
-    });
-    if (resp.ok) {
-      const d = await resp.json();
-      _tradesSyncState = 'synced';
-      _updateSyncBadge('synced', d.added + ' new, ' + d.total + ' total');
-    } else { _updateSyncBadge('error'); }
-  } catch (e) { _updateSyncBadge('error'); }
+    if (local.length) {
+      // Map old format (optionType) to new format (option_type)
+      const mapped = local.map(t => ({
+        ...t,
+        type: t.type || 'option',
+        option_type: t.option_type || t.optionType || null,
+        quantity: t.quantity || t.qty || 1,
+        date: t.date || t.tradeDate || '',
+      }));
+      await apiSaveTrades(mapped);
+    }
+    // Pull fresh from API
+    await apiFetchTrades();
+    _updateSyncBadge('synced', getTrades().length + ' trades');
+  } catch { _updateSyncBadge('error'); }
 }
 
 async function pullTradesFromBackend() {
   try {
-    const base = await _tradeApiBase(); if (!base) return;
-    const resp = await fetch(base + '/api/trades');
-    if (!resp.ok) return;
-    const d = await resp.json();
-    const remote = d.trades || [];
-    if (!remote.length) return;
-    // Merge: remote wins on ID collisions, add new from both sides
-    const local = getTrades();
-    const localIds = new Set(local.map(t => t.id));
-    let added = 0;
-    for (const rt of remote) {
-      if (rt.id && !localIds.has(rt.id)) {
-        local.push(rt); localIds.add(rt.id); added++;
+    const trades = await apiFetchTrades();
+    if (trades.length) {
+      _updateSyncBadge('synced');
+    } else {
+      // First load — migrate localStorage to backend
+      const local = JSON.parse(localStorage.getItem(TRADES_STORAGE_KEY) || '[]');
+      if (local.length) {
+        await bulkSyncTrades();
+      } else {
+        _updateSyncBadge('synced', '0 trades');
       }
     }
-    if (added > 0) {
-      saveTrades(local);
-      console.log('[sync] Pulled ' + added + ' trades from backend');
-    }
-    // If local has trades backend doesn't, push them
-    const remoteIds = new Set(remote.map(t => t.id));
-    const toPush = local.filter(t => t.id && !remoteIds.has(t.id));
-    if (toPush.length > 0) {
-      await fetch(base + '/api/trades/bulk', {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ trades: toPush })
-      });
-      console.log('[sync] Pushed ' + toPush.length + ' trades to backend');
-    }
-    _tradesSyncState = 'synced';
-    _updateSyncBadge('synced');
-  } catch (e) {
-    console.warn('Pull sync failed:', e.message);
-    _updateSyncBadge('error');
-  }
+  } catch { _updateSyncBadge('error'); }
 }
 
 function _updateSyncBadge(state, detail) {
@@ -4565,26 +4594,22 @@ function previewTradePaste() {
   confirmBtn.disabled = false;
 }
 
-function confirmTradePaste() {
+async function confirmTradePaste() {
   if (_parsedTrades.length === 0) return;
 
-  const trades = getTrades();
-  const newTrades = [];
-  for (const t of _parsedTrades) {
-    const trade = { ...t, id: generateTradeId() };
-    trades.push(trade);
-    newTrades.push(trade);
-  }
-  saveTrades(trades);
-  // Sync new trades to backend
-  _tradeApiBase().then(base => {
-    if (base && newTrades.length) {
-      fetch(base + '/api/trades/bulk', {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ trades: newTrades })
-      }).then(() => _updateSyncBadge('synced')).catch(() => _updateSyncBadge('pending'));
-    }
-  });
+  const newTrades = _parsedTrades.map(t => ({
+    ...t, id: t.id || generateTradeId(),
+    type: t.type || 'option',
+    option_type: t.option_type || t.optionType || null,
+    quantity: t.quantity || t.qty || 1,
+    date: t.date || t.tradeDate || '',
+  }));
+
+  // Save to API (primary) + localStorage (cache)
+  await apiSaveTrades(newTrades);
+  const all = getTrades().concat(newTrades);
+  saveTrades(all);
+  _updateSyncBadge('synced');
   
   _parsedTrades = [];
   document.getElementById('trade-paste-input').value = '';
@@ -4621,22 +4646,26 @@ function addManualTrade() {
   
   const trade = {
     id: generateTradeId(),
+    type: 'option',
     ticker,
+    option_type: optionType,
     optionType,
     strike,
     expiry,
     action,
     qty,
+    quantity: qty,
     price,
     fees,
+    date: tradeDate,
     tradeDate,
     broker
   };
-  
+
   const trades = getTrades();
   trades.push(trade);
   saveTrades(trades);
-  syncTradeToBackend(trade);
+  apiSaveTrades([trade]);
 
   // Clear form
   document.getElementById('trade-ticker').value = '';
@@ -4655,7 +4684,7 @@ function deleteTrade(id) {
   let trades = getTrades();
   trades = trades.filter(t => t.id !== id);
   saveTrades(trades);
-  deleteTradeFromBackend(id);
+  apiDeleteTrade(id);
   renderCurrentView();
 }
 

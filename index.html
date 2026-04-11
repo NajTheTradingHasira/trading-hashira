@@ -2157,20 +2157,24 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     const sorted=[...data].sort((a,b)=>(b[sortBy]||0)-(a[sortBy]||0));
     const s2pct=(data.filter(s=>s.stage===2).length/data.length*100).toFixed(0);
     const s4pct=(data.filter(s=>s.stage===4).length/data.length*100).toFixed(0);
-    const triple=sorted.filter(s=>s.stage===2&&s.rs4w>0&&s.mansfield>0);
+    const rsConsensus=sorted.filter(s=>s.stage===2&&s.rs4w>0&&s.mansfield>0);
+    const weinsteinAligned=d.weinstein_aligned||[];
+    const regime=d.regime||'MIXED';
+    const regimeClr={'FAVORABLE':'var(--green)','IMPROVING':'var(--green)','MIXED':'var(--amber)','HOSTILE':'var(--red)','DETERIORATING':'var(--red)','BOTTOMING':'var(--amber)'}[regime]||'var(--text-dim)';
     const stgClr=s=>[null,'var(--green)','var(--green)','var(--amber)','var(--red)'][s]||'var(--text-dim)';
     const rsClr=v=>v>4?'var(--green)':v>1?'var(--green)':v>-1?'var(--amber)':v>-4?'var(--red)':'var(--red)';
 
-    el.innerHTML=`<div class="metrics-row g4">
+    el.innerHTML=`<div class="metrics-row g5">
       <div class="m-card"><div class="label">SECTORS STAGE 2</div><div class="value ${+s2pct>50?'up':'neutral'}">${s2pct}%</div></div>
       <div class="m-card"><div class="label">SECTORS STAGE 4</div><div class="value ${+s4pct>40?'down':'neutral'}">${s4pct}%</div></div>
-      <div class="m-card"><div class="label">TRIPLE ALIGNED</div><div class="value accent-c">${triple.length}</div><div class="sub">${triple.map(s=>s.id).join(', ')||'None'}</div></div>
-      <div class="m-card"><div class="label">REGIME</div><div class="value ${+s4pct>=60?'down':'up'}">${+s4pct>=60?'HOSTILE':'FAVORABLE'}</div></div>
+      <div class="m-card"><div class="label">RS CONSENSUS</div><div class="value accent-c">${rsConsensus.length}</div><div class="sub">${rsConsensus.map(s=>s.id).join(', ')||'None'}</div></div>
+      <div class="m-card"><div class="label">WEINSTEIN ALIGNED</div><div class="value ${weinsteinAligned.length>=4?'up':'neutral'}">${weinsteinAligned.length}</div><div class="sub">${weinsteinAligned.join(', ')||'None'}</div></div>
+      <div class="m-card"><div class="label">REGIME</div><div class="value" style="color:${regimeClr}">${regime}</div><div class="sub">SPY S${d.spy_stage||'?'}</div></div>
     </div>
     <div class="card"><div class="card-header">SECTOR RS RANKING — SORTED BY ${sortBy.toUpperCase()}</div>
     <div style="overflow-x:auto"><table><thead><tr><th>#</th><th>Sector</th><th>Stage</th><th>4W RS</th><th>13W RS</th><th>26W RS</th><th>Mansfield</th><th>% > 30W</th><th>Breadth</th></tr></thead>
-    <tbody>${sorted.map((s,i)=>`<tr${triple.includes(s)?' style="background:var(--accent-bg)"':''}>
-      <td>${i+1}</td><td><span style="font-weight:600">${s.name}</span> <span style="color:var(--text-dim);font-size:10px">${s.id}</span>${triple.includes(s)?'<span style="color:var(--accent);font-size:9px;margin-left:6px">★ TRIPLE</span>':''}</td>
+    <tbody>${sorted.map((s,i)=>{const isRS=rsConsensus.includes(s);const isWA=weinsteinAligned.includes(s.id);return`<tr${isRS?' style="background:var(--accent-bg)"':''}>
+      <td>${i+1}</td><td><span style="font-weight:600">${s.name}</span> <span style="color:var(--text-dim);font-size:10px">${s.id}</span>${isWA?'<span style="color:var(--green);font-size:9px;margin-left:6px">★ WA</span>':''}${isRS&&!isWA?'<span style="color:var(--accent);font-size:9px;margin-left:6px">● RS</span>':''}</td>
       <td><span class="badge" style="background:${stgClr(s.stage)}20;color:${stgClr(s.stage)};border:1px solid ${stgClr(s.stage)}40">S${s.stage}</span></td>
       <td style="color:${rsClr(s.rs4w)};font-weight:600">${s.rs4w>0?'+':''}${s.rs4w}%</td>
       <td style="color:${rsClr(s.rs13w)}">${s.rs13w>0?'+':''}${s.rs13w}%</td>
@@ -2178,9 +2182,9 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
       <td style="color:${s.mansfield>0?'var(--green)':'var(--red)'};font-weight:700">${s.mansfield>0?'+':''}${s.mansfield}</td>
       <td style="color:${s.pctAbove30w>60?'var(--green)':s.pctAbove30w>40?'var(--amber)':'var(--red)'}">${s.pctAbove30w}%</td>
       <td style="color:${s.breadthTrend==='IMPROVING'?'var(--green)':s.breadthTrend==='STABLE'?'var(--amber)':'var(--red)'};font-size:10px">${s.breadthTrend}</td>
-    </tr>`).join('')}</tbody></table></div></div>
+    </tr>`}).join('')}</tbody></table></div></div>
     <div class="card" style="border-color:var(--accent-dim)"><div class="card-header" style="color:var(--accent)">WEINSTEIN TOP-DOWN RULE</div>
-    <div style="font-size:12px;color:var(--text-muted);line-height:1.7">If ≥60% of sectors are in Stage 4 and S&P 500 is below a declining 30-week SMA, the environment is <span style="color:var(--red);font-weight:600">hostile for new longs</span> regardless of individual setup quality. Triple Alignment (sector Stage 2 + positive RS + positive Mansfield) identifies highest-conviction sectors.</div></div>`;
+    <div style="font-size:12px;color:var(--text-muted);line-height:1.7">If ≥60% of sectors are in Stage 4 and S&P 500 is below a declining 30-week SMA, the environment is <span style="color:var(--red);font-weight:600">hostile for new longs</span> regardless of individual setup quality.<br/><strong style="color:var(--accent)">RS CONSENSUS</strong>: sectors with Stage 2 + positive 4W RS + positive Mansfield RS (momentum confirmation).<br/><strong style="color:var(--green)">WEINSTEIN ALIGNED</strong>: sectors in Stage 2 while market (SPY) is also Stage 2 (orthodox triple alignment).</div></div>`;
   },
 
   // ═══ EARNINGS ANALYSIS ═══

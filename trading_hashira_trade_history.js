@@ -518,7 +518,7 @@ function calculatePnL(positions) {
       // FIFO-ish P&L calculation
       const avgBuyPrice = pos.totalBuyCost / pos.totalBuyQty;
       const avgSellPrice = pos.totalSellProceeds / pos.totalSellQty;
-      const closedPnL = (avgSellPrice - avgBuyPrice) * closedQty / 100 - pos.totalFees;
+      const closedPnL = (avgSellPrice - avgBuyPrice) * closedQty - pos.totalFees;
       realizedPnL += closedPnL;
       closedTrades++;
       if (closedPnL > 0) winningTrades++;
@@ -527,7 +527,7 @@ function calculatePnL(positions) {
     if (pos.netQty > 0) {
       // Open position cost basis
       const avgBuyPrice = pos.totalBuyCost / pos.totalBuyQty;
-      openCostBasis += avgBuyPrice * pos.netQty / 100;
+      openCostBasis += avgBuyPrice * pos.netQty;
     }
   }
   
@@ -603,7 +603,7 @@ function renderPositionsView(positions) {
         const dte = calculateDTE(pos.expiry);
         const dteClass = getDTEClass(dte);
         const avgCost = pos.totalBuyCost / pos.totalBuyQty;
-        const costBasis = avgCost * pos.netQty / 100;
+        const costBasis = avgCost * pos.netQty;
         
         return `
           <div class="position-card">
@@ -713,7 +713,7 @@ function renderPnLView(positions, pnl) {
       const closedQty = Math.min(pos.totalBuyQty, pos.totalSellQty);
       const avgBuy = pos.totalBuyCost / pos.totalBuyQty;
       const avgSell = pos.totalSellProceeds / pos.totalSellQty;
-      const pnl = ((avgSell - avgBuy) * closedQty / 100) - pos.totalFees;
+      const pnl = ((avgSell - avgBuy) * closedQty) - pos.totalFees;
       const pnlPercent = ((avgSell / avgBuy) - 1) * 100;
       
       return { ...pos, closedQty, avgBuy, avgSell, pnl, pnlPercent };

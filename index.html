@@ -3768,12 +3768,6 @@ function getTradeHistoryStyles() {
 function getTradeHistoryHTML() {
   return `
     <div id="options-tracker">
-      <!-- Tab Switcher: Stock | Options -->
-      <div class="portfolio-tab-row">
-        <button class="portfolio-tab-btn" onclick="switchPortfolioTab('stock')">Stock</button>
-        <button class="portfolio-tab-btn active" onclick="switchPortfolioTab('options')">Options</button>
-      </div>
-
       <!-- Sub-tabs: Positions | Trade History | P&L + Sync -->
       <div class="options-subtab-row" style="justify-content:space-between;flex-wrap:wrap">
         <div style="display:flex;gap:8px">
@@ -3807,10 +3801,22 @@ function getTradeHistoryHTML() {
         </div>
       </div>
 
+      <!-- P&L Charts -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px" id="options-charts-row">
+        <div style="padding:14px;background:rgba(0,0,0,0.3);border-radius:8px;border:1px solid #333">
+          <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">CUMULATIVE P&L</div>
+          <div style="height:160px"><canvas id="cv-opt-cum-pnl"></canvas></div>
+        </div>
+        <div style="padding:14px;background:rgba(0,0,0,0.3);border-radius:8px;border:1px solid #333">
+          <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">DAILY P&L</div>
+          <div style="height:160px"><canvas id="cv-opt-daily-pnl"></canvas></div>
+        </div>
+      </div>
+
       <!-- Add Trade Section -->
       <div class="trade-form-section">
         <div class="trade-form-title">Add Trade</div>
-        
+
         <!-- Paste Import -->
         <div class="trade-paste-container">
           <div class="trade-paste-hint">
@@ -4251,7 +4257,10 @@ function renderCurrentView() {
   document.getElementById('pnl-open-cost').textContent = '$' + pnl.openCostBasis.toFixed(2);
   document.getElementById('pnl-total-trades').textContent = trades.length;
   document.getElementById('pnl-win-rate').textContent = pnl.winRate !== null ? pnl.winRate + '%' : '—';
-  
+
+  // Render P&L charts
+  _renderOptionsPnLCharts(trades);
+
   // Render active view
   if (currentOptionsView === 'positions') {
     renderPositionsView(positions);
@@ -4260,6 +4269,58 @@ function renderCurrentView() {
   } else if (currentOptionsView === 'pnl') {
     renderPnLView(positions, pnl);
   }
+}
+
+// ── Options P&L Charts ────────────────────────────────────────────────────────
+function _renderOptionsPnLCharts(trades) {
+  if (!trades.length || typeof makeChart !== 'function') return;
+
+  // Build daily P&L by trade date
+  const dailyPnL = {};
+  trades.forEach(t => {
+    const d = t.tradeDate || ''; if (!d) return;
+    if (!dailyPnL[d]) dailyPnL[d] = 0;
+    const sign = t.action === 'SELL' ? 1 : -1;
+    dailyPnL[d] += sign * t.qty * t.price * 100 - (t.fees || 0);
+  });
+  const sortedDates = Object.keys(dailyPnL).sort();
+  if (!sortedDates.length) return;
+
+  const labels = sortedDates.map(d => { const p = d.split('-'); return (p[1] || '') + '/' + (p[2] || ''); });
+  const dailyData = sortedDates.map(d => Math.round(dailyPnL[d] * 100) / 100);
+  let cum = 0;
+  const cumData = sortedDates.map(d => { cum += dailyPnL[d]; return Math.round(cum * 100) / 100; });
+
+  // Cumulative P&L line chart
+  try {
+    makeChart('cv-opt-cum-pnl', {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { data: cumData, borderColor: cum >= 0 ? '#4caf50' : '#ff5252', backgroundColor: (cum >= 0 ? '#4caf50' : '#ff5252') + '15', fill: true, tension: .3, pointRadius: 0, borderWidth: 1.5 },
+          { data: labels.map(() => 0), borderColor: '#ffffff15', borderDash: [4, 4], pointRadius: 0, borderWidth: 1 }
+        ]
+      },
+      options: { plugins: { legend: { display: false } }, scales: { x: { ticks: { maxTicksToLimit: 6, font: { size: 9 } } }, y: { ticks: { callback: v => '$' + v.toLocaleString() } } }, interaction: { intersect: false }, maintainAspectRatio: false }
+    });
+  } catch (e) { console.warn('Cum PnL chart:', e); }
+
+  // Daily P&L bar chart
+  try {
+    makeChart('cv-opt-daily-pnl', {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          data: dailyData,
+          backgroundColor: dailyData.map(v => v >= 0 ? '#4caf5080' : '#ff525280'),
+          borderRadius: 2
+        }]
+      },
+      options: { plugins: { legend: { display: false } }, scales: { x: { ticks: { maxTicksToLimit: 8, font: { size: 9 } } }, y: { ticks: { callback: v => '$' + v.toLocaleString() } } }, maintainAspectRatio: false }
+    });
+  } catch (e) { console.warn('Daily PnL chart:', e); }
 }
 
 // ── Render Positions View ──────────────────────────────────────────────────────

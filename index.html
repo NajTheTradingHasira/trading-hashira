@@ -1944,7 +1944,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     let bars;
     try{
       // Try live data first
-      const d=await NX.apiFetch('/api/stock?symbol='+t+'&range=1y&interval=1d');
+      const d=await NX.apiFetch('/api/stock?symbol='+t+'&range=2y&interval=1d');
       const closes=d.close||[];bars=[];
       for(let i=0;i<closes.length;i++){
         if(closes[i]==null)continue;

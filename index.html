@@ -658,6 +658,7 @@ function goTo(id){
     macro:()=>NX.loadFRED(),
     sectors:()=>NX.loadSectors(),
     darkpool:()=>NX.loadDarkPool(),
+    news:()=>{if(!NX._newsArticles.length)NX.refreshAllNews()},
     earnings:()=>{$('#earn-presets').innerHTML=['NVDA','META','CRM','AAPL','GOOGL','AMZN','TSLA','AMD','PLTR','CRWD'].map(t=>`<button class="btn btn-sm" onclick="$('#earn-ticker').value='${t}';NX.loadEarnings()">${t}</button>`).join('')},
     settings:()=>{NX.loadHeatmap();NX.loadAlerts()}
   };

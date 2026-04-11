@@ -2143,9 +2143,10 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
   async loadSectors(){
     const el=$('#sec-content');el.innerHTML='<div class="loading">Loading sectors…</div>';
     const sortBy=$('#sec-sort').value;
-    let data;
+    let data,rawResp={};
     try{
       const d=await NX.apiFetch('/api/sectors');
+      rawResp=d||{};
       data=(d.sectors||d||[]).map(s=>({...s,rs4w:s.rs_4w||s.rs4w||0,rs13w:s.rs_13w||s.rs13w||0,rs26w:s.rs_26w||s.rs26w||0,mansfield:s.mansfield||0,pctAbove30w:s.pct_above_30w||0,stage:s.stage||2,breadthTrend:s.breadth_trend||'STABLE'}));
     }catch{
       // Mock data
@@ -2158,8 +2159,9 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     const s2pct=(data.filter(s=>s.stage===2).length/data.length*100).toFixed(0);
     const s4pct=(data.filter(s=>s.stage===4).length/data.length*100).toFixed(0);
     const rsConsensus=sorted.filter(s=>s.stage===2&&s.rs4w>0&&s.mansfield>0);
-    const weinsteinAligned=d.weinstein_aligned||[];
-    const regime=d.regime||'MIXED';
+    const weinsteinAligned=rawResp.weinstein_aligned||[];
+    const regime=rawResp.regime||'MIXED';
+    const spyStage=rawResp.spy_stage||'?';
     const regimeClr={'FAVORABLE':'var(--green)','IMPROVING':'var(--green)','MIXED':'var(--amber)','HOSTILE':'var(--red)','DETERIORATING':'var(--red)','BOTTOMING':'var(--amber)'}[regime]||'var(--text-dim)';
     const stgClr=s=>[null,'var(--green)','var(--green)','var(--amber)','var(--red)'][s]||'var(--text-dim)';
     const rsClr=v=>v>4?'var(--green)':v>1?'var(--green)':v>-1?'var(--amber)':v>-4?'var(--red)':'var(--red)';
@@ -2169,7 +2171,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
       <div class="m-card"><div class="label">SECTORS STAGE 4</div><div class="value ${+s4pct>40?'down':'neutral'}">${s4pct}%</div></div>
       <div class="m-card"><div class="label">RS CONSENSUS</div><div class="value accent-c">${rsConsensus.length}</div><div class="sub">${rsConsensus.map(s=>s.id).join(', ')||'None'}</div></div>
       <div class="m-card"><div class="label">WEINSTEIN ALIGNED</div><div class="value ${weinsteinAligned.length>=4?'up':'neutral'}">${weinsteinAligned.length}</div><div class="sub">${weinsteinAligned.join(', ')||'None'}</div></div>
-      <div class="m-card"><div class="label">REGIME</div><div class="value" style="color:${regimeClr}">${regime}</div><div class="sub">SPY S${d.spy_stage||'?'}</div></div>
+      <div class="m-card"><div class="label">REGIME</div><div class="value" style="color:${regimeClr}">${regime}</div><div class="sub">SPY S${spyStage}</div></div>
     </div>
     <div class="card"><div class="card-header">SECTOR RS RANKING — SORTED BY ${sortBy.toUpperCase()}</div>
     <div style="overflow-x:auto"><table><thead><tr><th>#</th><th>Sector</th><th>Stage</th><th>4W RS</th><th>13W RS</th><th>26W RS</th><th>Mansfield</th><th>% > 30W</th><th>Breadth</th></tr></thead>

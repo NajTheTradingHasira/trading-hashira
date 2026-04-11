@@ -1833,8 +1833,8 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     for(let i=5;i<bars.length;i++){
       const b=bars[i],prev=bars[i-1];
       if(!inRally){
-        const h20=Math.max(...bars.slice(Math.max(0,i-20),i).map(x=>x.close));
-        if(b.close<h20*.9&&b.close>prev.close){inRally=true;rallyStart=i;rallyDay=1;rallyLow=prev.close}
+        const h20=Math.max(...bars.slice(Math.max(0,i-39),i).map(x=>x.close));
+        if(b.close<h20*.95&&b.close>prev.close){inRally=true;rallyStart=i;rallyDay=1;rallyLow=prev.close}
       }else{
         rallyDay++;if(b.close<rallyLow*.995){inRally=false;rallyDay=0;continue}
         if(rallyDay>=4){

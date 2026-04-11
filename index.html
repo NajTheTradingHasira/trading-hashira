@@ -7,6 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="trading_hashira_trade_history.js"></script>
 <style>
 /* ═══════════════════════════════════════════════════════════════
    NEXUS TERMINAL v3 — DESIGN SYSTEM
@@ -381,31 +382,9 @@ tr:hover{background:var(--bg2)}
         </div>
         <div id="port-content"><div class="loading">Loading portfolio…</div></div>
       </div>
-      <!-- Options Tracker -->
+      <!-- Options Trade History -->
       <div id="port-options-panel" class="port-panel">
-        <div id="opt-tracker-stats" style="margin-bottom:12px"></div>
-        <div class="card" style="margin-bottom:12px">
-          <div class="card-header">ADD OPTION · MANUAL</div>
-          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
-            <input id="ot-ticker" type="text" placeholder="TICKER" style="width:80px;text-transform:uppercase" class="nx-input"/>
-            <select id="ot-type" class="nx-input" style="width:70px"><option>CALL</option><option>PUT</option></select>
-            <input id="ot-strike" type="number" placeholder="STRIKE" step="0.5" style="width:80px" class="nx-input"/>
-            <input id="ot-expiry" type="date" id="ot-expiry" class="nx-input" style="width:130px"/>
-            <input id="ot-qty" type="number" placeholder="QTY" value="1" style="width:55px" class="nx-input"/>
-            <input id="ot-cost" type="number" placeholder="COST" step="0.01" style="width:80px" class="nx-input"/>
-            <select id="ot-side" class="nx-input" style="width:70px"><option>BUY</option><option>SELL</option></select>
-            <select id="ot-strategy" class="nx-input" style="width:90px"><option>Single</option><option>Vertical</option><option>Iron Condor</option><option>Straddle</option><option>Calendar</option><option>Covered</option></select>
-            <select id="ot-broker" class="nx-input" style="width:90px"><option value="robinhood">Robinhood</option><option value="webull">Webull</option><option value="moomoo">Moomoo</option></select>
-            <button class="btn" onclick="NX.addOption()">+ ADD</button>
-          </div>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <input id="ot-paste" type="text" placeholder="Paste: SPY 260417P00600000 (Webull OCC) or GOOG $317.50 Call 4/17/26 (Robinhood)" style="flex:1;min-width:250px" class="nx-input"/>
-            <button class="btn btn-sm" onclick="NX.parseOptionPaste()">PARSE & ADD</button>
-            <label class="btn btn-sm" style="cursor:pointer">CSV IMPORT<input type="file" accept=".csv" style="display:none" onchange="NX.importOptionsCSV(this)"/></label>
-            <button class="btn btn-sm" style="color:var(--text-dim)" onclick="NX.clearOptions()">CLEAR ALL</button>
-          </div>
-        </div>
-        <div id="opt-tracker-table"></div>
+        <div id="options-tracker-root"></div>
       </div>
     </div>
 
@@ -716,7 +695,7 @@ function goTo(id){
   // Auto-load data
   const loaders={
     dashboard:()=>NX.loadDashboard(),
-    portfolio:()=>{NX.loadPortfolio();if(NX._portTab==='options')NX.renderOptions()},
+    portfolio:()=>{NX.loadPortfolio();if(NX._portTab==='options')NX._initTradeHistory()},
     watchlist:()=>NX.loadWatchlist(),
     macro:()=>NX.loadFRED(),
     sectors:()=>NX.loadSectors(),
@@ -809,134 +788,30 @@ const NX={
   removePosition(idx){const pos=NX._getLocalPositions();pos.splice(idx,1);NX._saveLocalPositions(pos);NX.loadPortfolio()},
   clearLocalPositions(){if(confirm('Clear all local positions?')){NX._saveLocalPositions([]);NX.loadPortfolio()}},
 
-  // ═══ OPTIONS TRACKER ═══
+  // ═══ OPTIONS TRADE HISTORY ═══
   _portTab:'options',
+  _tradeHistoryLoaded:false,
   switchPortTab(tab){
     NX._portTab=tab;
     $$('#port-tabs .tab-btn').forEach((b,i)=>b.classList.toggle('active',['stock','options'][i]===tab));
     $$('.port-panel').forEach(p=>p.style.display='none');
     const el=$('#port-'+(tab==='stock'?'stock':'options')+'-panel');if(el)el.style.display='';
-    if(tab==='options')NX.renderOptions();
+    if(tab==='options')NX._initTradeHistory();
   },
-  _getOptions(){return JSON.parse(localStorage.getItem('optionsPositions')||'[]')},
-  _saveOptions(arr){localStorage.setItem('optionsPositions',JSON.stringify(arr))},
-
-  // OCC Parser: "SPY 260417P00600000" → {ticker,type,strike,expiry}
-  _parseOCC(s){
-    const m=s.trim().match(/^([A-Z]{1,5})\s*(\d{6})([CP])(\d{8})$/);
-    if(!m)return null;
-    const tk=m[1],yr='20'+m[2].slice(0,2),mo=m[2].slice(2,4),dy=m[2].slice(4,6);
-    return{ticker:tk,type:m[3]==='C'?'CALL':'PUT',strike:parseInt(m[4])/1000,expiry:`${yr}-${mo}-${dy}`};
-  },
-  // Robinhood Parser: "GOOG $317.50 Call 4/17/26"
-  _parseRH(s){
-    const m=s.trim().match(/^([A-Z]{1,5})\s*\$?([\d.]+)\s*(Call|Put|CALL|PUT)\s*(\d{1,2})\/(\d{1,2})\/(\d{2,4})/i);
-    if(!m)return null;
-    const yr=m[6].length===2?'20'+m[6]:m[6];
-    return{ticker:m[1],type:m[3].toUpperCase(),strike:parseFloat(m[2]),expiry:`${yr}-${m[4].padStart(2,'0')}-${m[5].padStart(2,'0')}`};
-  },
-
-  parseOptionPaste(){
-    const raw=$('#ot-paste').value.trim();if(!raw)return;
-    const broker=$('#ot-broker').value;
-    // Try OCC first, then RH
-    let parsed=NX._parseOCC(raw)||NX._parseRH(raw);
-    if(!parsed){alert('Could not parse: '+raw);return}
-    const pos=NX._getOptions();
-    pos.push({...parsed,qty:1,cost:0,side:'BUY',strategy:'Single',broker,ts:Date.now()});
-    NX._saveOptions(pos);
-    $('#ot-paste').value='';
-    NX.renderOptions();
-  },
-
-  addOption(){
-    const tk=$('#ot-ticker').value.trim().toUpperCase();
-    const strike=parseFloat($('#ot-strike').value);
-    const expiry=$('#ot-expiry').value;
-    if(!tk||!strike||!expiry){alert('Fill ticker, strike, expiry');return}
-    const pos=NX._getOptions();
-    pos.push({
-      ticker:tk,type:$('#ot-type').value,strike,expiry,
-      qty:parseInt($('#ot-qty').value)||1,
-      cost:parseFloat($('#ot-cost').value)||0,
-      side:$('#ot-side').value,
-      strategy:$('#ot-strategy').value,
-      broker:$('#ot-broker').value,
-      ts:Date.now()
-    });
-    NX._saveOptions(pos);
-    $('#ot-ticker').value='';$('#ot-strike').value='';$('#ot-cost').value='';
-    NX.renderOptions();
-  },
-
-  removeOption(idx){const pos=NX._getOptions();pos.splice(idx,1);NX._saveOptions(pos);NX.renderOptions()},
-  clearOptions(){if(confirm('Clear all options positions?')){NX._saveOptions([]);NX.renderOptions()}},
-
-  importOptionsCSV(input){
-    const file=input.files[0];if(!file)return;
-    const reader=new FileReader();
-    reader.onload=function(e){
-      const lines=e.target.result.split('\n').filter(l=>l.trim());
-      if(lines.length<2)return;
-      const hdr=lines[0].toLowerCase();
-      const pos=NX._getOptions();
-      for(let i=1;i<lines.length;i++){
-        const cols=lines[i].split(',').map(c=>c.trim().replace(/"/g,''));
-        if(cols.length<4)continue;
-        // Try to parse: ticker, type, strike, expiry, qty, cost
-        pos.push({ticker:(cols[0]||'').toUpperCase(),type:(cols[1]||'CALL').toUpperCase(),strike:parseFloat(cols[2])||0,expiry:cols[3]||'',qty:parseInt(cols[4])||1,cost:parseFloat(cols[5])||0,side:'BUY',strategy:'Single',broker:$('#ot-broker').value,ts:Date.now()});
-      }
-      NX._saveOptions(pos);NX.renderOptions();
-    };
-    reader.readAsText(file);input.value='';
-  },
-
-  renderOptions(){
-    const pos=NX._getOptions();
-    const statsEl=$('#opt-tracker-stats');
-    const tableEl=$('#opt-tracker-table');
-
-    // Stats
-    const now=new Date();
-    const calls=pos.filter(p=>p.type==='CALL').length;
-    const puts=pos.filter(p=>p.type==='PUT').length;
-    const totalCost=pos.reduce((s,p)=>s+(p.cost||0)*(p.qty||1)*100,0);
-    const dtes=pos.map(p=>{const d=new Date(p.expiry);return Math.max(0,Math.ceil((d-now)/(86400000)))}).filter(d=>!isNaN(d));
-    const nearestDTE=dtes.length?Math.min(...dtes):null;
-
-    statsEl.innerHTML=`<div style="display:flex;gap:10px;flex-wrap:wrap">
-      <div class="m-card"><div class="label">POSITIONS</div><div class="value accent-c">${pos.length}</div></div>
-      <div class="m-card"><div class="label">TOTAL COST</div><div class="value neutral">$${totalCost.toLocaleString()}</div></div>
-      <div class="m-card"><div class="label">CALLS / PUTS</div><div class="value neutral">${calls} / ${puts}</div></div>
-      <div class="m-card"><div class="label">NEAREST DTE</div><div class="value" style="color:${nearestDTE!==null?(nearestDTE<=7?'var(--red)':nearestDTE<=21?'var(--amber)':'var(--green)'):'var(--text-dim)'}">${nearestDTE!==null?nearestDTE+'d':'—'}</div></div>
-    </div>`;
-
-    if(!pos.length){
-      tableEl.innerHTML='<div class="empty-state"><div class="icon">◎</div>No options positions. Add manually, paste OCC/Robinhood format, or import CSV.</div>';
-      return;
+  _initTradeHistory(){
+    if(NX._tradeHistoryLoaded){if(typeof renderCurrentView==='function')renderCurrentView();return}
+    // Load the trade history module
+    const root=$('#options-tracker-root');if(!root)return;
+    // Inject CSS
+    if(!document.getElementById('trade-history-css')){
+      const style=document.createElement('style');style.id='trade-history-css';
+      style.textContent=getTradeHistoryStyles();document.head.appendChild(style);
     }
-
-    const brokerClr={robinhood:'var(--green)',webull:'var(--accent)',moomoo:'#ff9800'};
-    tableEl.innerHTML=`<div class="card" style="padding:0"><div style="overflow-x:auto"><table>
-      <thead><tr><th>Ticker</th><th>Type</th><th>Strike</th><th>Expiry</th><th>DTE</th><th>Qty</th><th>Cost</th><th>Total</th><th>Broker</th><th></th></tr></thead>
-      <tbody>${pos.map((p,i)=>{
-        const dte=Math.max(0,Math.ceil((new Date(p.expiry)-now)/86400000));
-        const dteClr=dte<=7?'var(--red)':dte<=21?'var(--amber)':'var(--text)';
-        const total=(p.cost||0)*(p.qty||1)*100;
-        const bClr=brokerClr[p.broker]||'var(--text-dim)';
-        return`<tr>
-          <td style="font-weight:700">${p.ticker}</td>
-          <td><span class="badge ${p.type==='CALL'?'b-green':'b-red'}">${p.type}</span></td>
-          <td>$${p.strike}</td>
-          <td style="font-size:11px">${p.expiry}</td>
-          <td style="color:${dteClr};font-weight:700">${dte}d</td>
-          <td>${p.side==='SELL'?'-':''}${p.qty}</td>
-          <td>$${(p.cost||0).toFixed(2)}</td>
-          <td style="font-weight:600">$${total.toLocaleString()}</td>
-          <td><span style="font-size:9px;padding:2px 6px;border-radius:3px;background:${bClr}18;color:${bClr};border:1px solid ${bClr}30;font-weight:700;text-transform:uppercase">${p.broker||'—'}</span></td>
-          <td><button class="btn btn-sm" style="color:var(--red);border-color:var(--red-dim);padding:2px 8px;font-size:10px" onclick="NX.removeOption(${i})">✕</button></td>
-        </tr>`;
-      }).join('')}</tbody></table></div></div>`;
+    // Inject HTML
+    root.innerHTML=getTradeHistoryHTML();
+    // Init
+    if(typeof renderCurrentView==='function')renderCurrentView();
+    NX._tradeHistoryLoaded=true;
   },
 
   // ═══ PORTFOLIO ═══

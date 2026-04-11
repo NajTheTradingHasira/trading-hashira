@@ -395,9 +395,9 @@ tr:hover{background:var(--bg2)}
       <div class="news-header-card">
         <div class="card-title">MARKET & TICKER NEWS</div>
         <div class="news-controls">
-          <input id="news-ticker" type="text" placeholder="SPY, AAPL, NVDA..." style="text-transform:uppercase"/>
+          <input id="news-ticker" type="text" placeholder="SPY, AAPL, NVDA..." style="text-transform:uppercase;background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:var(--font-mono);font-size:11px;padding:8px 12px;border-radius:3px"/>
           <button class="btn" onclick="NX.fetchAllNews()">► Fetch News</button>
-          <button class="btn btn-dim" onclick="NX.refreshAllNews()">↻ Refresh All</button>
+          <button class="btn" style="background:var(--bg);border:1px solid var(--border);color:var(--text-dim)" onclick="NX.refreshAllNews()">↻ Refresh All</button>
           <span id="news-status" class="news-status"></span>
         </div>
         <div class="news-filter-row">

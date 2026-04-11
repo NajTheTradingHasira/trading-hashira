@@ -2814,35 +2814,88 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     }catch(e){el.innerHTML=`<div class="empty-state"><div class="icon">◇</div>HMM Stock endpoint pending — <code>GET /api/hmm/{ticker}</code></div>`}
   },
 
-  // ─── AI Analysis ───
+  // ─── AI Analysis (0DTE Gameplan via Claude + Weinstein classifier) ───
   async runAIAnalysis(){
     const ticker=($('#ai-ticker').value||'SPY').trim().toUpperCase();
     const el=$('#ai-content');const st=$('#ai-status');
-    el.innerHTML='<div class="loading">Running AI analysis for '+ticker+'…</div>';
-    st.innerHTML='';
+    el.innerHTML=`<div class="loading">Running 0DTE analysis for ${ticker}… (calls Weinstein classifier + Claude with web search — may take 30-60s)</div>`;
+    st.innerHTML='<span style="color:var(--amber)">⏳ Calling classifier + Claude…</span>';
     try{
-      const d=await NX.apiPost('/api/research/stage',{query:'ODTE Regime Analysis for '+ticker,ticker});
+      // Build index_context from dashboard data if available
+      const ctx={};
+      try{
+        const bd=await NX.apiFetch('/api/market-breadth').catch(()=>null);
+        if(bd)ctx.breadth={advDecl:bd.advancing+'/'+bd.declining,newHighsLows:bd.new_highs+'/'+bd.new_lows,mcclellan:bd.mcclellan,trin:bd.trin};
+      }catch{}
+
+      const d=await NX.apiPost('/api/ai/commentary/'+ticker,{index_context:ctx});
       const now=new Date();
-      st.innerHTML=`<span style="color:var(--green)">✓ ${ticker} analysis complete · ${now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</span>`;
-      if(d){
-        let out=`<div class="card" style="border:none;padding:0">
-          <div style="display:flex;justify-content:space-between;margin-bottom:16px"><span style="font-size:13px;font-weight:700">ODTE Regime Analysis — ${ticker}</span><span style="font-size:10px;color:var(--text-dim)">${now.toLocaleDateString()} ${now.toLocaleTimeString()}</span></div>`;
-        const sectionColors={'MARKET REGIME':'var(--accent)','IV CONTEXT':'var(--accent)','TRADE STRUCTURE':'var(--green)','RISK':'var(--red)','OUTLOOK':'var(--purple)'};
-        if(d.sections)d.sections.forEach(s=>{
-          const hdr=(s.heading||'').toUpperCase();
-          const borderClr=Object.entries(sectionColors).find(([k])=>hdr.includes(k))?.[1]||'var(--accent)';
-          const icon=hdr.includes('REGIME')?'🏛':hdr.includes('IV')?'📊':hdr.includes('TRADE')?'💰':hdr.includes('RISK')?'⚠':'📈';
-          out+=`<div style="border-left:3px solid ${borderClr};padding:12px 16px;margin-bottom:16px;background:var(--bg1);border-radius:0 4px 4px 0">
-            <div style="font-size:11px;font-weight:700;color:${borderClr};letter-spacing:1px;margin-bottom:8px">${icon} ${hdr}</div>
-            <div style="font-size:12px;color:var(--text-muted);line-height:1.7;white-space:pre-line">${s.content||''}</div>
-          </div>`;
-        });
-        if(d.summary)out+=`<div style="border-left:3px solid var(--accent);padding:12px 16px;margin-bottom:16px;background:var(--bg1);border-radius:0 4px 4px 0"><div style="font-size:12px;color:var(--text-muted);line-height:1.7">${d.summary}</div></div>`;
-        if(d.tickers)out+=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px">${d.tickers.map(t=>`<button class="btn btn-sm" onclick="$('#stage-ticker').value='${t}';goTo('stage');NX.loadStage()">${t}</button>`).join('')}</div>`;
-        out+='</div>';
-        el.innerHTML=out;
-      }else{el.innerHTML='<div class="empty-state"><div class="icon">⬢</div>No results returned</div>'}
-    }catch(e){el.innerHTML=`<div class="card"><div style="font-size:12px;color:var(--text-dim)">AI Analysis endpoint: <code>POST /api/research/stage</code> — ${e.message}</div></div>`}
+      const commentary=d.commentary||'';
+      const stg=d.stage||{};
+
+      st.innerHTML=`<span style="color:var(--green)">✓ ${ticker} analysis complete · ${now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}${d.data_sources?.stage_classifier?' · Classifier ✓':''}</span>`;
+
+      // Stage badge from classifier
+      const stgClr={'1':'var(--amber)','2':'var(--green)','3':'var(--amber)','4':'var(--red)'}[String(stg.stage)]||'var(--text-dim)';
+      let stageBadge='';
+      if(stg.stage)stageBadge=`<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+        <span class="badge" style="background:${stgClr}18;color:${stgClr};border:1px solid ${stgClr}40;font-size:12px;padding:4px 14px;font-weight:700">${stg.stage_label||'Stage '+stg.stage+stg.sub_stage}</span>
+        ${stg.environment?`<span class="badge" style="background:var(--bg2);color:var(--text-dim);border:1px solid var(--border);font-size:10px;padding:3px 10px">${stg.environment}</span>`:''}
+      </div>`;
+
+      // Parse commentary text into sections
+      const sectionDefs=[
+        {key:'MARKET REGIME:',color:'var(--accent)',icon:'🏛'},
+        {key:'KEY LEVELS:',color:'var(--amber)',icon:'📍'},
+        {key:'IV CONTEXT:',color:'var(--purple)',icon:'📊'},
+        {key:'0DTE GAMEPLAN:',color:'var(--green)',icon:'💰'},
+        {key:'RISK MAP:',color:'var(--red)',icon:'⚠'}
+      ];
+
+      let sections=[];
+      if(commentary){
+        // Split on section headers
+        let remaining=commentary;
+        for(let i=0;i<sectionDefs.length;i++){
+          const idx=remaining.indexOf(sectionDefs[i].key);
+          if(idx===-1)continue;
+          // Find end = next section header or end of text
+          let endIdx=remaining.length;
+          for(let j=i+1;j<sectionDefs.length;j++){
+            const ni=remaining.indexOf(sectionDefs[j].key,idx+sectionDefs[i].key.length);
+            if(ni!==-1){endIdx=ni;break}
+          }
+          const content=remaining.substring(idx+sectionDefs[i].key.length,endIdx).trim();
+          sections.push({...sectionDefs[i],content});
+        }
+        // If no sections parsed, show raw commentary
+        if(!sections.length)sections=[{key:'ANALYSIS:',color:'var(--accent)',icon:'📈',content:commentary}];
+      }
+
+      let out=`<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:12px;flex-wrap:wrap">
+        <div><span style="font-size:14px;font-weight:700">0DTE REGIME ANALYSIS — ${ticker}</span></div>
+        <span style="font-size:10px;color:var(--text-dim)">${now.toLocaleDateString()} ${now.toLocaleTimeString()}</span>
+      </div>`;
+      out+=stageBadge;
+
+      // Render each section as a colored card
+      sections.forEach(s=>{
+        // Clean up any stray markdown or citation artifacts
+        const clean=s.content.replace(/\*\*/g,'').replace(/^#+\s*/gm,'').replace(/\n{3,}/g,'\n\n');
+        out+=`<div class="card" style="border-left:4px solid ${s.color};margin-bottom:12px">
+          <div style="font-size:11px;font-weight:700;color:${s.color};letter-spacing:1px;margin-bottom:8px">${s.icon} ${s.key.replace(':','')}</div>
+          <div style="font-size:12px;color:var(--text-muted);line-height:1.8;white-space:pre-line">${clean}</div>
+        </div>`;
+      });
+
+      el.innerHTML=out;
+    }catch(e){
+      st.innerHTML=`<span style="color:var(--red)">✗ Failed</span>`;
+      el.innerHTML=`<div class="card" style="border-left:4px solid var(--red)">
+        <div style="font-size:12px;color:var(--text-dim)">AI Analysis failed: ${e.message}</div>
+        <div style="font-size:10px;color:var(--text-dim);margin-top:8px">Endpoint: <code>POST /api/ai/commentary/${ticker}</code></div>
+      </div>`;
+    }
   },
 };
 // ─── Enter-key bindings ───

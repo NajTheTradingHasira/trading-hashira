@@ -1264,7 +1264,7 @@ const NX={
   async loadCOT(){
     const el=$('#cot-content');el.innerHTML='<div class="loading">Loading COT…</div>';
     try{
-      const d=await NX.apiFetch('/api/cot');
+      const d=await NX.apiFetch('/api/cot/v2');
       let rows=d.data||d.reports||d||[];
       if(!Array.isArray(rows))rows=[];
       const isRaw=rows.length>0&&('noncomm_positions_long_all' in rows[0]||'noncommercial_positions_long_all' in rows[0]);

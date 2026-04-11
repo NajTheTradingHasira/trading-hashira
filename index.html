@@ -381,7 +381,7 @@ tr:hover{background:var(--bg2)}
       </div>
       <div id="opt-unusual" class="opt-panel" style="display:none">
         <div style="margin-bottom:12px"><button class="btn" onclick="NX.loadUnusual()">SCAN UNUSUAL</button></div>
-        <div id="unusual-content"><div class="empty-state"><div class="icon">◎</div>Scan for unusual options activity</div></div>
+        <div id="cv-unusual"><div class="empty-state"><div class="icon">◎</div>Scan 20 tickers for unusual options activity (Vol/OI ≥ 2x, $100K+ premium)</div></div>
       </div>
       <div id="opt-whale" class="opt-panel" style="display:none">
         <div style="margin-bottom:12px"><button class="btn" onclick="NX.loadWhaleFlow()">SCAN WHALE</button></div>
@@ -2570,16 +2570,18 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     const el=document.getElementById('opt-'+tab);if(el)el.style.display='';
     // Clear cross-tab bleed
     if(tab!=='whale'){const wh=$('#cv-whale');if(wh&&!wh.querySelector('table'))wh.innerHTML='<div class="empty-state"><div class="icon">🐋</div>Scan 20 tickers for large premium options flow</div>'}
+    if(tab!=='unusual'){const un=$('#cv-unusual');if(un&&!un.querySelector('table'))un.innerHTML='<div class="empty-state"><div class="icon">◎</div>Scan 20 tickers for unusual options activity</div>'}
     if(tab!=='chain'){const wt=$('#cv-whale-ticker');if(wt)wt.innerHTML=''}
   },
 
-  // ─── Unusual activity ───
+  // ─── Unusual activity (uses same renderer as whale) ───
   async loadUnusual(){
-    const el=$('#unusual-content');el.innerHTML='<div class="loading">Scanning unusual activity…</div>';
+    const el=$('#cv-unusual');if(!el)return;
+    el.innerHTML='<div class="loading">Scanning unusual activity across 20 tickers…</div>';
     try{
       const d=await NX.apiFetch('/api/options/unusual');
-      el.innerHTML=d&&d.length?`<div class="card"><table class="nx-table"><thead><tr><th>TICKER</th><th>TYPE</th><th>STRIKE</th><th>VOLUME</th><th>OI</th><th>IV</th></tr></thead><tbody>${d.map(r=>`<tr><td><strong>${r.ticker}</strong></td><td><span class="badge ${r.type==='CALL'?'b-green':'b-red'}">${r.type}</span></td><td>${r.strike}</td><td>${r.volume?.toLocaleString()}</td><td>${r.oi?.toLocaleString()}</td><td>${(r.iv*100).toFixed(1)}%</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty-state"><div class="icon">◎</div>No unusual activity detected — endpoint pending</div>';
-    }catch(e){el.innerHTML=`<div class="empty-state"><div class="icon">◎</div>Unusual activity endpoint pending — <code>GET /api/options/unusual</code></div>`}
+      NX._renderWhaleTable(el,d,'UNUSUAL OPTIONS ACTIVITY');
+    }catch(e){el.innerHTML=`<div class="empty-state"><div class="icon">◎</div>Unusual activity error: ${e.message}<br/><code style="font-size:10px;color:var(--text-dim)">GET /api/options/unusual</code></div>`}
   },
 
   // ─── Whale flow (full scan — 20 tickers) ───

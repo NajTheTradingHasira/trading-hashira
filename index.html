@@ -467,7 +467,14 @@ tr:hover{background:var(--bg2)}
           <button class="btn" onclick="NX.loadRegime()">FIT HMM</button>
         </div>
         <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap">
-          ${['SPY','QQQ','IWM','DIA','AAPL','NVDA','TSLA','META'].map(t=>`<button class="btn btn-sm" onclick="$('#hmm-idx-input').value='${t}';NX.loadRegime()">${t}</button>`).join('')}
+          <button class="btn btn-sm" onclick="$('#hmm-idx-input').value='SPY';NX.loadRegime()">SPY</button>
+          <button class="btn btn-sm" onclick="$('#hmm-idx-input').value='QQQ';NX.loadRegime()">QQQ</button>
+          <button class="btn btn-sm" onclick="$('#hmm-idx-input').value='IWM';NX.loadRegime()">IWM</button>
+          <button class="btn btn-sm" onclick="$('#hmm-idx-input').value='DIA';NX.loadRegime()">DIA</button>
+          <button class="btn btn-sm" onclick="$('#hmm-idx-input').value='AAPL';NX.loadRegime()">AAPL</button>
+          <button class="btn btn-sm" onclick="$('#hmm-idx-input').value='NVDA';NX.loadRegime()">NVDA</button>
+          <button class="btn btn-sm" onclick="$('#hmm-idx-input').value='TSLA';NX.loadRegime()">TSLA</button>
+          <button class="btn btn-sm" onclick="$('#hmm-idx-input').value='META';NX.loadRegime()">META</button>
         </div>
         <div id="regime-content"><div class="empty-state"><div class="icon">◇</div>Click FIT HMM or a ticker to run Baum-Welch regime classification</div></div>
       </div>
@@ -1559,9 +1566,9 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     const el=$('#regime-content');
     el.innerHTML=`<div class="loading">Fitting ${K}-state HMM for ${sym}… (Baum-Welch EM, 60 iterations)</div>`;
     try{
-      // Fetch 2yr daily data
-      const d=await NX.apiFetch('/api/stock?symbol='+sym+'&range=2y&interval=1d');
-      const closes=(d.close||[]).filter(v=>v!=null);
+      // Fetch 2yr daily data from /api/stock/{ticker}
+      const d=await NX.apiFetch('/api/stock/'+sym+'?period=2y');
+      const closes=(d.ohlcv||[]).map(b=>b.close).filter(v=>v!=null);
       if(closes.length<60)throw new Error('Insufficient data: '+closes.length+' bars');
       const returns=closes.slice(1).map((p,i)=>Math.log(p/closes[i]));
 
@@ -2068,13 +2075,13 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     let bars;
     try{
       // Try live data first
-      const d=await NX.apiFetch('/api/stock?symbol='+t+'&range=2y&interval=1d');
-      const closes=d.close||[];bars=[];
-      for(let i=0;i<closes.length;i++){
-        if(closes[i]==null)continue;
-        const close=closes[i],open=d.open?.[i]||close,high=d.high?.[i]||close,low=d.low?.[i]||close;
-        const prevC=i>0?closes[i-1]:open;
-        bars.push({idx:bars.length,open,high,low,close,volume:d.volume?.[i]||0,ret:prevC?Math.log(close/prevC):0,isUp:close>=prevC});
+      const d=await NX.apiFetch('/api/stock/'+t+'?period=2y');
+      const ohlcv=d.ohlcv||[];bars=[];
+      for(let i=0;i<ohlcv.length;i++){
+        const b=ohlcv[i];if(b.close==null)continue;
+        const close=b.close,open=b.open||close,high=b.high||close,low=b.low||close;
+        const prevC=i>0?(ohlcv[i-1].close||open):open;
+        bars.push({idx:bars.length,open,high,low,close,volume:b.volume||0,ret:prevC?Math.log(close/prevC):0,isUp:close>=prevC});
       }
     }catch{
       bars=NX._genDailyOHLCV(t);

@@ -2245,12 +2245,32 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
       if(selBase){
         const startIdx=Math.max(0,selBase.startDay-20);const endIdx=Math.min(bars.length,selBase.endDay+40);
         const slice=bars.slice(startIdx,endIdx);
-        makeChart('cv-tt-base',{data:{labels:slice.map((_,i)=>i),datasets:[
-          {type:'line',label:'Close',data:slice.map(b=>b.close),borderColor:'#c8d6e550',backgroundColor:'#c8d6e508',fill:true,tension:.1,pointRadius:0,borderWidth:1.5},
-          {type:'line',label:'Pivot',data:slice.map(()=>selBase.pivot),borderColor:'#ffc107',borderDash:[6,3],pointRadius:0,borderWidth:1.5},
-          {type:'line',label:'Buy Hi',data:slice.map(()=>selBase.buyZoneHigh),borderColor:'#00e67630',backgroundColor:'#00e67608',fill:'-1',pointRadius:0,borderWidth:1},
-          {type:'bar',label:'Volume',data:slice.map(b=>b.volume),backgroundColor:slice.map(b=>b.isUp?'#00e67630':'#ff525230'),yAxisID:'y1'}
-        ]},options:{plugins:{legend:{display:false}},scales:{x:{display:false},y:{ticks:{callback:v=>'$'+fmt(v,0)}},y1:{position:'left',grid:{display:false},ticks:{callback:v=>fmtK(v)},max:Math.max(...slice.map(b=>b.volume))*3}},interaction:{intersect:false},maintainAspectRatio:false}});
+        const baseStartRel=selBase.startDay-startIdx,baseEndRel=selBase.endDay-startIdx;
+        const maxVol=Math.max(...slice.map(b=>b.volume))||1;
+        const minP=Math.min(...slice.map(b=>b.low)),maxP=Math.max(...slice.map(b=>b.high));
+        const volScale=(maxP-minP)*0.2;
+
+        makeChart('cv-tt-base',{
+          data:{labels:slice.map((_,i)=>i),datasets:[
+            // Base region highlight (background box)
+            {type:'bar',label:'Base Region',data:slice.map((_,i)=>i>=baseStartRel&&i<=baseEndRel?[minP*0.998,maxP*1.002]:null),backgroundColor:'rgba(0,229,255,0.04)',borderWidth:0,barPercentage:1,categoryPercentage:1},
+            // OHLC high-low wicks
+            {type:'bar',label:'HL',data:slice.map(b=>[b.low,b.high]),backgroundColor:'transparent',borderColor:slice.map(b=>b.close>=b.open?'#00e67680':'#ff525280'),borderWidth:1,barPercentage:0.08},
+            // OHLC open-close bodies
+            {type:'bar',label:'OC',data:slice.map(b=>[Math.min(b.open,b.close),Math.max(b.open,b.close)]),backgroundColor:slice.map(b=>b.close>=b.open?'#00e676cc':'#ff5252cc'),borderColor:slice.map(b=>b.close>=b.open?'#00e676':'#ff5252'),borderWidth:1,barPercentage:0.5},
+            // Pivot line
+            {type:'line',label:'Pivot',data:slice.map(()=>selBase.pivot),borderColor:'#ffc107',borderDash:[6,3],pointRadius:0,borderWidth:1.5},
+            // Buy zone high
+            {type:'line',label:'Buy Hi',data:slice.map(()=>selBase.buyZoneHigh),borderColor:'#00e67630',pointRadius:0,borderWidth:1},
+            // Buy zone band fill (pivot to buyZoneHigh)
+            {type:'line',label:'Buy Lo',data:slice.map(()=>selBase.pivot),borderColor:'#00e67620',backgroundColor:'#00e67608',fill:'-1',pointRadius:0,borderWidth:1},
+            // Volume bars at bottom
+            {type:'bar',label:'Vol',data:slice.map(b=>minP+(b.volume/maxVol)*volScale),backgroundColor:slice.map(b=>b.close>=b.open?'#00e67620':'#ff525220'),borderWidth:0,barPercentage:0.7}
+          ]},
+          options:{plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>{if(ctx.datasetIndex===2){const b=slice[ctx.dataIndex];return`O:$${fmt(b.open)} H:$${fmt(b.high)} L:$${fmt(b.low)} C:$${fmt(b.close)}`}return''}}}},
+            scales:{x:{display:false},y:{min:minP*0.995,ticks:{callback:v=>v>=minP?'$'+fmt(v,0):''}}},
+            interaction:{mode:'index',intersect:false},maintainAspectRatio:false}
+        });
       }
     }
   },

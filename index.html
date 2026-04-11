@@ -445,6 +445,11 @@ tr:hover{background:var(--bg2)}
       <div id="stage-content"><div class="empty-state"><div class="icon">◆</div>Enter ticker for Weinstein Stage classification</div></div>
     </div>
 
+    <!-- Stage Scanner -->
+    <div class="page" id="pg-stage-scanner">
+      <div id="page-stage-scanner" class="page-content"></div>
+    </div>
+
     <!-- Quant Models: HMM Indexes + HMM Stocks + LSTM -->
     <div class="page" id="pg-quant">
       <div class="tab-row" id="quant-tabs">
@@ -616,6 +621,7 @@ const PAGES=[
   {id:'news',label:'News',icon:'▤',key:'N',group:'TRADE'},
   {id:'macro',label:'Macro',icon:'∿',key:'M',group:'DATA'},
   {id:'stage',label:'Stage Analysis',icon:'◆',key:'1',group:'DATA'},
+  {id:'stage-scanner',label:'Stage Scanner',icon:'🔬',key:'',group:'DATA'},
   {id:'tradetools',label:'Trade Tools',icon:'⊕',key:'G',group:'DATA'},
   {id:'sectors',label:'Sectors',icon:'⬢',key:'X',group:'DATA'},
   {id:'earnings',label:'Earnings',icon:'⬟',key:'E',group:'DATA'},
@@ -660,7 +666,8 @@ function goTo(id){
     darkpool:()=>NX.loadDarkPool(),
     news:()=>{if(!NX._newsArticles.length)NX.refreshAllNews()},
     earnings:()=>{$('#earn-presets').innerHTML=['NVDA','META','CRM','AAPL','GOOGL','AMZN','TSLA','AMD','PLTR','CRWD'].map(t=>`<button class="btn btn-sm" onclick="$('#earn-ticker').value='${t}';NX.loadEarnings()">${t}</button>`).join('')},
-    settings:()=>{NX.loadHeatmap();NX.loadAlerts()}
+    settings:()=>{NX.loadHeatmap();NX.loadAlerts()},
+    'stage-scanner':()=>renderStageScanner(),
   };
   if(loaders[id])loaders[id]();
 }
@@ -1303,21 +1310,34 @@ const NX={
         const dt=new Date();dt.setDate(dt.getDate()-((dt.getDay()+4)%7));reportDate=dt.toISOString().split('T')[0];
       }
 
-      const dateClean=(reportDate||'').split('T')[0];
-      el.innerHTML=`<div class="card"><div class="card-header">COT REPORT — LARGE SPEC POSITIONING${dateClean?' (AS OF '+dateClean+')':''}</div>
-      <div style="overflow-x:auto"><table>
-      <thead><tr><th>CONTRACT</th><th>NET LONG</th><th>WK CHANGE</th><th>% OF OI</th><th>SIGNAL</th></tr></thead>
-      <tbody>${processed.map(r=>{
+      // Sort by asset class
+      const _cotOrder=['E-Mini S&P 500','Nasdaq 100','Dow Jones Mini','Russell 2000','Gold (COMEX)','Silver (COMEX)','Copper','Crude Oil (WTI)','Natural Gas','US Dollar Index','Euro FX','Japanese Yen','British Pound','Fed Funds','2-Year T-Note','10-Year T-Note','VIX Futures'];
+      const _cotGroupMap={'E-Mini S&P 500':'EQUITY INDICES','Gold (COMEX)':'COMMODITIES','US Dollar Index':'FX','Fed Funds':'RATES','VIX Futures':'VOLATILITY'};
+      processed.sort((a,b)=>{const ia=_cotOrder.indexOf(a.contract),ib=_cotOrder.indexOf(b.contract);return(ia===-1?999:ia)-(ib===-1?999:ib)});
+
+      let cotRows='',lastGroup='';
+      processed.forEach(r=>{
+        const group=_cotGroupMap[r.contract];
+        if(group&&group!==lastGroup){
+          lastGroup=group;
+          cotRows+=`<tr><td colspan="5" style="color:var(--accent);font-weight:700;padding:12px 10px 6px;font-size:11px;letter-spacing:1px;border-bottom:1px solid var(--border)">${group}</td></tr>`;
+        }
         const nlClr=r.netLong>=0?'var(--green)':'var(--red)';
         const wcClr=r.wkChange>=0?'var(--green)':'var(--red)';
-        return `<tr>
+        cotRows+=`<tr>
           <td style="font-weight:600;font-size:13px">${r.contract}</td>
           <td style="color:${nlClr};font-weight:600">${r.netLong>=0?'+':''}${r.netLong.toLocaleString()}</td>
           <td><span style="color:${wcClr}">${r.wkChange>=0?'▲':'▼'} ${r.wkChange>=0?'+':''}${r.wkChange.toLocaleString()}</span></td>
           <td style="color:var(--text-muted)">${r.pctOI}%</td>
           <td><span class="badge ${r.signal.includes('LONG')?'b-green':'b-red'}" style="font-weight:700;letter-spacing:1px">${r.signal}</span></td>
         </tr>`;
-      }).join('')}</tbody></table></div></div>`;
+      });
+
+      const dateClean=(reportDate||'').split('T')[0];
+      el.innerHTML=`<div class="card"><div class="card-header">COT REPORT — LARGE SPEC POSITIONING${dateClean?' (AS OF '+dateClean+')':''}</div>
+      <div style="overflow-x:auto"><table>
+      <thead><tr><th>CONTRACT</th><th>NET LONG</th><th>WK CHANGE</th><th>% OF OI</th><th>SIGNAL</th></tr></thead>
+      <tbody>${cotRows}</tbody></table></div></div>`;
     }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}
   },
 
@@ -2704,6 +2724,138 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
   const dpBtn=document.querySelector('#pg-darkpool .pplx-btn, #pg-darkpool [onclick=""]');
   // Already handled by injected button above
 })();
+
+// ═══════════════════════════════════════════════════════════════════════
+// STAGE SCANNER TAB
+// ═══════════════════════════════════════════════════════════════════════
+
+function renderStageScanner() {
+  const container = document.getElementById('page-stage-scanner');
+  if (!container) return;
+  container.innerHTML = `
+    <div style="padding: 20px; max-width: 1400px; margin: 0 auto;">
+      <h2 style="color: var(--accent); margin-bottom: 4px;">🔬 Stage Scanner</h2>
+      <p style="color: #888; font-size: 13px; margin-bottom: 16px;">Batch Weinstein Stage Analysis — scan your universe, surface setups</p>
+      <div style="display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap;">
+        <input id="scanner-input" type="text" placeholder="AAPL, NVDA, MSFT, META, AMZN, GOOGL, TSLA..." class="nx-input" style="flex: 1; min-width: 300px;" />
+        <button class="btn btn-sm" onclick="scannerLoadWatchlist()">📋 Load Watchlist</button>
+        <button class="btn" id="scanner-run-btn" onclick="runStageScan()" style="background:var(--accent);color:var(--bg0);border-color:var(--accent)">► Run Scan</button>
+      </div>
+      <div id="scanner-filters" style="display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap;">
+        <button class="scanner-filter active" data-filter="ALL" onclick="filterScanResults('ALL', this)">ALL</button>
+        <button class="scanner-filter" data-filter="2A" onclick="filterScanResults('2A', this)" style="border-color: var(--green);">2A BUY</button>
+        <button class="scanner-filter" data-filter="2" onclick="filterScanResults('2', this)" style="border-color: #4caf50;">STAGE 2</button>
+        <button class="scanner-filter" data-filter="1" onclick="filterScanResults('1', this)" style="border-color: var(--amber);">BASING</button>
+        <button class="scanner-filter" data-filter="3" onclick="filterScanResults('3', this)" style="border-color: #ff9800;">TOPPING</button>
+        <button class="scanner-filter" data-filter="4" onclick="filterScanResults('4', this)" style="border-color: var(--red);">STAGE 4</button>
+      </div>
+      <div id="scanner-status" style="color: #888; font-size: 12px; margin-bottom: 10px;"></div>
+      <div id="scanner-dist" style="margin-bottom: 16px;"></div>
+      <div id="scanner-sort" style="display: none; margin-bottom: 10px; font-size: 12px; color: #888;">
+        Sort: <span class="scanner-sort-btn active" onclick="sortScanResults('stage', this)">Stage</span> ·
+        <span class="scanner-sort-btn" onclick="sortScanResults('rs', this)">RS</span> ·
+        <span class="scanner-sort-btn" onclick="sortScanResults('vol', this)">Volume</span> ·
+        <span class="scanner-sort-btn" onclick="sortScanResults('pctHigh', this)">% from High</span>
+      </div>
+      <div id="scanner-results" style="overflow-x: auto;"></div>
+    </div>
+    <style>
+      .scanner-filter{padding:6px 14px;background:transparent;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);cursor:pointer;font-size:12px;font-family:var(--mono);transition:all .2s}
+      .scanner-filter:hover{background:var(--bg2);color:var(--text)}
+      .scanner-filter.active{background:var(--bg2);color:var(--text);border-color:var(--accent)}
+      .scanner-sort-btn{cursor:pointer;padding:2px 6px;border-radius:3px}
+      .scanner-sort-btn:hover{color:var(--text)}
+      .scanner-sort-btn.active{color:var(--accent);text-decoration:underline}
+      #scanner-results table{width:100%;border-collapse:collapse;font-size:12px;font-family:var(--mono)}
+      #scanner-results th{text-align:left;padding:8px 10px;color:var(--text-dim);border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;top:0;background:var(--bg0)}
+      #scanner-results td{padding:7px 10px;border-bottom:1px solid var(--border-dim);white-space:nowrap}
+      #scanner-results tr:hover td{background:var(--bg2)}
+    </style>`;
+}
+
+let _scanResults=[],_scanCurrentFilter='ALL',_scanCurrentSort='stage';
+
+function scannerLoadWatchlist(){
+  const wl=JSON.parse(localStorage.getItem('watchlist')||'[]');
+  const tickers=wl.map(w=>typeof w==='string'?w:w.ticker||w.symbol).filter(Boolean);
+  if(!tickers.length){document.getElementById('scanner-status').textContent='⚠ Watchlist empty — type tickers manually';return}
+  document.getElementById('scanner-input').value=tickers.join(', ');
+}
+
+async function runStageScan(){
+  const input=document.getElementById('scanner-input').value.trim();if(!input)return;
+  const tickers=input.split(/[,\s]+/).map(t=>t.trim().toUpperCase()).filter(Boolean);
+  const statusEl=document.getElementById('scanner-status');
+  const btn=document.getElementById('scanner-run-btn');
+  btn.disabled=true;btn.textContent='⏳ Scanning...';
+  statusEl.textContent=`Scanning ${tickers.length} ticker${tickers.length>1?'s':''}...`;
+  document.getElementById('scanner-results').innerHTML='';
+  document.getElementById('scanner-dist').innerHTML='';
+  try{
+    const resp=await fetch(`${API_BASE}/api/research/stage-scan`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tickers})});
+    if(!resp.ok)throw new Error(`API ${resp.status}`);
+    const data=await resp.json();
+    _scanResults=data.results||[];
+    const ts=new Date(data.timestamp).toLocaleTimeString();
+    statusEl.innerHTML=`✓ <b>${data.scanned}</b>/${data.total} scanned · ${data.failed} failed · Benchmark ${data.benchmark}: <b>${data.benchmark_stage||'?'}</b> · ${ts}`;
+    renderStageDist(data.stage_distribution);
+    document.getElementById('scanner-sort').style.display='block';
+    filterScanResults(_scanCurrentFilter,document.querySelector('.scanner-filter.active'));
+  }catch(err){statusEl.textContent=`✗ Error: ${err.message}`}
+  finally{btn.disabled=false;btn.textContent='► Run Scan'}
+}
+
+function renderStageDist(dist){
+  const el=document.getElementById('scanner-dist');
+  if(!dist||Object.keys(dist).length===0){el.innerHTML='';return}
+  const total=Object.values(dist).reduce((a,b)=>a+b,0);
+  const order=['1A','1','1B','2A','2','2B','3A','3','3B','4A','4','4B'];
+  const colors={'1A':'#555','1':'#777','1B':'var(--amber)','2A':'var(--green)','2':'#4caf50','2B':'#81c784','3A':'#ff9800','3':'#f57c00','3B':'#e65100','4A':'var(--red)','4':'#d32f2f','4B':'#b71c1c'};
+  let bars='';
+  for(const s of order){if(!dist[s])continue;bars+=`<div style="flex:${dist[s]};background:${colors[s]||'#444'};height:22px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#000;min-width:30px;border-right:1px solid var(--bg0)" title="${s}: ${dist[s]}">${s} ${dist[s]}</div>`}
+  el.innerHTML=`<div style="display:flex;border-radius:4px;overflow:hidden">${bars}</div>`;
+}
+
+function filterScanResults(filter,btn){
+  _scanCurrentFilter=filter;
+  document.querySelectorAll('.scanner-filter').forEach(b=>b.classList.remove('active'));
+  if(btn)btn.classList.add('active');
+  renderScanTable();
+}
+
+const STAGE_ORDER={'1A':0,'1':1,'1B':2,'2A':3,'2':4,'2B':5,'3A':6,'3':7,'3B':8,'4A':9,'4':10,'4B':11,'ERR':99,'?':99};
+
+function sortScanResults(key,btn){
+  _scanCurrentSort=key;
+  document.querySelectorAll('.scanner-sort-btn').forEach(b=>b.classList.remove('active'));
+  if(btn)btn.classList.add('active');
+  renderScanTable();
+}
+
+function renderScanTable(){
+  const el=document.getElementById('scanner-results');
+  let rows=[..._scanResults];
+  if(_scanCurrentFilter!=='ALL'){
+    if(['1','2','3','4'].includes(_scanCurrentFilter))rows=rows.filter(r=>r.stage.startsWith(_scanCurrentFilter));
+    else rows=rows.filter(r=>r.stage===_scanCurrentFilter);
+  }
+  rows.sort((a,b)=>{
+    if(_scanCurrentSort==='stage')return(STAGE_ORDER[a.stage]??50)-(STAGE_ORDER[b.stage]??50);
+    if(_scanCurrentSort==='rs')return(b.mansfield_rs??-999)-(a.mansfield_rs??-999);
+    if(_scanCurrentSort==='vol')return(b.vol_ratio??0)-(a.vol_ratio??0);
+    if(_scanCurrentSort==='pctHigh')return(b.pct_from_52w_high??-999)-(a.pct_from_52w_high??-999);
+    return 0;
+  });
+  if(!rows.length){el.innerHTML='<p style="color:var(--text-dim);padding:20px">No results match filter.</p>';return}
+  const stgClr=s=>{if(s.startsWith('2'))return{bg:'#0a2e1a',fg:'var(--green)'};if(s==='1B')return{bg:'#2e2a0a',fg:'var(--amber)'};if(s.startsWith('1'))return{bg:'var(--bg2)',fg:'#888'};if(s.startsWith('3'))return{bg:'#2e1a0a',fg:'#ff9800'};if(s.startsWith('4'))return{bg:'#2e0a0a',fg:'var(--red)'};return{bg:'var(--bg2)',fg:'#888'}};
+  const rsC=v=>v==null?'var(--text-dim)':v>0?'var(--green)':'var(--red)';
+  const volB=sig=>{const m={Breakout:'var(--green)',Churning:'#ff9800','Dry-up':'#888',Normal:'var(--text-dim)'};return`<span style="color:${m[sig]||'var(--text-dim)'}">${sig||'—'}</span>`};
+  const bd=v=>v==null?'—':v?'✅':'❌';
+  let html=`<table><thead><tr><th>TICKER</th><th>STAGE</th><th>LABEL</th><th>ACTION</th><th>PRICE</th><th>30w SMA</th><th>SLOPE</th><th>MRS</th><th>VOL</th><th>VOL SIG</th><th>CANSLIM</th><th>KELL</th><th>% HIGH</th><th>% LOW</th><th>TRANSITION</th></tr></thead><tbody>`;
+  for(const r of rows){const sc=stgClr(r.stage);html+=`<tr><td style="color:var(--text);font-weight:700">${r.ticker}</td><td><span class="stage-badge" style="background:${sc.bg};color:${sc.fg}">${r.stage}${r.qualifier||''}</span></td><td style="color:#ccc">${r.stage_label||''}</td><td style="color:#aaa;font-size:11px">${r.action_bias||''}</td><td>${r.price??'—'}</td><td>${r.sma_30w??'—'}</td><td style="color:${r.sma_30w_slope==='Rising'?'var(--green)':r.sma_30w_slope==='Falling'?'var(--red)':'var(--amber)'}">${r.sma_30w_slope||'—'}</td><td style="color:${rsC(r.mansfield_rs)}">${r.mansfield_rs??'—'}</td><td>${r.vol_ratio??'—'}×</td><td>${volB(r.vol_signal)}</td><td>${bd(r.canslim_ma_stack)}</td><td>${bd(r.kell_ema_stack)}</td><td style="color:${(r.pct_from_52w_high??-99)>-10?'var(--green)':'var(--red)'}">${r.pct_from_52w_high!=null?r.pct_from_52w_high+'%':'—'}</td><td style="color:#4caf50">${r.pct_from_52w_low!=null?'+'+r.pct_from_52w_low+'%':'—'}</td><td style="color:#ff9800;font-size:11px">${r.transition_risk||'—'}</td></tr>`}
+  html+='</tbody></table>';el.innerHTML=html;
+}
+
 </script>
 </body>
 </html>

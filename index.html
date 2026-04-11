@@ -811,7 +811,8 @@ const NX={
     // Init
     if(typeof renderCurrentView==='function')renderCurrentView();
     NX._tradeHistoryLoaded=true;
-    // Auto-sync with backend
+    // Init drop zones and auto-sync
+    setTimeout(()=>{_initPDFDropZone();_initCSVDropZone()},100);
     initTradeSync();
   },
 
@@ -3821,12 +3822,16 @@ function getTradeHistoryHTML() {
       <!-- Add Trade Section -->
       <div class="trade-form-section">
         <div class="trade-form-title">Add Trade</div>
+        <div class="options-subtab-row" id="import-tabs" style="margin-bottom:12px">
+          <button class="options-subtab active" onclick="switchImportTab('webull')">Webull Paste</button>
+          <button class="options-subtab" onclick="switchImportTab('webull-pdf')">Webull PDF</button>
+          <button class="options-subtab" onclick="switchImportTab('robinhood')">Robinhood CSV</button>
+          <button class="options-subtab" onclick="switchImportTab('manual')">Manual Entry</button>
+        </div>
 
-        <!-- Paste Import -->
-        <div class="trade-paste-container">
-          <div class="trade-paste-hint">
-            Paste Webull row: <code style="color:#00e5ff;">SPY 260330P00634000 ... B 4.00 1.41 -564.00 0.00 -0.19</code>
-          </div>
+        <!-- Webull Paste -->
+        <div id="import-webull" class="import-panel">
+          <div class="trade-paste-hint">Paste Webull row: <code style="color:#00e5ff;">SPY 260330P00634000 ... B 4.00 1.41 -564.00 0.00 -0.19</code></div>
           <textarea class="trade-paste-area" id="trade-paste-input" placeholder="Paste trade confirmation rows here (one per line)..."></textarea>
           <div id="trade-paste-preview"></div>
           <div class="trade-btn-row">
@@ -3836,63 +3841,51 @@ function getTradeHistoryHTML() {
           </div>
         </div>
 
-        <!-- Manual Entry -->
-        <details style="margin-top: 16px;">
-          <summary style="color: #888; cursor: pointer; font-size: 11px;">Manual Entry</summary>
-          <div class="trade-form-grid" style="margin-top: 12px;">
-            <div class="trade-form-group">
-              <label>Ticker</label>
-              <input type="text" id="trade-ticker" placeholder="SPY" maxlength="5" style="text-transform:uppercase">
-            </div>
-            <div class="trade-form-group">
-              <label>Type</label>
-              <select id="trade-type">
-                <option value="CALL">CALL</option>
-                <option value="PUT">PUT</option>
-              </select>
-            </div>
-            <div class="trade-form-group">
-              <label>Strike</label>
-              <input type="number" id="trade-strike" placeholder="600" step="0.5">
-            </div>
-            <div class="trade-form-group">
-              <label>Expiry</label>
-              <input type="date" id="trade-expiry">
-            </div>
-            <div class="trade-form-group">
-              <label>Action</label>
-              <select id="trade-action">
-                <option value="BUY">BUY</option>
-                <option value="SELL">SELL</option>
-              </select>
-            </div>
-            <div class="trade-form-group">
-              <label>Qty</label>
-              <input type="number" id="trade-qty" placeholder="1" min="1" value="1">
-            </div>
-            <div class="trade-form-group">
-              <label>Price ($)</label>
-              <input type="number" id="trade-price" placeholder="1.41" step="0.01">
-            </div>
-            <div class="trade-form-group">
-              <label>Fees ($)</label>
-              <input type="number" id="trade-fees" placeholder="0.19" step="0.01" value="0">
-            </div>
-            <div class="trade-form-group">
-              <label>Date</label>
-              <input type="date" id="trade-date">
-            </div>
-            <div class="trade-form-group">
-              <label>Broker</label>
-              <select id="trade-broker">
-                <option value="webull">Webull</option>
-                <option value="robinhood">Robinhood</option>
-                <option value="moomoo">Moomoo</option>
-              </select>
-            </div>
+        <!-- Webull PDF -->
+        <div id="import-webull-pdf" class="import-panel" style="display:none">
+          <div id="pdf-drop" style="border:2px dashed #444;padding:40px;text-align:center;border-radius:8px;cursor:pointer;transition:border-color .2s">
+            <div style="font-size:24px;margin-bottom:8px;opacity:.5">📄</div>
+            <div style="font-size:13px;color:#888">Drag & drop Webull monthly statement PDF here</div>
+            <div style="margin-top:8px;font-size:12px">or <label style="color:#00e5ff;cursor:pointer">browse<input type="file" accept=".pdf" id="pdf-file" hidden></label></div>
           </div>
-          <button class="trade-btn trade-btn-primary" onclick="addManualTrade()">+ Add Trade</button>
-        </details>
+          <div id="pdf-status" style="margin-top:10px;font-size:11px;color:#666"></div>
+          <div id="pdf-preview"></div>
+          <div class="trade-btn-row" style="margin-top:10px">
+            <button class="trade-btn trade-btn-primary" onclick="confirmPDFImport()" id="confirm-pdf-btn" disabled>Import Trades</button>
+            <button class="trade-btn trade-btn-secondary" onclick="clearPDFImport()">Clear</button>
+          </div>
+        </div>
+
+        <!-- Robinhood CSV -->
+        <div id="import-robinhood" class="import-panel" style="display:none">
+          <div id="csv-drop" style="border:2px dashed #444;padding:40px;text-align:center;border-radius:8px;cursor:pointer">
+            <div style="font-size:24px;margin-bottom:8px;opacity:.5">📊</div>
+            <div style="font-size:13px;color:#888">Drag & drop Robinhood CSV here</div>
+            <div style="margin-top:8px;font-size:12px">or <label style="color:#00e5ff;cursor:pointer">browse<input type="file" accept=".csv" id="csv-file" hidden></label></div>
+          </div>
+          <div id="csv-preview"></div>
+          <div class="trade-btn-row" style="margin-top:10px">
+            <button class="trade-btn trade-btn-primary" onclick="confirmCSVImport()" id="confirm-csv-btn" disabled>Import Trades</button>
+            <button class="trade-btn trade-btn-secondary" onclick="clearCSVImport()">Clear</button>
+          </div>
+        </div>
+
+        <!-- Manual Entry -->
+        <div id="import-manual" class="import-panel" style="display:none">
+          <div class="trade-form-grid" style="margin-top:8px">
+            <div class="trade-form-group"><label>Ticker</label><input type="text" id="trade-ticker" placeholder="SPY" maxlength="5" style="text-transform:uppercase"></div>
+            <div class="trade-form-group"><label>Type</label><select id="trade-type"><option value="CALL">CALL</option><option value="PUT">PUT</option></select></div>
+            <div class="trade-form-group"><label>Strike</label><input type="number" id="trade-strike" placeholder="600" step="0.5"></div>
+            <div class="trade-form-group"><label>Expiry</label><input type="date" id="trade-expiry"></div>
+            <div class="trade-form-group"><label>Action</label><select id="trade-action"><option value="BUY">BUY</option><option value="SELL">SELL</option></select></div>
+            <div class="trade-form-group"><label>Qty</label><input type="number" id="trade-qty" placeholder="1" min="1" value="1"></div>
+            <div class="trade-form-group"><label>Price ($)</label><input type="number" id="trade-price" placeholder="1.41" step="0.01"></div>
+            <div class="trade-form-group"><label>Fees ($)</label><input type="number" id="trade-fees" placeholder="0.19" step="0.01" value="0"></div>
+            <div class="trade-form-group"><label>Date</label><input type="date" id="trade-date"></div>
+            <div class="trade-form-group"><label>Broker</label><select id="trade-broker"><option value="webull">Webull</option><option value="robinhood">Robinhood</option><option value="moomoo">Moomoo</option></select></div>
+          </div>
+          <button class="trade-btn trade-btn-primary" style="margin-top:12px" onclick="addManualTrade()">+ Add Trade</button>
+        </div>
       </div>
 
       <!-- View Containers -->
@@ -4624,6 +4617,170 @@ function clearTradePaste() {
   document.getElementById('trade-paste-input').value = '';
   document.getElementById('trade-paste-preview').innerHTML = '';
   document.getElementById('confirm-trade-btn').disabled = true;
+}
+
+// ── Import Tab Switching ──────────────────────────────────────────────────────
+let _currentImportTab = 'webull';
+
+function switchImportTab(tab) {
+  _currentImportTab = tab;
+  document.querySelectorAll('#import-tabs .options-subtab').forEach(b => {
+    b.classList.toggle('active', b.textContent.toLowerCase().includes(
+      tab === 'webull-pdf' ? 'pdf' : tab === 'webull' ? 'paste' : tab === 'robinhood' ? 'csv' : 'manual'
+    ));
+  });
+  ['webull', 'webull-pdf', 'robinhood', 'manual'].forEach(t => {
+    const el = document.getElementById('import-' + t);
+    if (el) el.style.display = t === tab ? 'block' : 'none';
+  });
+}
+
+// ── PDF Upload ────────────────────────────────────────────────────────────────
+let _pdfParsedTrades = [];
+
+function _initPDFDropZone() {
+  const drop = document.getElementById('pdf-drop');
+  const fileInput = document.getElementById('pdf-file');
+  if (!drop || drop._initialized) return;
+  drop._initialized = true;
+
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.style.borderColor = '#00e5ff'; });
+  drop.addEventListener('dragleave', () => { drop.style.borderColor = '#444'; });
+  drop.addEventListener('drop', e => {
+    e.preventDefault(); drop.style.borderColor = '#444';
+    const file = e.dataTransfer.files[0];
+    if (file && file.type === 'application/pdf') uploadWebullPDF(file);
+  });
+  drop.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) uploadWebullPDF(fileInput.files[0]);
+  });
+}
+
+async function uploadWebullPDF(file) {
+  const statusEl = document.getElementById('pdf-status');
+  const previewEl = document.getElementById('pdf-preview');
+  statusEl.innerHTML = '<span style="color:#ff9800">⏳ Parsing PDF... ' + file.name + ' (' + (file.size/1024).toFixed(0) + 'KB)</span>';
+  previewEl.innerHTML = '';
+  _pdfParsedTrades = [];
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const base64 = e.target.result.split(',')[1];
+    try {
+      const d = await apiPreviewWebullPDF(base64);
+      const trades = d.parsed || [];
+      if (!trades.length) {
+        statusEl.innerHTML = '<span style="color:#ff5252">No trades found in PDF. Found ' + (d.total_lines || 0) + ' lines in trading section.</span>';
+        return;
+      }
+      _pdfParsedTrades = trades;
+      statusEl.innerHTML = '<span style="color:#4caf50">✓ Found ' + trades.length + ' trades</span>';
+      previewEl.innerHTML = _renderTradePreviewTable(trades);
+      document.getElementById('confirm-pdf-btn').disabled = false;
+    } catch (err) {
+      statusEl.innerHTML = '<span style="color:#ff5252">Failed: ' + err.message + '</span>';
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+async function apiPreviewWebullPDF(base64) {
+  const base = _portfolioApi(); if (!base) throw new Error('No API');
+  const r = await fetch(base + '/api/portfolio/import/webull-pdf', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ pdf_base64: base64 })
+  });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+async function confirmPDFImport() {
+  if (!_pdfParsedTrades.length) return;
+  await apiSaveTrades(_pdfParsedTrades.map(t => ({ ...t, id: t.id || generateTradeId() })));
+  const all = getTrades().concat(_pdfParsedTrades);
+  saveTrades(all);
+  _pdfParsedTrades = [];
+  document.getElementById('pdf-preview').innerHTML = '';
+  document.getElementById('pdf-status').innerHTML = '<span style="color:#4caf50">✓ Imported</span>';
+  document.getElementById('confirm-pdf-btn').disabled = true;
+  renderCurrentView();
+}
+
+function clearPDFImport() {
+  _pdfParsedTrades = [];
+  document.getElementById('pdf-preview').innerHTML = '';
+  document.getElementById('pdf-status').innerHTML = '';
+  document.getElementById('confirm-pdf-btn').disabled = true;
+}
+
+// ── CSV Upload (Robinhood) ────────────────────────────────────────────────────
+let _csvParsedTrades = [];
+
+function _initCSVDropZone() {
+  const drop = document.getElementById('csv-drop');
+  const fileInput = document.getElementById('csv-file');
+  if (!drop || drop._initialized) return;
+  drop._initialized = true;
+
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.style.borderColor = '#00e5ff'; });
+  drop.addEventListener('dragleave', () => { drop.style.borderColor = '#444'; });
+  drop.addEventListener('drop', e => {
+    e.preventDefault(); drop.style.borderColor = '#444';
+    const file = e.dataTransfer.files[0];
+    if (file) uploadRobinhoodCSV(file);
+  });
+  drop.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) uploadRobinhoodCSV(fileInput.files[0]);
+  });
+}
+
+async function uploadRobinhoodCSV(file) {
+  const previewEl = document.getElementById('csv-preview');
+  previewEl.innerHTML = '<span style="color:#ff9800">Parsing CSV...</span>';
+  _csvParsedTrades = [];
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const d = await apiPreviewRobinhood(e.target.result);
+      const trades = d.parsed || [];
+      if (!trades.length) { previewEl.innerHTML = '<span style="color:#ff5252">No trades found in CSV</span>'; return; }
+      _csvParsedTrades = trades;
+      previewEl.innerHTML = '<span style="color:#4caf50;margin-bottom:8px;display:block">✓ Found ' + trades.length + ' trades</span>' + _renderTradePreviewTable(trades);
+      document.getElementById('confirm-csv-btn').disabled = false;
+    } catch (err) {
+      previewEl.innerHTML = '<span style="color:#ff5252">Failed: ' + err.message + '</span>';
+    }
+  };
+  reader.readAsText(file);
+}
+
+async function confirmCSVImport() {
+  if (!_csvParsedTrades.length) return;
+  await apiSaveTrades(_csvParsedTrades.map(t => ({ ...t, id: t.id || generateTradeId() })));
+  const all = getTrades().concat(_csvParsedTrades);
+  saveTrades(all);
+  _csvParsedTrades = [];
+  document.getElementById('csv-preview').innerHTML = '<span style="color:#4caf50">✓ Imported</span>';
+  document.getElementById('confirm-csv-btn').disabled = true;
+  renderCurrentView();
+}
+
+function clearCSVImport() {
+  _csvParsedTrades = [];
+  document.getElementById('csv-preview').innerHTML = '';
+  document.getElementById('confirm-csv-btn').disabled = true;
+}
+
+// ── Shared preview table renderer ─────────────────────────────────────────────
+function _renderTradePreviewTable(trades) {
+  return '<div style="max-height:200px;overflow-y:auto;margin-top:8px"><table class="trade-table"><thead><tr><th>Ticker</th><th>Type</th><th>Strike</th><th>Expiry</th><th>Action</th><th>Qty</th><th>Price</th><th>Total</th><th>Fees</th></tr></thead><tbody>' +
+    trades.map(t => {
+      const ot = t.option_type || t.optionType || '?';
+      return '<tr><td style="font-weight:600;color:#fff">' + (t.ticker||'?') + '</td><td class="' + (ot==='CALL'?'trade-type-call':'trade-type-put') + '">' + ot + '</td><td>$' + (t.strike||0) + '</td><td>' + (t.expiry||t.date||'') + '</td><td class="' + (t.action==='BUY'?'trade-action-buy':'trade-action-sell') + '">' + (t.action||'?') + '</td><td>' + (t.quantity||t.qty||0) + '</td><td>$' + ((t.price||0).toFixed?t.price.toFixed(2):t.price) + '</td><td>$' + (t.total||0) + '</td><td style="color:#666">$' + ((t.fees||0).toFixed?t.fees.toFixed(2):t.fees) + '</td></tr>';
+    }).join('') + '</tbody></table></div>';
 }
 
 // ── Manual Entry ───────────────────────────────────────────────────────────────

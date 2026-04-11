@@ -1853,30 +1853,86 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     return ftds;
   },
   _detectBases(bars){
+    // Convert daily to weekly
     const weekly=[];
     for(let i=0;i<bars.length;i+=5){
       const chunk=bars.slice(i,i+5);if(!chunk.length)continue;
-      weekly.push({wkIdx:weekly.length,dayStart:i,open:chunk[0].open,close:chunk[chunk.length-1].close,high:Math.max(...chunk.map(b=>b.high)),low:Math.min(...chunk.map(b=>b.low)),vol:chunk.reduce((s,b)=>s+b.volume,0)});
+      weekly.push({wkIdx:weekly.length,dayStart:i,open:chunk[0].open,close:chunk[chunk.length-1].close,
+        high:Math.max(...chunk.map(b=>b.high)),low:Math.min(...chunk.map(b=>b.low)),
+        vol:chunk.reduce((s,b)=>s+b.volume,0)});
     }
     if(weekly.length<8)return[];
-    const bases=[];let wi=3;
-    while(wi<weekly.length-2){
-      const pw=weekly.slice(Math.max(0,wi-10),wi+1);
-      const pH=Math.max(...pw.map(w=>w.high)),pL=Math.min(...pw.map(w=>w.low));
-      if((pH-pL)/pL*100<15){wi++;continue}
-      let bH=weekly[wi].high,bL=weekly[wi].low,bEnd=wi;
-      for(let j=wi+1;j<Math.min(wi+66,weekly.length);j++){
-        const w=weekly[j];if((bH-w.low)/bH>.45)break;if(w.high>bH*1.06){bEnd=j;break}
-        bH=Math.max(bH,w.high);bL=Math.min(bL,w.low);bEnd=j;
+    const bases=[];let wi=5;
+    while(wi<weekly.length-3){
+      // Rolling 10-week high as local peak
+      const lookback=weekly.slice(Math.max(0,wi-10),wi+1);
+      const localHigh=Math.max(...lookback.map(w=>w.high));
+      const curLow=weekly[wi].low;
+      const drawdown=(localHigh-curLow)/localHigh*100;
+      // Start a base when price pulls back >=8% from local high
+      if(drawdown<8){wi++;continue}
+      // Scan forward for base completion
+      let bH=localHigh,bL=curLow,bEnd=wi;
+      for(let j=wi+1;j<Math.min(wi+65,weekly.length);j++){
+        const w=weekly[j];
+        bL=Math.min(bL,w.low);bH=Math.max(bH,localHigh);
+        // Abandon if drops >45% from base high
+        if((bH-w.low)/bH>0.45){bEnd=-1;break}
+        // Base completes when price recovers above prior high
+        if(w.high>=localHigh){bEnd=j;break}
+        bEnd=j;
       }
-      const wks=bEnd-wi+1,depth=+((bH-bL)/bH*100).toFixed(1);
-      if(wks<3||depth<3){wi++;continue}
+      if(bEnd<0||bEnd<=wi){wi++;continue}
+      const wks=bEnd-wi+1;
+      const depth=+((bH-bL)/bH*100).toFixed(1);
+      if(wks<3){wi++;continue}
+      // Volume dry-up: right half avg vol vs full base avg vol
+      const baseWeeks=weekly.slice(wi,bEnd+1);
+      const fullAvgVol=baseWeeks.reduce((s,w)=>s+w.vol,0)/baseWeeks.length||1;
+      const rightHalf=baseWeeks.slice(Math.floor(baseWeeks.length/2));
+      const rightAvgVol=rightHalf.reduce((s,w)=>s+w.vol,0)/rightHalf.length||1;
+      const volDryUp=+((rightAvgVol/fullAvgVol)*100).toFixed(0);
+      const baseLow=+bL.toFixed(2);
+      // Pattern classification
       let type='Base';
-      if(wks<=4&&depth<=3)type='3-Weeks-Tight';
-      else if(wks<=7&&depth<=15)type='Flat Base';
-      else if(wks>=5&&depth>=8)type=depth>25?'Cup':'Cup-with-Handle';
-      const pivot=+bH.toFixed(2),buyLo=+(bH*.95).toFixed(2),buyHi=+(bH*1.05).toFixed(2);
-      bases.push({startWk:wi,endWk:bEnd,startDay:weekly[wi].dayStart,endDay:weekly[bEnd].dayStart,weeks:wks,depth,type,pivot,buyZoneLow:buyLo,buyZoneHigh:buyHi});
+      // 3-Weeks-Tight: 3-4 weeks, depth <=4%, closes within 1.5%
+      if(wks>=3&&wks<=4&&depth<=4){
+        const closes=baseWeeks.map(w=>w.close);
+        const cMax=Math.max(...closes),cMin=Math.min(...closes);
+        if(cMax>0&&(cMax-cMin)/cMax*100<=1.5)type='3-Weeks-Tight';
+      }
+      // Double Bottom: two distinct lows with rally between
+      if(type==='Base'&&wks>=5){
+        const lows=baseWeeks.map(w=>w.low);
+        const mid=Math.floor(lows.length/2);
+        const firstHalf=lows.slice(0,mid),secondHalf=lows.slice(mid);
+        const low1=Math.min(...firstHalf),low2=Math.min(...secondHalf);
+        const low1Idx=firstHalf.indexOf(low1),low2Idx=mid+secondHalf.indexOf(low2);
+        // Check lows are within 5% of each other (second can undercut by up to 5%)
+        if(low1>0&&Math.abs(low2-low1)/low1*100<=5){
+          // Check for rally of >=5% between the two lows
+          const between=baseWeeks.slice(low1Idx,low2Idx+1);
+          const peakBetween=Math.max(...between.map(w=>w.high));
+          if((peakBetween-low1)/low1*100>=5)type='Double Bottom';
+        }
+      }
+      // Flat Base: 5-15 weeks, depth <=15%
+      if(type==='Base'&&wks>=5&&wks<=15&&depth<=15)type='Flat Base';
+      // Cup-with-Handle: >=7 weeks, depth 12-33%, right-side handle
+      if(type==='Base'&&wks>=7&&depth>=12&&depth<=33){
+        const rightThird=baseWeeks.slice(Math.floor(baseWeeks.length*0.6));
+        const rtHigh=Math.max(...rightThird.map(w=>w.high));
+        const rtLow=Math.min(...rightThird.map(w=>w.low));
+        const nearRim=rtHigh>=bH*0.95;
+        const handleDepth=rtHigh>0?(rtHigh-rtLow)/rtHigh*100:0;
+        if(nearRim&&handleDepth>=5&&handleDepth<=15)type='Cup-with-Handle';
+        else if(wks>=7&&depth>=12&&depth<=33)type='Cup';
+      }
+      const pivot=type==='Double Bottom'?+Math.max(...baseWeeks.slice(0,Math.floor(wks/2)).map(w=>w.high)).toFixed(2):+bH.toFixed(2);
+      const buyZoneLow=+pivot.toFixed(2);
+      const buyZoneHigh=+(pivot*1.05).toFixed(2);
+      bases.push({startWk:wi,endWk:bEnd,startDay:weekly[wi].dayStart,endDay:weekly[bEnd].dayStart,
+        weeks:wks,depth,type,pivot,buyZoneLow,buyZoneHigh,baseLow,volDryUp,baseNum:bases.length+1});
       wi=bEnd+2;
     }
     return bases;
@@ -1989,15 +2045,15 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
           <div>
             <div style="font-size:10px;color:var(--text-dim)">BASE PATTERN · ${t}</div>
             <div style="font-size:26px;font-weight:700;color:var(--accent);margin-top:4px">${typeLabel(selBase.type)}</div>
-            <div style="margin-top:4px;font-size:12px;color:var(--text-muted)">Width: <strong>${selBase.weeks} weeks</strong> &nbsp; Depth: <strong style="color:${selBase.depth>33?'var(--red)':selBase.depth>20?'var(--amber)':'var(--green)'}">${selBase.depth}%</strong> &nbsp; Base #: <strong>${bases.indexOf(selBase)+1}</strong>${bases.indexOf(selBase)>=4?' <span style="color:var(--red)">(LATE — caution)</span>':''}</div>
+            <div style="margin-top:4px;font-size:12px;color:var(--text-muted)">Width: <strong>${selBase.weeks} weeks</strong> &nbsp; Depth: <strong style="color:${selBase.depth>33?'var(--red)':selBase.depth>20?'var(--amber)':'var(--green)'}">${selBase.depth}%</strong> &nbsp; Base #: <strong>${selBase.baseNum||bases.indexOf(selBase)+1}</strong> ${(selBase.baseNum||bases.indexOf(selBase)+1)<=2?' <span style="color:var(--green)">(early-stage)</span>':(selBase.baseNum||bases.indexOf(selBase)+1)>=4?' <span style="color:var(--red)">(late-stage — caution)</span>':''}</div>
           </div>
-          <div style="text-align:right"><div style="font-size:10px;color:var(--text-dim)">VOL DRY-UP</div><div style="font-size:22px;font-weight:700;color:var(--accent)">${(40+Math.random()*40).toFixed(0)}%</div><div style="font-size:10px;color:var(--text-dim)">of base avg vol</div></div>
+          <div style="text-align:right"><div style="font-size:10px;color:var(--text-dim)">VOL DRY-UP</div><div style="font-size:22px;font-weight:700;color:${(selBase.volDryUp||100)<=80?'var(--green)':'var(--amber)'}">${selBase.volDryUp||'—'}%</div><div style="font-size:10px;color:var(--text-dim)">of base avg vol</div></div>
         </div>
       </div>
       <div class="metrics-row g4">
         <div class="m-card" style="border-color:var(--accent-dim)"><div style="font-size:10px;color:var(--accent);font-weight:700">PIVOT POINT</div><div style="font-size:20px;font-weight:700;color:var(--green);margin-top:4px">$${fmt(selBase.pivot)}</div><div class="sub">Base high — ideal entry</div></div>
         <div class="m-card" style="border-color:var(--green-dim)"><div style="font-size:10px;color:var(--green);font-weight:700">BUY ZONE</div><div style="font-size:20px;font-weight:700;color:var(--green);margin-top:4px">$${fmt(selBase.buyZoneLow)} — $${fmt(selBase.buyZoneHigh)}</div><div class="sub">Pivot to pivot +5% (O'Neil rule)</div></div>
-        <div class="m-card"><div class="label">BASE LOW</div><div style="font-size:20px;font-weight:700;margin-top:4px">$${fmt(selBase.pivot*(1-selBase.depth/100))}</div><div class="sub">Floor of the pattern</div></div>
+        <div class="m-card"><div class="label">BASE LOW</div><div style="font-size:20px;font-weight:700;margin-top:4px">$${fmt(selBase.baseLow||selBase.pivot*(1-selBase.depth/100))}</div><div class="sub">Floor of the pattern</div></div>
         <div class="m-card" style="border-color:var(--red-dim)"><div style="font-size:10px;color:var(--red);font-weight:700">STOP LOSS GUIDE</div><div style="font-size:20px;font-weight:700;color:var(--red);margin-top:4px">$${fmt(selBase.pivot*.925)}</div><div class="sub">7-8% below pivot (O'Neil)</div></div>
       </div>
       <div class="card"><div class="card-header">${t} · ${typeLabel(selBase.type)} — ANNOTATED (YELLOW = PIVOT · BAND = BUY ZONE)</div><div class="chart-box chart-box-lg"><canvas id="cv-tt-base"></canvas></div></div>
@@ -2005,8 +2061,8 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
         ${[
           {l:'Depth within ideal range',d:selBase.depth+'% — ideal: 12-33%',p:selBase.depth>=12&&selBase.depth<=33},
           {l:'Width within ideal range',d:selBase.weeks+' weeks — ideal: 5-65w',p:selBase.weeks>=5&&selBase.weeks<=65},
-          {l:'Volume drying up in base',d:(40+Math.random()*40).toFixed(0)+'% of avg vol — want <90%',p:true},
-          {l:'Early-stage base (1st or 2nd)',d:'Base #'+(bases.indexOf(selBase)+1)+(bases.indexOf(selBase)>=2?' — late-stage, lower odds':''),p:bases.indexOf(selBase)<2},
+          {l:'Volume drying up in base',d:(selBase.volDryUp||'?')+'% of avg vol — want <90%',p:(selBase.volDryUp||100)<90},
+          {l:'Early-stage base (1st or 2nd)',d:'Base #'+(selBase.baseNum||bases.indexOf(selBase)+1)+((selBase.baseNum||bases.indexOf(selBase)+1)>=4?' — late-stage, lower odds':''),p:(selBase.baseNum||bases.indexOf(selBase)+1)<=2},
           {l:'Handle present (CwH only)',d:selBase.type.includes('Handle')?'Handle detected':'No handle detected',p:selBase.type.includes('Handle')},
           {l:'Not excessively deep (>35%)',d:selBase.depth>35?'Too deep':'Acceptable depth',p:selBase.depth<=35}
         ].map(c=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border-subtle)">

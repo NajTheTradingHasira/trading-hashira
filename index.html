@@ -460,16 +460,16 @@ tr:hover{background:var(--bg2)}
         <button class="tab-btn" onclick="NX.switchQuantTab('lstm')">◎ LSTM · FORECAST</button>
       </div>
       <div id="quant-hmm-idx" class="quant-panel">
-        <div class="input-row">
-          <input id="hmm-idx-input" type="text" placeholder="IDX SPX, NDX, RUT..." value="SPY" style="width:300px;text-transform:uppercase"/>
-          <button class="btn btn-sm" style="padding:6px 12px" onclick="$('#hmm-idx-input').value='SPY'">K=3</button>
-          <button class="btn btn-sm" style="padding:6px 12px" onclick="$('#hmm-idx-input').value='SPY'">K=4</button>
+        <div class="input-row" style="flex-wrap:wrap">
+          <input id="hmm-idx-input" type="text" placeholder="SPY, QQQ, IWM..." value="SPY" style="width:200px;text-transform:uppercase"/>
+          <button class="btn btn-sm" id="hmm-k3" style="padding:6px 12px;background:var(--accent-bg);border-color:var(--accent);color:var(--accent)" onclick="NX._hmmK=3;$$('#hmm-k3,#hmm-k4').forEach(b=>{b.style.background=b.id==='hmm-k3'?'var(--accent-bg)':'';b.style.borderColor=b.id==='hmm-k3'?'var(--accent)':'var(--border)';b.style.color=b.id==='hmm-k3'?'var(--accent)':'var(--text-dim)'})">K=3</button>
+          <button class="btn btn-sm" id="hmm-k4" style="padding:6px 12px" onclick="NX._hmmK=4;$$('#hmm-k3,#hmm-k4').forEach(b=>{b.style.background=b.id==='hmm-k4'?'var(--accent-bg)':'';b.style.borderColor=b.id==='hmm-k4'?'var(--accent)':'var(--border)';b.style.color=b.id==='hmm-k4'?'var(--accent)':'var(--text-dim)'})">K=4</button>
           <button class="btn" onclick="NX.loadRegime()">FIT HMM</button>
         </div>
         <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap">
-          ${['SPY','QQQ','IWM','DIA'].map(t=>`<button class="btn btn-sm" onclick="$('#hmm-idx-input').value='${t}'">${t}</button>`).join('')}
+          ${['SPY','QQQ','IWM','DIA','AAPL','NVDA','TSLA','META'].map(t=>`<button class="btn btn-sm" onclick="$('#hmm-idx-input').value='${t}';NX.loadRegime()">${t}</button>`).join('')}
         </div>
-        <div id="regime-content"><div class="empty-state"><div class="icon">◇</div>Click FIT HMM for regime classification</div></div>
+        <div id="regime-content"><div class="empty-state"><div class="icon">◇</div>Click FIT HMM or a ticker to run Baum-Welch regime classification</div></div>
       </div>
       <div id="quant-hmm-stk" class="quant-panel" style="display:none">
         <div class="input-row">
@@ -1552,23 +1552,138 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
   },
 
   // ═══ REGIME ═══
+  _hmmK:3,
   async loadRegime(){
-    const el=$('#regime-content');el.innerHTML='<div class="loading">Detecting regime…</div>';
+    const sym=($('#hmm-idx-input').value||'SPY').trim().toUpperCase();
+    const K=NX._hmmK||3;
+    const el=$('#regime-content');
+    el.innerHTML=`<div class="loading">Fitting ${K}-state HMM for ${sym}… (Baum-Welch EM, 60 iterations)</div>`;
     try{
-      const[hmm,hybrid]=await Promise.allSettled([NX.apiFetch('/api/hmm'),NX.apiFetch('/api/hybrid')]);
-      function gauge(label,data){
-        if(!data)return`<div class="card"><div class="card-header">${label}</div><div class="empty-state">Unavailable</div></div>`;
-        const reg=(data.regime||data.state||'unknown').toLowerCase();
-        let cls='rg-neutral';
-        if(reg.includes('bull')||reg.includes('risk-on'))cls='rg-bull';
-        else if(reg.includes('bear')||reg.includes('risk-off'))cls='rg-bear';
-        else if(reg.includes('volat')||reg.includes('crisis'))cls='rg-vol';
-        return`<div class="card"><div class="card-header">${label}</div><div class="regime-gauge ${cls}">${(data.regime||data.state||'UNKNOWN').toUpperCase()}</div><div class="grid g3"><div><span style="font-size:10px;color:var(--text-dim)">CONFIDENCE</span><br/><span style="font-weight:600">${data.confidence!=null?fmt(data.confidence*100,0)+'%':'—'}</span></div><div><span style="font-size:10px;color:var(--text-dim)">VOLATILITY</span><br/><span style="font-weight:600">${data.volatility!=null?fmt(data.volatility):'—'}</span></div><div><span style="font-size:10px;color:var(--text-dim)">TREND</span><br/><span style="font-weight:600">${data.trend||'—'}</span></div></div></div>`;
+      // Fetch 2yr daily data
+      const d=await NX.apiFetch('/api/stock?symbol='+sym+'&range=2y&interval=1d');
+      const closes=(d.close||[]).filter(v=>v!=null);
+      if(closes.length<60)throw new Error('Insufficient data: '+closes.length+' bars');
+      const returns=closes.slice(1).map((p,i)=>Math.log(p/closes[i]));
+
+      // Run Baum-Welch
+      const r=NX._baumWelch(returns,K,60);
+      const cur=r.states[r.states.length-1];
+
+      // Render
+      const cw=Math.min(820,window.innerWidth-140);
+      el.innerHTML=`
+      <div class="card" style="border-color:${r.colors[cur]}30;background:${r.colors[cur]}08">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+          <div><div style="font-size:10px;color:var(--text-dim);letter-spacing:1px">CURRENT REGIME</div>
+            <div style="font-size:22px;font-weight:800;color:${r.colors[cur]};margin-top:4px">${r.labels[cur]}</div></div>
+          <div style="display:flex;gap:20px">
+            <div style="text-align:right"><div style="font-size:10px;color:var(--text-dim)">μ (daily)</div><div style="font-size:14px;font-weight:600">${(r.means[cur]*100).toFixed(3)}%</div></div>
+            <div style="text-align:right"><div style="font-size:10px;color:var(--text-dim)">σ (daily)</div><div style="font-size:14px;font-weight:600">${(r.stds[cur]*100).toFixed(3)}%</div></div>
+            <div style="text-align:right"><div style="font-size:10px;color:var(--text-dim)">Ann. Sharpe</div><div style="font-size:14px;font-weight:600">${(r.means[cur]/r.stds[cur]*Math.sqrt(252)).toFixed(2)}</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="card"><div class="card-header">${sym} — PRICE WITH REGIME OVERLAY (${K}-STATE HMM)</div>
+        <div style="position:relative;height:180px"><canvas id="cv-hmm-price" style="width:100%;height:100%"></canvas></div>
+        <div style="margin-top:12px"><div style="font-size:10px;color:var(--text-dim);letter-spacing:1px;margin-bottom:6px">REGIME TIMELINE</div>
+          <div id="hmm-timeline"></div>
+          <div style="display:flex;gap:16px;margin-top:8px;flex-wrap:wrap">${r.labels.map((l,i)=>{
+            const pct=(r.states.filter(s=>s===i).length/r.states.length*100).toFixed(1);
+            return`<div style="display:flex;align-items:center;gap:6px"><div style="width:10px;height:10px;border-radius:2px;background:${r.colors[i]}"></div><span style="font-size:11px">${l}</span><span style="font-size:10px;color:var(--text-dim)">${pct}%</span></div>`;
+          }).join('')}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">${r.labels.map((l,i)=>`<div class="m-card"><div class="label">${l} Regime</div><div class="value" style="color:${r.colors[i]}">${(r.means[i]*10000).toFixed(2)} bps</div><div class="sub">σ ${(r.stds[i]*100).toFixed(2)}% · Ann. ${(r.means[i]*252*100).toFixed(1)}%</div></div>`).join('')}</div>
+      <div class="card"><div class="card-header">STATIONARY DISTRIBUTION (ERGODIC)</div>
+        <div style="display:flex;gap:4px;height:32px;border-radius:4px;overflow:hidden">${r.stationaryDist.map((p,i)=>`<div style="flex:${p};background:${r.colors[i]}40;display:flex;align-items:center;justify-content:center;font-size:11px;color:${r.colors[i]};font-weight:700">${(p*100).toFixed(1)}%</div>`).join('')}</div>
+      </div>
+      <div class="card"><div class="card-header">TRANSITION PROBABILITY MATRIX</div>
+        <div style="overflow-x:auto"><table><thead><tr><th style="color:var(--text-dim)">From \\ To</th>${r.labels.map((l,i)=>`<th style="color:${r.colors[i]};font-weight:600">${l}</th>`).join('')}</tr></thead>
+        <tbody>${r.transitionMatrix.map((row,i)=>`<tr><td style="color:${r.colors[i]};font-weight:600">${r.labels[i]}</td>${row.map((v,j)=>`<td style="${i===j?'background:'+r.colors[i]+'15;font-weight:700':''}">${(v*100).toFixed(1)}%</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">${[
+        {l:'LOG LIKELIHOOD',v:r.logLikelihood.toFixed(1)},
+        {l:'OBSERVATIONS',v:returns.length},
+        {l:'K',v:K},
+        {l:'EM ITERS',v:60}
+      ].map(s=>`<div class="m-card"><div class="label">${s.l}</div><div class="value accent-c">${s.v}</div></div>`).join('')}</div>`;
+
+      // Draw price chart with regime overlay
+      NX._drawHMMChart('cv-hmm-price',closes.slice(1),r.states,r.colors);
+
+      // Draw regime timeline
+      const tl=$('#hmm-timeline');
+      if(tl){
+        const segs=[];let cs=r.states[0],st=0;
+        for(let i=1;i<=r.states.length;i++){if(i===r.states.length||r.states[i]!==cs){segs.push({s:cs,len:i-st});if(i<r.states.length){cs=r.states[i];st=i}}}
+        tl.innerHTML=`<div style="display:flex;height:28px;border-radius:4px;overflow:hidden;border:1px solid var(--border)">${segs.map((seg,i)=>`<div title="${r.labels[seg.s]}: ${seg.len}d" style="flex:${seg.len};background:${r.colors[seg.s]}30;border-right:${i<segs.length-1?'1px solid var(--bg0)':'none'};display:flex;align-items:center;justify-content:center;font-size:9px;color:${r.colors[seg.s]};font-weight:600;overflow:hidden">${seg.len>20?r.labels[seg.s].substring(0,4).toUpperCase():''}</div>`).join('')}</div>`;
       }
-      const h=hmm.status==='fulfilled'?hmm.value:null;
-      const y=hybrid.status==='fulfilled'?hybrid.value:null;
-      el.innerHTML=`<div class="grid g2">${gauge('HMM REGIME MODEL',h)}${gauge('HYBRID REGIME MODEL',y)}</div>`;
     }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}
+  },
+
+  // ── Baum-Welch EM Algorithm ──
+  _gaussPdf(x,mu,s){return(1/Math.sqrt(2*Math.PI*s*s))*Math.exp(-0.5*((x-mu)**2)/(s*s))},
+  _baumWelch(obs,K=3,maxIter=50){
+    const G=NX._gaussPdf;
+    // Init
+    const A0=Array.from({length:K},(_,i)=>Array.from({length:K},(_,j)=>i===j?0.85:0.15/(K-1)));
+    const mu0=K===3?[0.001,0,-0.001]:[0.0015,0.0002,-0.0005,-0.002];
+    const sig0=K===3?[0.008,0.015,0.025]:[0.006,0.012,0.022,0.035];
+    let m={pi:new Array(K).fill(1/K),A:A0,means:mu0,stds:sig0,K};
+    const TT=obs.length;
+    // EM iterations
+    for(let iter=0;iter<maxIter;iter++){
+      const alpha=Array.from({length:TT},()=>new Array(K).fill(0)),sc=new Array(TT).fill(0);
+      for(let k=0;k<K;k++)alpha[0][k]=m.pi[k]*G(obs[0],m.means[k],m.stds[k]);
+      sc[0]=alpha[0].reduce((a,b)=>a+b,0)||1e-300;for(let k=0;k<K;k++)alpha[0][k]/=sc[0];
+      for(let t=1;t<TT;t++){for(let j=0;j<K;j++){let s=0;for(let i=0;i<K;i++)s+=alpha[t-1][i]*m.A[i][j];alpha[t][j]=s*G(obs[t],m.means[j],m.stds[j])}sc[t]=alpha[t].reduce((a,b)=>a+b,0)||1e-300;for(let k=0;k<K;k++)alpha[t][k]/=sc[t]}
+      const beta=Array.from({length:TT},()=>new Array(K).fill(0));for(let k=0;k<K;k++)beta[TT-1][k]=1;
+      for(let t=TT-2;t>=0;t--)for(let i=0;i<K;i++){let s=0;for(let j=0;j<K;j++)s+=m.A[i][j]*G(obs[t+1],m.means[j],m.stds[j])*beta[t+1][j];beta[t][i]=s/(sc[t+1]||1e-300)}
+      const gamma=Array.from({length:TT},()=>new Array(K).fill(0));
+      for(let t=0;t<TT;t++){let d=0;for(let k=0;k<K;k++)d+=alpha[t][k]*beta[t][k];d=d||1e-300;for(let k=0;k<K;k++)gamma[t][k]=(alpha[t][k]*beta[t][k])/d}
+      const nPi=gamma[0].slice(),nA=Array.from({length:K},()=>new Array(K).fill(0)),nMu=new Array(K).fill(0),nSig=new Array(K).fill(0);
+      for(let i=0;i<K;i++){let gs=0;for(let t=0;t<TT-1;t++)gs+=gamma[t][i];gs=gs||1e-300;for(let j=0;j<K;j++){let xs=0;for(let t=0;t<TT-1;t++)xs+=(alpha[t][i]*m.A[i][j]*G(obs[t+1],m.means[j],m.stds[j])*beta[t+1][j])/(sc[t+1]||1e-300);nA[i][j]=xs/gs}const rs2=nA[i].reduce((a,b)=>a+b,0)||1;for(let j=0;j<K;j++)nA[i][j]/=rs2}
+      for(let k=0;k<K;k++){let gs=0,ws=0,vs=0;for(let t=0;t<TT;t++){gs+=gamma[t][k];ws+=gamma[t][k]*obs[t]}gs=gs||1e-300;nMu[k]=ws/gs;for(let t=0;t<TT;t++)vs+=gamma[t][k]*(obs[t]-nMu[k])**2;nSig[k]=Math.sqrt(vs/gs)||0.001}
+      m={pi:nPi,A:nA,means:nMu,stds:nSig,K};
+    }
+    // Final Viterbi decode
+    const fA=Array.from({length:TT},()=>new Array(K).fill(0)),fS=new Array(TT).fill(0);
+    for(let k=0;k<K;k++)fA[0][k]=m.pi[k]*G(obs[0],m.means[k],m.stds[k]);fS[0]=fA[0].reduce((x,y)=>x+y,0)||1e-300;for(let k=0;k<K;k++)fA[0][k]/=fS[0];
+    for(let t=1;t<TT;t++){for(let j=0;j<K;j++){let v=0;for(let i=0;i<K;i++)v+=fA[t-1][i]*m.A[i][j];fA[t][j]=v*G(obs[t],m.means[j],m.stds[j])}fS[t]=fA[t].reduce((x,y)=>x+y,0)||1e-300;for(let k=0;k<K;k++)fA[t][k]/=fS[t]}
+    const b2=Array.from({length:TT},()=>new Array(K).fill(0));for(let k=0;k<K;k++)b2[TT-1][k]=1;
+    for(let t=TT-2;t>=0;t--)for(let i=0;i<K;i++){let s=0;for(let j=0;j<K;j++)s+=m.A[i][j]*G(obs[t+1],m.means[j],m.stds[j])*b2[t+1][j];b2[t][i]=s/(fS[t+1]||1e-300)}
+    const states=[];for(let t=0;t<TT;t++){let bk=0,bp=-1;for(let k=0;k<K;k++){const p=fA[t][k]*b2[t][k];if(p>bp){bp=p;bk=k}}states.push(bk)}
+    // Sort states by mean return (highest first)
+    const si=m.means.map((v,i)=>({v,i})).sort((a,b)=>b.v-a.v).map(x=>x.i);
+    const sm={};si.forEach((o,n)=>{sm[o]=n});
+    const labels=K===3?['Bull','Neutral','Bear']:['Strong Bull','Neutral','Mild Bear','High Volatility'];
+    const colors=K===3?['#00e676','#ffc107','#ff5252']:['#00e676','#ffc107','#ff5252','#b388ff'];
+    // Stationary distribution
+    let pi2=new Array(K).fill(1/K);const sA=si.map(i=>si.map(j=>m.A[i][j]));
+    for(let it=0;it<200;it++){const nx=new Array(K).fill(0);for(let j=0;j<K;j++)for(let i=0;i<K;i++)nx[j]+=pi2[i]*sA[i][j];pi2=nx}
+    return{states:states.map(s=>sm[s]),means:si.map(i=>m.means[i]),stds:si.map(i=>m.stds[i]),transitionMatrix:sA,labels,colors,logLikelihood:fS.reduce((a,s)=>a+Math.log(s||1e-300),0),stationaryDist:pi2};
+  },
+
+  // ── Draw HMM price chart with regime overlay ──
+  _drawHMMChart(canvasId,prices,states,stateColors){
+    const cvEl=$('#'+canvasId);if(!cvEl)return;
+    const rect=cvEl.parentElement.getBoundingClientRect();
+    const W=rect.width||800,H=rect.height||180;
+    const dpr=window.devicePixelRatio||1;
+    cvEl.width=W*dpr;cvEl.height=H*dpr;cvEl.style.width=W+'px';cvEl.style.height=H+'px';
+    const ctx=cvEl.getContext('2d');ctx.scale(dpr,dpr);
+    const p={t:4,b:4,l:0,r:0},w=W-p.l-p.r,h=H-p.t-p.b;
+    const mn=Math.min(...prices),mx=Math.max(...prices),rng=mx-mn||1;
+    // Regime background
+    const bw=w/prices.length;
+    for(let i=0;i<prices.length;i++){ctx.fillStyle=(stateColors[states[i]]||'#333')+'18';ctx.fillRect(p.l+i*bw,p.t,bw+0.5,h)}
+    // Price line
+    ctx.beginPath();ctx.strokeStyle='#00e5ff';ctx.lineWidth=1.5;
+    for(let i=0;i<prices.length;i++){const x=p.l+(i/(prices.length-1))*w,y=p.t+h-((prices[i]-mn)/rng)*h;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)}
+    ctx.stroke();
+    // Fill
+    const g=ctx.createLinearGradient(0,p.t,0,p.t+h);g.addColorStop(0,'#00e5ff20');g.addColorStop(1,'#00e5ff00');
+    ctx.lineTo(p.l+w,p.t+h);ctx.lineTo(p.l,p.t+h);ctx.closePath();ctx.fillStyle=g;ctx.fill();
   },
 
   // ═══ SCREENER ═══

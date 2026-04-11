@@ -1543,19 +1543,137 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
 
   // ═══ MARKET BREADTH ═══
   async loadBreadth(){
-    const el=$('#breadth-content');el.innerHTML='<div class="loading">Loading breadth…</div>';
+    const el=$('#breadth-content');el.innerHTML='<div class="loading">Loading market breadth…</div>';
     try{
-      const d=await NX.apiFetch('/api/market-breadth');
-      const b=d.breadth||d;
-      const metrics=[
-        ['Advance/Decline',b.advance_decline_ratio||b.ad_ratio],
-        ['% Above 200 SMA',b.pct_above_200sma||b.above_200],
-        ['% Above 50 SMA',b.pct_above_50sma||b.above_50],
-        ['New Highs',b.new_highs],['New Lows',b.new_lows],
-        ['McClellan Osc',b.mcclellan||b.mcclellan_oscillator],
-        ['Breadth Thrust',b.breadth_thrust],['Up Volume %',b.up_volume_pct]
-      ];
-      el.innerHTML=`<div class="card"><div class="card-header">MARKET BREADTH INTERNALS</div><div class="grid g4">${metrics.map(([label,val])=>`<div class="m-card"><div class="label">${label}</div><div class="value ${typeof val==='number'?pc(val):''}">${val!=null?fmt(val):'—'}</div></div>`).join('')}</div></div>`;
+      const[bRes,spyRes]=await Promise.allSettled([NX.apiFetch('/api/market-breadth'),NX.apiFetch('/api/stage/classify/SPY')]);
+      const b=bRes.status==='fulfilled'?bRes.value:{};
+      const spy=spyRes.status==='fulfilled'?spyRes.value:{};
+
+      const adv=b.advancing||0,dec=b.declining||0,unch=b.unchanged||0;
+      const adTotal=adv+dec+unch||1;const adRatio=(b.ad_ratio||adv/Math.max(dec,1)).toFixed(2);
+      const advPct=(adv/adTotal*100).toFixed(1),decPct=(dec/adTotal*100).toFixed(1);
+      const nh=b.new_highs||0,nl=b.new_lows||0,hlRatio=nl?(nh/nl).toFixed(2):'—';
+      const upVol=b.up_volume||0,dnVol=b.down_volume||0,volRatio=dnVol?(upVol/dnVol).toFixed(2):'—';
+      const trin=b.trin||0,mccOsc=b.mcclellan_oscillator||0,summIdx=b.summation_index||0;
+      const ma=b.ma_breadth||[];const secB=b.sector_breadth||[];
+      const pct200=(ma.find(m=>m.label.includes('200'))||{}).pct||0;
+      const pct50=(ma.find(m=>m.label.includes('50'))||{}).pct||0;
+      const pcr=b.put_call_ratio||0;
+      const stg=spy.stage||'?',sub=spy.sub_stage||'',stgLabel=spy.stage_label||'';
+      const stgClr=s=>s<=2?'var(--green)':s===3?'var(--amber)':'var(--red)';
+      const barClr=p=>p>60?'var(--green)':p>40?'var(--amber)':'var(--red)';
+      const interpClr=v=>v>=0?'var(--green)':'var(--red)';
+
+      // Regime header
+      const regimeScore=((pct200>50?1:0)+(pct50>50?1:0)+(nh>nl?1:0)+(parseFloat(adRatio)>1?1:0)+(mccOsc>0?1:0)+(trin<1.25?1:0));
+      const regimeLabel=regimeScore>=5?'CONFIRMED BULL':regimeScore>=3?'MIXED / TOPPING':regimeScore>=1?'DETERIORATING':'BEAR MARKET';
+      const regClr=regimeScore>=5?'var(--green)':regimeScore>=3?'var(--amber)':'var(--red)';
+
+      el.innerHTML=`
+      <div class="card" style="border-left:4px solid ${stgClr(parseInt(stg))};margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:12px">
+          <div>
+            <div style="font-size:10px;color:var(--text-dim);letter-spacing:1px;margin-bottom:4px">WEINSTEIN MARKET REGIME · ${b.trade_date||''}</div>
+            <div style="font-size:20px;font-weight:800;color:${regClr};margin-bottom:4px">${regimeLabel}</div>
+            ${stgLabel?`<span class="badge" style="background:${stgClr(parseInt(stg))}18;color:${stgClr(parseInt(stg))};border:1px solid ${stgClr(parseInt(stg))}40;font-size:11px;padding:3px 10px">${stgLabel}</span>`:''}
+            <div style="font-size:11px;color:var(--text-muted);margin-top:8px;line-height:1.6">
+              • 200d breadth: <strong style="color:${barClr(pct200)}">${pct200}%</strong> ${pct200>50?'OK':'WEAK'}<br/>
+              • 50d breadth: <strong style="color:${barClr(pct50)}">${pct50}%</strong> ${pct50>50?'OK':'WEAK'}<br/>
+              • NH/NL ratio: <strong style="color:${nh>nl?'var(--green)':'var(--red)'}">${hlRatio}</strong> ${nh>nl?'STRONG':'BEARISH'}
+            </div>
+          </div>
+          <div style="display:flex;gap:14px;flex-wrap:wrap;text-align:center">
+            <div><div style="font-size:9px;color:var(--text-dim)">ABOVE 200d</div><div style="font-size:18px;font-weight:700;color:${barClr(pct200)}">${pct200}%</div></div>
+            <div><div style="font-size:9px;color:var(--text-dim)">ABOVE 50d</div><div style="font-size:18px;font-weight:700;color:${barClr(pct50)}">${pct50}%</div></div>
+            <div><div style="font-size:9px;color:var(--text-dim)">NH/NL</div><div style="font-size:18px;font-weight:700;color:${nh>nl?'var(--green)':'var(--red)'}">${hlRatio}</div></div>
+            <div><div style="font-size:9px;color:var(--text-dim)">UNIVERSE</div><div style="font-size:18px;font-weight:700">${(b.polygon_tickers||b.total_scanned||0).toLocaleString()}</div></div>
+            <div><div style="font-size:9px;color:var(--text-dim)">SCORE</div><div style="font-size:18px;font-weight:700;color:${regClr}">${regimeScore}/6</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+        ${[
+          {l:'A/D RATIO',v:adRatio,s:`${adv.toLocaleString()} adv / ${dec.toLocaleString()} dec`,c:parseFloat(adRatio)>=1?'var(--green)':'var(--red)'},
+          {l:'NEW HIGH / LOW',v:hlRatio,s:`${nh} NH · ${nl} NL`,c:nh>nl?'var(--green)':'var(--red)'},
+          {l:'UP/DN VOL RATIO',v:volRatio,s:`${upVol}B up · ${dnVol}B dn`,c:parseFloat(volRatio)>=1?'var(--green)':'var(--red)'},
+          {l:'TRIN (ARMS)',v:trin.toFixed(2),s:trin<0.75?'Buying pressure':trin>2?'Panic':trin>1.25?'Selling pressure':'Neutral',c:trin<0.75?'var(--green)':trin>1.25?'var(--red)':'var(--amber)'},
+          {l:'McCLELLAN OSC',v:mccOsc.toFixed(1),s:mccOsc>100?'Overbought':mccOsc<-100?'Oversold':'Neutral',c:mccOsc>0?'var(--green)':'var(--red)'},
+          {l:'% ABOVE 200d MA',v:pct200+'%',s:'Polygon universe scan',c:barClr(pct200)},
+        ].map(m=>`<div class="m-card" style="flex:1;min-width:140px"><div class="label">${m.l}</div><div class="value" style="color:${m.c}">${m.v}</div><div class="sub">${m.s}</div></div>`).join('')}
+      </div>
+
+      <div class="grid g2">
+        <div class="card"><div class="card-header">NYSE ADVANCE / DECLINE</div>
+          <div style="display:flex;gap:20px;margin:10px 0">
+            <div><div style="font-size:10px;color:var(--text-dim)">ADVANCING</div><div style="font-size:22px;font-weight:800;color:var(--green)">${adv.toLocaleString()}</div></div>
+            <div><div style="font-size:10px;color:var(--text-dim)">DECLINING</div><div style="font-size:22px;font-weight:800;color:var(--red)">${dec.toLocaleString()}</div></div>
+            <div><div style="font-size:10px;color:var(--text-dim)">UNCHANGED</div><div style="font-size:22px;font-weight:800">${unch.toLocaleString()}</div></div>
+            <div><div style="font-size:10px;color:var(--text-dim)">A/D RATIO</div><div style="font-size:22px;font-weight:800;color:${interpClr(parseFloat(adRatio)-1)}">${adRatio}</div></div>
+          </div>
+          <div style="display:flex;height:14px;border-radius:3px;overflow:hidden"><div style="background:var(--green);width:${advPct}%"></div><div style="background:var(--red);flex:1"></div></div>
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-dim);margin-top:4px"><span>${advPct}% adv</span><span>${decPct}% dec</span></div>
+        </div>
+
+        <div class="card"><div class="card-header">McCLELLAN OSCILLATOR & SUMMATION</div>
+          <div style="display:flex;gap:16px;margin:10px 0;flex-wrap:wrap">
+            <div><div style="font-size:10px;color:var(--text-dim)">McCLELLAN OSC.</div><div style="font-size:22px;font-weight:800;color:${mccOsc>0?'var(--green)':'var(--red)'}">${mccOsc.toFixed(1)}</div></div>
+            <div><div style="font-size:10px;color:var(--text-dim)">SUMMATION</div><div style="font-size:22px;font-weight:800;color:${summIdx>0?'var(--green)':'var(--red)'}">${summIdx.toLocaleString()}</div></div>
+            <div><div style="font-size:10px;color:var(--text-dim)">19D EMA</div><div style="font-size:22px;font-weight:800">${(b.ema19||0).toFixed(1)}</div></div>
+            <div><div style="font-size:10px;color:var(--text-dim)">39D EMA</div><div style="font-size:22px;font-weight:800">${(b.ema39||0).toFixed(1)}</div></div>
+          </div>
+          ${b.mc_line?`<div class="chart-box" style="height:100px"><canvas id="cv-breadth-mc"></canvas></div>`:''}
+        </div>
+
+        <div class="card"><div class="card-header">52-WEEK NEW HIGHS vs NEW LOWS</div>
+          <div style="display:flex;gap:20px;margin:10px 0">
+            <div><div style="font-size:10px;color:var(--text-dim)">NEW HIGHS</div><div style="font-size:22px;font-weight:800;color:var(--green)">${nh}</div></div>
+            <div><div style="font-size:10px;color:var(--text-dim)">NEW LOWS</div><div style="font-size:22px;font-weight:800;color:var(--red)">${nl}</div></div>
+            <div><div style="font-size:10px;color:var(--text-dim)">H/L RATIO</div><div style="font-size:22px;font-weight:800;color:${nh>nl?'var(--green)':'var(--red)'}">${hlRatio}</div></div>
+          </div>
+          <div style="padding:8px;border-radius:4px;border-left:3px solid ${nh>nl?'var(--green)':'var(--red)'}">
+            <div style="font-size:12px;color:${nh>nl?'var(--green)':'var(--red)'}"><strong>${nh>nl?'BULLISH — New Highs Leading':'BEARISH — New Lows Dominating'}</strong></div>
+            <div style="font-size:11px;color:var(--text-muted)">52-week ${nh>nl?'highs ('+nh+') outpacing lows ('+nl+')':'lows ('+nl+') outnumbering highs ('+nh+')'}</div>
+          </div>
+        </div>
+
+        <div class="card"><div class="card-header">% OF S&P 500 ABOVE KEY MAs</div>
+          ${ma.map(m=>{const p=m.pct||0;return`<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:11px;color:var(--text-dim)">${m.label}</span><span style="font-size:11px;font-weight:700;color:${barClr(p)}">${p}%</span></div><div style="height:8px;background:var(--bg1);border-radius:4px;overflow:hidden"><div style="height:100%;width:${p}%;background:${barClr(p)};border-radius:4px"></div></div></div>`;}).join('')}
+          <div style="margin-top:12px"><div style="font-size:10px;color:var(--text-dim)">PUT/CALL RATIO</div><div style="font-size:22px;font-weight:800;color:${pcr>1?'var(--red)':'var(--green)'};margin-top:4px">${pcr.toFixed(2)}</div></div>
+        </div>
+
+        <div class="card"><div class="card-header">SECTOR BREADTH — % ABOVE 50-DAY MA</div>
+          ${[...secB].sort((a,c)=>(c.pct||0)-(a.pct||0)).map(s=>{const p=s.pct||0;return`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="font-size:11px;width:120px;flex-shrink:0;color:var(--text-dim)">${s.name}</span><div style="flex:1;height:8px;background:var(--bg1);border-radius:4px;overflow:hidden"><div style="height:100%;width:${p}%;background:${barClr(p)};border-radius:4px"></div></div><span style="font-size:11px;font-weight:700;color:${barClr(p)};width:36px;text-align:right">${p}%</span></div>`;}).join('')}
+        </div>
+
+        <div class="card"><div class="card-header">TRIN (ARMS INDEX)</div>
+          <div style="text-align:center;margin:16px 0">
+            <div style="font-size:40px;font-weight:800;color:${trin<0.75?'var(--green)':trin>2?'var(--purple)':trin>1.25?'var(--red)':'var(--amber)'}">${trin.toFixed(2)}</div>
+            <div style="font-size:13px;font-weight:600;color:${trin<0.75?'var(--green)':trin>2?'var(--purple)':trin>1.25?'var(--red)':'var(--amber)'}">${trin<0.75?'Buying pressure':trin>2?'PANIC / Reversal':trin>1.25?'Selling pressure':'Neutral'}</div>
+          </div>
+          <div style="font-size:11px;color:var(--text-dim);line-height:1.8">
+            &lt; 0.75 → Overbought<br/>0.75–1.25 → Neutral<br/>1.25–2.0 → Selling pressure<br/>&gt; 2.0 → Panic / reversal
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px"><div class="card-header">BREADTH INTERPRETATION & REGIME SIGNAL</div>
+        ${[
+          {t:`A/D Ratio — ${parseFloat(adRatio)>=1?'Bullish':'Bearish'}`,c:interpClr(parseFloat(adRatio)-1),b:`NYSE advancing issues (${adv.toLocaleString()}) represent ${advPct}% of total. ${parseFloat(advPct)<50?'Broad participation lacking.':'Broad participation supports the move.'}`},
+          {t:`McClellan Oscillator — ${mccOsc>100?'Overbought Watch':mccOsc<-100?'Oversold Watch':'Neutral Range'}`,c:mccOsc>100?'var(--green)':mccOsc<-100?'var(--red)':'var(--amber)',b:`At ${mccOsc.toFixed(1)}, ${mccOsc>100?'overbought territory (>100).':mccOsc<-100?'approaching oversold (<-100). Summation at '+summIdx+' confirms downward pressure.':'neutral range.'}`},
+          {t:`${nh>nl?'New Highs Leading':'New Lows Dominating'}`,c:nh>nl?'var(--green)':'var(--red)',b:`52-week ${nh>nl?'highs ('+nh+') outpacing lows ('+nl+').':'lows ('+nl+') outnumbering highs ('+nh+'). Consistent with Stage 4 deterioration.'}`},
+          {t:`TRIN ${trin>2?'Extreme — Potential Exhaustion':trin>1.25?'Selling Pressure':trin<0.75?'Buying Pressure':'Neutral'}`,c:trin<0.75?'var(--green)':trin>1.25?'var(--red)':'var(--amber)',b:`TRIN at ${trin.toFixed(2)} signals ${trin>2?'extreme selling pressure. Historically, TRIN > 2.0 can mark short-term capitulation.':trin>1.25?'above-average selling pressure relative to volume.':trin<0.75?'buying pressure.':'neutral activity.'}`},
+          {t:`% Above 200d MA — ${pct200>60?'Healthy':pct200>40?'Mixed':'Structural Bear Risk'}`,c:barClr(pct200),b:`${pct200}% of stocks above 200-day MA. ${pct200<40?'Below 40% historically coincides with bear market confirmation.':pct200>60?'Healthy broad participation.':'Mixed — watch for deterioration.'}`},
+        ].map(s=>`<div style="padding:10px 14px;border-left:3px solid ${s.c};margin-bottom:10px;border-radius:0 4px 4px 0;background:var(--bg2)"><div style="font-size:12px;font-weight:700;color:${s.c};margin-bottom:4px">${s.t}</div><div style="font-size:11px;color:var(--text-muted);line-height:1.6">${s.b}</div></div>`).join('')}
+      </div>`;
+
+      // McClellan chart
+      if(b.mc_line&&b.mc_line.length){
+        makeChart('cv-breadth-mc',{type:'line',data:{labels:b.mc_line.map((_,i)=>i),datasets:[
+          {data:b.mc_line,borderColor:'#b388ff',backgroundColor:'#b388ff12',fill:true,tension:.3,pointRadius:0,borderWidth:1.5},
+          {data:b.mc_line.map(()=>0),borderColor:'#ffffff20',borderDash:[4,4],pointRadius:0,borderWidth:1}
+        ]},options:{plugins:{legend:{display:false}},scales:{x:{display:false},y:{ticks:{font:{size:9}}}},maintainAspectRatio:false}});
+      }
     }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}
   },
 

@@ -1443,7 +1443,7 @@ ${d.transition_watch?`<div class="card" style="border-left:3px solid var(--purpl
 <div class="metrics-row g4">${mc('PRICE','$'+fmt(lastPrice),lastPrice>k.ema_10w?'var(--green)':'var(--red)')}${mc('10W EMA','$'+fmt(k.ema_10w),lastPrice>k.ema_10w?'var(--green)':'var(--red)')}${mc('20W EMA','$'+fmt(k.ema_20w),lastPrice>k.ema_20w?'var(--green)':'var(--red)')}${mc('30W SMA','$'+fmt(k.sma_30w),k.ema_20w>k.sma_30w?'var(--green)':'var(--red)')}</div>
 <div style="margin-top:16px"><div class="card-header">EMA STACK CHECKLIST</div>${(k.checklist||[]).map(c=>chk(c.pass,c.label,c.description||'')).join('')}</div>
 <div style="margin-top:16px"><div class="card-header">EXTENSION FROM 10W EMA</div>
-<div style="display:flex;height:24px;border-radius:4px;overflow:hidden;margin:8px 0">${zones.map(z=>`<div style="flex:1;background:${z.c}20;position:relative;border-right:1px solid var(--border)"><span style="position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);font-size:9px;color:var(--text-dim)">${z.l}</span></div>`).join('')}</div>
+<div style="display:flex;height:24px;border-radius:4px;overflow:visible;margin:8px 0 24px 0">${zones.map(z=>`<div style="flex:1;background:${z.c};opacity:0.25;position:relative;border-right:1px solid var(--border)"><span style="position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);font-size:9px;color:var(--text-dim);opacity:1">${z.l}</span></div>`).join('')}</div>
 <div style="position:relative;height:8px;margin-top:20px"><div style="position:absolute;left:${extPos}%;top:-4px;width:3px;height:16px;background:var(--text);border-radius:2px"></div></div>
 <div style="text-align:center;margin-top:12px;font-size:12px;color:${extClr};font-weight:600">${fmt(extPct)}% from 10W EMA</div>
 </div></div>`;

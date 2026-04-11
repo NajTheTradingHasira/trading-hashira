@@ -2838,7 +2838,22 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     if(tab==='breadth')NX.loadBreadth();
   },
 
-  // ─── FRED loader ───
+  // ─── FRED loader with interpretive status labels ───
+  _fredStatus(key,val,chg){
+    const v=parseFloat(val)||0,c=parseFloat(chg)||0;
+    if(key==='DGS10'||key==='DGS2')return c>0.05?{t:'RISING',clr:'var(--red)'}:c<-0.05?{t:'FALLING',clr:'var(--green)'}:{t:'STABLE',clr:'var(--text-dim)'};
+    if(key==='T10Y2Y')return v>0.25?{t:'NORMAL',clr:'var(--green)'}:v<-0.25?{t:'INVERTED',clr:'var(--red)'}:{t:'FLAT',clr:'var(--amber)'};
+    if(key==='FEDFUNDS')return c>0?{t:'HIKING',clr:'var(--red)'}:c<0?{t:'CUTTING',clr:'var(--green)'}:{t:'HOLD',clr:'var(--text-dim)'};
+    if(key==='UNRATE')return v<4?{t:'HEALTHY',clr:'var(--green)'}:c>0?{t:'RISING',clr:'var(--red)'}:{t:'STABLE',clr:'var(--amber)'};
+    if(key==='ICSA')return v<250000?{t:'HEALTHY',clr:'var(--green)'}:v<300000?{t:'ELEVATED',clr:'var(--amber)'}:{t:'WARNING',clr:'var(--red)'};
+    if(key==='T10YIE'||key==='CPIAUCSL'){
+      if(key==='CPIAUCSL')return c>0?{t:'RISING',clr:'var(--red)'}:c<0?{t:'COOLING',clr:'var(--green)'}:{t:'FLAT',clr:'var(--text-dim)'};
+      return v>=2&&v<=2.5?{t:'ANCHORED',clr:'var(--green)'}:v>2.5?{t:'ELEVATED',clr:'var(--red)'}:{t:'LOW',clr:'var(--amber)'};
+    }
+    if(key==='DCOILWTICO')return c>0?{t:'RISING',clr:'var(--red)'}:c<0?{t:'FALLING',clr:'var(--green)'}:{t:'FLAT',clr:'var(--text-dim)'};
+    if(key==='DTWEXBGS')return c>0?{t:'STRENGTHENING',clr:'var(--green)'}:c<0?{t:'WEAKENING',clr:'var(--red)'}:{t:'FLAT',clr:'var(--text-dim)'};
+    return{t:'—',clr:'var(--text-dim)'};
+  },
   async loadFRED(){
     const el=$('#fred-content');el.innerHTML='<div class="loading">Loading FRED data…</div>';
     try{
@@ -2846,27 +2861,43 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
       const fred=fredRes.status==='fulfilled'?fredRes.value:null;
       const vix=vixRes.status==='fulfilled'?vixRes.value:null;
       const cards=[
-        {label:'10Y YIELD',key:'DGS10',fmt:v=>v?.toFixed(2)+'%'},
-        {label:'2Y YIELD',key:'DGS2',fmt:v=>v?.toFixed(2)+'%'},
-        {label:'YIELD CURVE',key:'T10Y2Y',fmt:v=>(v>=0?'+':'')+v?.toFixed(2)+'%'},
-        {label:'FED FUNDS',key:'FEDFUNDS',fmt:v=>v?.toFixed(2)+'%'},
+        {label:'10Y TREASURY',key:'DGS10',fmt:v=>v?.toFixed(2)+'%'},
+        {label:'2Y TREASURY',key:'DGS2',fmt:v=>v?.toFixed(2)+'%'},
+        {label:'YIELD CURVE (10Y-2Y)',key:'T10Y2Y',fmt:v=>(v>=0?'+':'')+v?.toFixed(2)+'%'},
+        {label:'FED FUNDS RATE',key:'FEDFUNDS',fmt:v=>v?.toFixed(2)+'%'},
         {label:'UNEMPLOYMENT',key:'UNRATE',fmt:v=>v?.toFixed(1)+'%'},
-        {label:'INIT CLAIMS',key:'ICSA',fmt:v=>v?.toLocaleString()},
-        {label:'CPI YoY',key:'CPIAUCSL',fmt:v=>v?.toFixed(1)+'%'},
-        {label:'CRUDE OIL',key:'DCOILWTICO',fmt:v=>'$'+v?.toFixed(2)},
-        {label:'DXY',key:'DTWEXBGS',fmt:v=>v?.toFixed(2)},
+        {label:'INITIAL CLAIMS',key:'ICSA',fmt:v=>v>=1000?(v/1000).toFixed(0)+'K':v?.toLocaleString()},
+        {label:'CPI (ALL URBAN)',key:'CPIAUCSL',fmt:v=>v?.toFixed(1)},
+        {label:'BREAKEVEN INFLATION',key:'T10YIE',fmt:v=>v?.toFixed(2)+'%'},
+        {label:'CRUDE OIL (WTI)',key:'DCOILWTICO',fmt:v=>'$'+v?.toFixed(2)},
+        {label:'US DOLLAR (DXY)',key:'DTWEXBGS',fmt:v=>v?.toFixed(2)},
       ];
       if(fred){
         el.innerHTML='<div class="grid g3">'+cards.map(c=>{
-          const v=fred[c.key]?.value??fred[c.key]??null;
-          return`<div class="m-card"><div class="label">${c.label}</div><div class="big">${v!=null?c.fmt(v):'—'}</div></div>`;
+          const d=fred[c.key]||{};
+          const v=d.value??d??null;
+          const chg=d.change??null;
+          const dt=(d.date||'').split('T')[0];
+          const st=NX._fredStatus(c.key,v,chg);
+          const chgStr=chg!=null?((chg>=0?'+':'')+parseFloat(chg).toFixed(3)):'—';
+          const chgClr=chg>0?'var(--red)':chg<0?'var(--green)':'var(--text-dim)';
+          return`<div class="m-card">
+            <div class="label">${c.label}</div>
+            <div class="big">${v!=null?c.fmt(typeof v==='object'?0:v):'—'}</div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:6px">
+              <span style="font-size:10px;color:${chgClr}">${chgStr}</span>
+              <span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;background:${st.clr}18;color:${st.clr};border:1px solid ${st.clr}30;letter-spacing:0.5px">${st.t}</span>
+            </div>
+            <div style="font-size:9px;color:var(--text-dim);margin-top:3px">${dt}</div>
+          </div>`;
         }).join('')+'</div>';
         if(vix){
           const vv=vix.current_iv??vix.iv??vix.vix??null;
-          el.innerHTML+=`<div class="m-card" style="margin-top:12px"><div class="label">VIX</div><div class="big" style="color:${vv>25?'var(--red)':vv>18?'var(--amber)':'var(--green)'}">${vv!=null?vv.toFixed(2):'—'}</div></div>`;
+          const vst=vv>25?{t:'FEAR',clr:'var(--red)'}:vv>18?{t:'ELEVATED',clr:'var(--amber)'}:vv>12?{t:'NORMAL',clr:'var(--green)'}:{t:'COMPLACENT',clr:'var(--amber)'};
+          el.innerHTML+=`<div class="m-card" style="margin-top:12px"><div class="label">VIX</div><div class="big" style="color:${vst.clr}">${vv!=null?vv.toFixed(2):'—'}</div><div style="margin-top:4px"><span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;background:${vst.clr}18;color:${vst.clr};border:1px solid ${vst.clr}30">${vst.t}</span></div></div>`;
         }
       }else{
-        el.innerHTML='<div class="card" style="padding:20px"><div class="card-header">FRED Dashboard</div><div style="color:var(--text-dim)">Connect backend <code>GET /api/fred</code> for live data. Sector leader + VIX shown on Dashboard.</div></div>';
+        el.innerHTML='<div class="card" style="padding:20px"><div class="card-header">FRED Dashboard</div><div style="color:var(--text-dim)">Connect backend <code>GET /api/fred</code> for live data.</div></div>';
       }
     }catch(e){el.innerHTML=`<div class="empty-state"><div class="icon">⚠</div>${e.message}</div>`}
   },

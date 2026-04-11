@@ -3274,23 +3274,32 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
 });
 
 // ─── Ticker Bar ───
-const TICKER_BAR_SYMS=['SPY','QQQ','IWM','DIA','^VIX','AAPL'];
-const TICKER_BAR_LABELS={'^VIX':'VIX'};
+const TICKER_BAR_STOCK_SYMS=['SPY','QQQ','IWM','DIA','AAPL'];
 async function refreshTickerBar(){
   const el=$('#ticker-bar');if(!el)return;
   try{
-    const syms=TICKER_BAR_SYMS.join(',');
-    const d=await NX.apiFetch('/api/prices?symbols='+encodeURIComponent(syms));
-    if(!d||!d.prices)return;
-    el.innerHTML=TICKER_BAR_SYMS.map(sym=>{
-      const key=sym==='^VIX'?'^VIX':sym;
-      const p=d.prices[key]||d.prices[sym.replace('^','')]||{};
-      const price=p.price?parseFloat(p.price):0;
-      const chg=p.dayPct?parseFloat(p.dayPct):0;
-      const label=TICKER_BAR_LABELS[sym]||sym;
-      const cls=chg>=0?'tk-up':'tk-dn';
-      const arrow=chg>=0?'▲':'▼';
-      return`<div class="tk-item"><span class="tk-sym">${label}</span><span class="tk-price">${price?price.toFixed(2):'—'}</span><span class="tk-chg ${cls}">${price?arrow+' '+Math.abs(chg).toFixed(2)+'%':''}</span></div>`;
+    // Fetch stocks from /api/prices + VIX from /api/market-data (Polygon doesn't have VIX as stock)
+    const[pricesRes,vixRes]=await Promise.allSettled([
+      NX.apiFetch('/api/prices?symbols='+TICKER_BAR_STOCK_SYMS.join(',')),
+      NX.apiFetch('/api/market-data/%5EVIX')
+    ]);
+    const prices=(pricesRes.status==='fulfilled'&&pricesRes.value?.prices)||{};
+    const vix=vixRes.status==='fulfilled'?vixRes.value:null;
+
+    // Build items: stocks + VIX
+    const items=TICKER_BAR_STOCK_SYMS.map(sym=>{
+      const p=prices[sym]||{};
+      return{sym,price:parseFloat(p.price)||0,chg:parseFloat(p.dayPct)||0};
+    });
+    // Insert VIX after DIA (position 4)
+    if(vix&&vix.price){
+      items.splice(4,0,{sym:'VIX',price:parseFloat(vix.price)||0,chg:parseFloat(vix.change_pct)||0});
+    }
+
+    el.innerHTML=items.map(i=>{
+      const cls=i.chg>=0?'tk-up':'tk-dn';
+      const arrow=i.chg>=0?'▲':'▼';
+      return`<div class="tk-item"><span class="tk-sym">${i.sym}</span><span class="tk-price">${i.price?i.price.toFixed(2):'—'}</span><span class="tk-chg ${cls}">${i.price?arrow+' '+Math.abs(i.chg).toFixed(2)+'%':''}</span></div>`;
     }).join('');
   }catch(e){console.warn('Ticker bar:',e.message)}
 }

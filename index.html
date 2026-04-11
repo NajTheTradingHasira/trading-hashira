@@ -1246,13 +1246,23 @@ const NX={
     try{
       const d=await NX.apiFetch('/api/cot');
       const rows=d.data||d.reports||d||[];
-      if(!Array.isArray(rows)||!rows.length){
+      const hasReal=Array.isArray(rows)&&rows.length&&rows.some(r=>(r.contract||r.name)&&(r.net_long||r.netLong||r.net_position));
+      if(!hasReal){
         // Mock COT data matching APEX screenshot
         const mock=[
           {contract:'E-Mini S&P 500',netLong:-219069,wkChange:112795,pctOI:-8.0,signal:'NET SHORT'},
           {contract:'Nasdaq 100',netLong:-34740,wkChange:2450,pctOI:-12.6,signal:'NET SHORT'},
           {contract:'Russell 2000',netLong:-39472,wkChange:10223,pctOI:-9.5,signal:'NET SHORT'},
-          {contract:'Gold (COMEX)',netLong:92814,wkChange:1193,pctOI:25.7,signal:'NET LONG'},
+          {contract:'Dow Jones Mini',netLong:8341,wkChange:-2100,pctOI:4.2,signal:'NET LONG'},
+          {contract:'Gold (COMEX)',netLong:292814,wkChange:1193,pctOI:25.7,signal:'NET LONG'},
+          {contract:'Silver (COMEX)',netLong:42518,wkChange:-3201,pctOI:18.3,signal:'NET LONG'},
+          {contract:'Copper',netLong:-11204,wkChange:5620,pctOI:-3.8,signal:'NET SHORT'},
+          {contract:'Crude Oil (WTI)',netLong:188432,wkChange:-24510,pctOI:6.1,signal:'NET LONG'},
+          {contract:'Natural Gas',netLong:-102347,wkChange:8912,pctOI:-15.4,signal:'NET SHORT'},
+          {contract:'Euro FX',netLong:-72184,wkChange:15230,pctOI:-9.7,signal:'NET SHORT'},
+          {contract:'Japanese Yen',netLong:47219,wkChange:12840,pctOI:8.5,signal:'NET LONG'},
+          {contract:'British Pound',netLong:21456,wkChange:-3120,pctOI:5.1,signal:'NET LONG'},
+          {contract:'10-Year T-Note',netLong:-541230,wkChange:42100,pctOI:-11.2,signal:'NET SHORT'},
           {contract:'VIX Futures',netLong:-42246,wkChange:-1786,pctOI:-12.1,signal:'NET SHORT'},
         ];
         const dt=new Date();dt.setDate(dt.getDate()-((dt.getDay()+4)%7));

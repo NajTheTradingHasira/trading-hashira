@@ -42,7 +42,20 @@ body::after{
 }
 
 /* ═══ LAYOUT ═══ */
-#app{display:flex;height:100vh;position:relative}
+#ticker-bar{
+  position:fixed;top:0;left:0;right:0;z-index:300;
+  height:32px;background:#0a0e17;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;gap:24px;
+  font-family:var(--font-mono);font-size:12px;padding:0 16px;
+  overflow:hidden;white-space:nowrap;
+}
+#ticker-bar .tk-item{display:flex;align-items:center;gap:5px}
+#ticker-bar .tk-sym{color:var(--text-dim);font-weight:700;font-size:11px}
+#ticker-bar .tk-price{color:var(--text);font-weight:600}
+#ticker-bar .tk-chg{font-weight:700;font-size:11px}
+#ticker-bar .tk-up{color:var(--green)}
+#ticker-bar .tk-dn{color:var(--red)}
+#app{display:flex;height:calc(100vh - 33px);position:relative;margin-top:33px}
 
 /* ═══ SIDEBAR ═══ */
 #sidebar{
@@ -306,6 +319,7 @@ tr:hover{background:var(--bg2)}
 </style>
 </head>
 <body>
+<div id="ticker-bar"></div>
 <div id="app">
 <!-- ═══ SIDEBAR ═══ -->
 <div id="sidebar">
@@ -3259,6 +3273,28 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
   }});
 });
 
+// ─── Ticker Bar ───
+const TICKER_BAR_SYMS=['SPY','QQQ','IWM','DIA','^VIX','AAPL'];
+const TICKER_BAR_LABELS={'^VIX':'VIX'};
+async function refreshTickerBar(){
+  const el=$('#ticker-bar');if(!el)return;
+  try{
+    const syms=TICKER_BAR_SYMS.join(',');
+    const d=await NX.apiFetch('/api/prices?symbols='+encodeURIComponent(syms));
+    if(!d||!d.prices)return;
+    el.innerHTML=TICKER_BAR_SYMS.map(sym=>{
+      const key=sym==='^VIX'?'^VIX':sym;
+      const p=d.prices[key]||d.prices[sym.replace('^','')]||{};
+      const price=p.price?parseFloat(p.price):0;
+      const chg=p.dayPct?parseFloat(p.dayPct):0;
+      const label=TICKER_BAR_LABELS[sym]||sym;
+      const cls=chg>=0?'tk-up':'tk-dn';
+      const arrow=chg>=0?'▲':'▼';
+      return`<div class="tk-item"><span class="tk-sym">${label}</span><span class="tk-price">${price?price.toFixed(2):'—'}</span><span class="tk-chg ${cls}">${price?arrow+' '+Math.abs(chg).toFixed(2)+'%':''}</span></div>`;
+    }).join('');
+  }catch(e){console.warn('Ticker bar:',e.message)}
+}
+
 // ─── Init ───
 (function(){
   const saved=NX.getBase();
@@ -3266,6 +3302,8 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
   NX.checkHealth();
   setInterval(()=>NX.checkHealth(),30000);
   NX.loadPortfolio();
+  refreshTickerBar();
+  setInterval(refreshTickerBar,60000);
   // Close mobile sidebar on outside click
   document.getElementById('main').addEventListener('click',()=>{
     const sb=$('#sidebar');if(sb&&sb.classList.contains('open'))sb.classList.remove('open');

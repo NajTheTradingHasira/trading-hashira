@@ -1277,10 +1277,10 @@ const NX={
         const prevDate=dates[dates.length-2]||'';
         const latest=rows.filter(r=>r.report_date_as_yyyy_mm_dd===reportDate);
         const prev=rows.filter(r=>r.report_date_as_yyyy_mm_dd===prevDate);
-        const prevById={};prev.forEach(r=>{prevById[r.id||r.cftc_contract_market_code]=r});
+        const prevByCode={};prev.forEach(r=>{const c=(r.cftc_contract_market_code||'').trim();prevByCode[c]=r});
         const seen=new Set();
         latest.forEach(r=>{
-          const mktName=(r.contract_market_name||r.market_and_exchange_names||'').toUpperCase();
+          const mktName=(r.contract_market_name||r.market_and_exchange_names||'');
           const match=NX._cotNamePatterns.find(p=>p.pat.test(mktName));
           if(!match||seen.has(match.name))return;
           seen.add(match.name);
@@ -1288,7 +1288,8 @@ const NX={
           const sf='noncomm_positions_short_all' in r?'noncomm_positions_short_all':'noncommercial_positions_short_all';
           const net=(parseInt(r[lf])||0)-(parseInt(r[sf])||0);
           const oi=parseInt(r.open_interest_all)||1;
-          const pr=prevById[r.id||r.cftc_contract_market_code];
+          const code=(r.cftc_contract_market_code||'').trim();
+          const pr=prevByCode[code]||prev.find(p=>{const pn=(p.contract_market_name||p.market_and_exchange_names||'');return match.pat.test(pn)});
           const prevNet=pr?((parseInt(pr[lf])||0)-(parseInt(pr[sf])||0)):0;
           processed.push({contract:match.name,netLong:net,wkChange:net-prevNet,pctOI:Math.round(net/oi*1000)/10,signal:net>=0?'NET LONG':'NET SHORT',_order:match.order});
         });
@@ -1302,7 +1303,8 @@ const NX={
         const dt=new Date();dt.setDate(dt.getDate()-((dt.getDay()+4)%7));reportDate=dt.toISOString().split('T')[0];
       }
 
-      el.innerHTML=`<div class="card"><div class="card-header">COT REPORT — LARGE SPEC POSITIONING${reportDate?' (AS OF '+reportDate+')':''}</div>
+      const dateClean=(reportDate||'').split('T')[0];
+      el.innerHTML=`<div class="card"><div class="card-header">COT REPORT — LARGE SPEC POSITIONING${dateClean?' (AS OF '+dateClean+')':''}</div>
       <div style="overflow-x:auto"><table>
       <thead><tr><th>CONTRACT</th><th>NET LONG</th><th>WK CHANGE</th><th>% OF OI</th><th>SIGNAL</th></tr></thead>
       <tbody>${processed.map(r=>{

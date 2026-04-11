@@ -811,6 +811,8 @@ const NX={
     // Init
     if(typeof renderCurrentView==='function')renderCurrentView();
     NX._tradeHistoryLoaded=true;
+    // Auto-sync with backend
+    initTradeSync();
   },
 
   // ═══ PORTFOLIO ═══
@@ -3772,11 +3774,17 @@ function getTradeHistoryHTML() {
         <button class="portfolio-tab-btn active" onclick="switchPortfolioTab('options')">Options</button>
       </div>
 
-      <!-- Sub-tabs: Positions | Trade History | P&L -->
-      <div class="options-subtab-row">
-        <button class="options-subtab active" onclick="switchOptionsView('positions')" id="subtab-positions">Open Positions</button>
-        <button class="options-subtab" onclick="switchOptionsView('history')" id="subtab-history">Trade History</button>
-        <button class="options-subtab" onclick="switchOptionsView('pnl')" id="subtab-pnl">P&L Summary</button>
+      <!-- Sub-tabs: Positions | Trade History | P&L + Sync -->
+      <div class="options-subtab-row" style="justify-content:space-between;flex-wrap:wrap">
+        <div style="display:flex;gap:8px">
+          <button class="options-subtab active" onclick="switchOptionsView('positions')" id="subtab-positions">Open Positions</button>
+          <button class="options-subtab" onclick="switchOptionsView('history')" id="subtab-history">Trade History</button>
+          <button class="options-subtab" onclick="switchOptionsView('pnl')" id="subtab-pnl">P&L Summary</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span id="trades-sync-badge" style="font-size:10px;color:#666;font-family:'JetBrains Mono',monospace">○ NOT SYNCED</span>
+          <button class="trade-btn trade-btn-secondary" style="padding:4px 10px;font-size:10px" onclick="bulkSyncTrades()">⟳ Sync</button>
+        </div>
       </div>
 
       <!-- P&L Summary Bar (always visible) -->
@@ -3884,8 +3892,9 @@ function getTradeHistoryHTML() {
   `;
 }
 
-// ── Storage ────────────────────────────────────────────────────────────────────
+// ── Storage (localStorage + backend sync) ─────────────────────────────────────
 const TRADES_STORAGE_KEY = 'optionsTrades';
+let _tradesSyncState = 'unknown'; // unknown | synced | pending | error
 
 function getTrades() {
   try {
@@ -3899,6 +3908,110 @@ function saveTrades(trades) {
 
 function generateTradeId() {
   return 'trd_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+}
+
+// Backend sync helpers
+async function _tradeApiBase() {
+  return (typeof NX !== 'undefined' && NX.getBase) ? NX.getBase() : '';
+}
+
+async function syncTradeToBackend(trade) {
+  try {
+    const base = await _tradeApiBase(); if (!base) return;
+    await fetch(base + '/api/trades', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(trade)
+    });
+  } catch (e) { console.warn('Trade sync failed:', e.message); }
+}
+
+async function deleteTradeFromBackend(id) {
+  try {
+    const base = await _tradeApiBase(); if (!base) return;
+    await fetch(base + '/api/trades/' + id, { method: 'DELETE' });
+  } catch (e) { console.warn('Trade delete sync failed:', e.message); }
+}
+
+async function bulkSyncTrades() {
+  try {
+    const base = await _tradeApiBase(); if (!base) { _updateSyncBadge('error'); return; }
+    _updateSyncBadge('syncing');
+    const local = getTrades();
+    const resp = await fetch(base + '/api/trades/bulk', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ trades: local })
+    });
+    if (resp.ok) {
+      const d = await resp.json();
+      _tradesSyncState = 'synced';
+      _updateSyncBadge('synced', d.added + ' new, ' + d.total + ' total');
+    } else { _updateSyncBadge('error'); }
+  } catch (e) { _updateSyncBadge('error'); }
+}
+
+async function pullTradesFromBackend() {
+  try {
+    const base = await _tradeApiBase(); if (!base) return;
+    const resp = await fetch(base + '/api/trades');
+    if (!resp.ok) return;
+    const d = await resp.json();
+    const remote = d.trades || [];
+    if (!remote.length) return;
+    // Merge: remote wins on ID collisions, add new from both sides
+    const local = getTrades();
+    const localIds = new Set(local.map(t => t.id));
+    let added = 0;
+    for (const rt of remote) {
+      if (rt.id && !localIds.has(rt.id)) {
+        local.push(rt); localIds.add(rt.id); added++;
+      }
+    }
+    if (added > 0) {
+      saveTrades(local);
+      console.log('[sync] Pulled ' + added + ' trades from backend');
+    }
+    // If local has trades backend doesn't, push them
+    const remoteIds = new Set(remote.map(t => t.id));
+    const toPush = local.filter(t => t.id && !remoteIds.has(t.id));
+    if (toPush.length > 0) {
+      await fetch(base + '/api/trades/bulk', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ trades: toPush })
+      });
+      console.log('[sync] Pushed ' + toPush.length + ' trades to backend');
+    }
+    _tradesSyncState = 'synced';
+    _updateSyncBadge('synced');
+  } catch (e) {
+    console.warn('Pull sync failed:', e.message);
+    _updateSyncBadge('error');
+  }
+}
+
+function _updateSyncBadge(state, detail) {
+  _tradesSyncState = state;
+  const el = document.getElementById('trades-sync-badge');
+  if (!el) return;
+  const map = {
+    synced: { text: '● SYNCED', clr: '#4caf50' },
+    syncing: { text: '◌ SYNCING…', clr: '#ff9800' },
+    pending: { text: '○ PENDING', clr: '#ff9800' },
+    error: { text: '✗ SYNC ERROR', clr: '#ff5252' },
+    unknown: { text: '○ NOT SYNCED', clr: '#666' },
+  };
+  const s = map[state] || map.unknown;
+  el.style.color = s.clr;
+  el.textContent = s.text + (detail ? ' · ' + detail : '');
+}
+
+// Auto-sync on init (called when options tab loads)
+let _syncInitDone = false;
+function initTradeSync() {
+  if (_syncInitDone) return;
+  _syncInitDone = true;
+  pullTradesFromBackend().then(() => {
+    if (typeof renderCurrentView === 'function') renderCurrentView();
+  });
 }
 
 // ── Contract Key (for grouping) ────────────────────────────────────────────────
@@ -4388,15 +4501,24 @@ function previewTradePaste() {
 
 function confirmTradePaste() {
   if (_parsedTrades.length === 0) return;
-  
+
   const trades = getTrades();
+  const newTrades = [];
   for (const t of _parsedTrades) {
-    trades.push({
-      ...t,
-      id: generateTradeId()
-    });
+    const trade = { ...t, id: generateTradeId() };
+    trades.push(trade);
+    newTrades.push(trade);
   }
   saveTrades(trades);
+  // Sync new trades to backend
+  _tradeApiBase().then(base => {
+    if (base && newTrades.length) {
+      fetch(base + '/api/trades/bulk', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ trades: newTrades })
+      }).then(() => _updateSyncBadge('synced')).catch(() => _updateSyncBadge('pending'));
+    }
+  });
   
   _parsedTrades = [];
   document.getElementById('trade-paste-input').value = '';
@@ -4448,7 +4570,8 @@ function addManualTrade() {
   const trades = getTrades();
   trades.push(trade);
   saveTrades(trades);
-  
+  syncTradeToBackend(trade);
+
   // Clear form
   document.getElementById('trade-ticker').value = '';
   document.getElementById('trade-strike').value = '';
@@ -4462,10 +4585,11 @@ function addManualTrade() {
 // ── Delete Trade ───────────────────────────────────────────────────────────────
 function deleteTrade(id) {
   if (!confirm('Delete this trade?')) return;
-  
+
   let trades = getTrades();
   trades = trades.filter(t => t.id !== id);
   saveTrades(trades);
+  deleteTradeFromBackend(id);
   renderCurrentView();
 }
 

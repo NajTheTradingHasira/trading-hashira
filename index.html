@@ -1241,7 +1241,26 @@ const NX={
   },
 
   // ═══ COT ═══
-  _cotWanted:{'13874':'E-Mini S&P 500','209742':'Nasdaq 100','239742':'Russell 2000','124603':'Dow Jones Mini','088691':'Gold (COMEX)','084691':'Silver (COMEX)','085692':'Copper','067651':'Crude Oil (WTI)','023651':'Natural Gas','099741':'Euro FX','097741':'Japanese Yen','096742':'British Pound','043602':'10-Year T-Note','044601':'2-Year T-Note','1170E1':'VIX Futures','001612':'Fed Funds'},
+  _cotNamePatterns:[
+    {pat:/E-MINI S&P 500|E-MINI S&P500/i,name:'E-Mini S&P 500',order:0},
+    {pat:/NASDAQ.*MINI|NASDAQ.*100/i,name:'Nasdaq 100',order:1},
+    {pat:/RUSSELL.*2000|RUSSEL.*E-MINI/i,name:'Russell 2000',order:2},
+    {pat:/DOW.*MINI|DJIA|DOW JONES/i,name:'Dow Jones Mini',order:3},
+    {pat:/GOLD/i,name:'Gold (COMEX)',order:4},
+    {pat:/SILVER/i,name:'Silver (COMEX)',order:5},
+    {pat:/COPPER/i,name:'Copper',order:6},
+    {pat:/CRUDE.*OIL|WTI/i,name:'Crude Oil (WTI)',order:7},
+    {pat:/NATURAL GAS/i,name:'Natural Gas',order:8},
+    {pat:/U\.?S\.? DOLLAR|USD INDEX/i,name:'U.S. Dollar Index',order:9},
+    {pat:/EURO FX/i,name:'Euro FX',order:10},
+    {pat:/JAPANESE YEN/i,name:'Japanese Yen',order:11},
+    {pat:/BRITISH POUND/i,name:'British Pound',order:12},
+    {pat:/FED FUNDS/i,name:'Fed Funds',order:13},
+    {pat:/2[- ]?YE?A?R.*T-?NOTE/i,name:'2-Year T-Note',order:14},
+    {pat:/5[- ]?YE?A?R.*T-?NOTE/i,name:'5-Year T-Note',order:15},
+    {pat:/10[- ]?YE?A?R.*T-?NOTE/i,name:'10-Year T-Note',order:16},
+    {pat:/VIX/i,name:'VIX Futures',order:17},
+  ],
   async loadCOT(){
     const el=$('#cot-content');el.innerHTML='<div class="loading">Loading COT…</div>';
     try{
@@ -1258,23 +1277,22 @@ const NX={
         const prevDate=dates[dates.length-2]||'';
         const latest=rows.filter(r=>r.report_date_as_yyyy_mm_dd===reportDate);
         const prev=rows.filter(r=>r.report_date_as_yyyy_mm_dd===prevDate);
-        const prevMap={};prev.forEach(r=>{prevMap[(r.cftc_contract_market_code||'').trim().replace(/\+$/,'')]=r});
-        const w=NX._cotWanted;
+        const prevById={};prev.forEach(r=>{prevById[r.id||r.cftc_contract_market_code]=r});
+        const seen=new Set();
         latest.forEach(r=>{
-          const code=(r.cftc_contract_market_code||'').trim().replace(/\+$/,'');
-          let name=null;
-          for(const[k,v]of Object.entries(w)){if(code.includes(k)||k===code){name=v;break;}}
-          if(!name)return;
+          const mktName=(r.contract_market_name||r.market_and_exchange_names||'').toUpperCase();
+          const match=NX._cotNamePatterns.find(p=>p.pat.test(mktName));
+          if(!match||seen.has(match.name))return;
+          seen.add(match.name);
           const lf='noncomm_positions_long_all' in r?'noncomm_positions_long_all':'noncommercial_positions_long_all';
           const sf='noncomm_positions_short_all' in r?'noncomm_positions_short_all':'noncommercial_positions_short_all';
           const net=(parseInt(r[lf])||0)-(parseInt(r[sf])||0);
           const oi=parseInt(r.open_interest_all)||1;
-          const pr=prevMap[code];
+          const pr=prevById[r.id||r.cftc_contract_market_code];
           const prevNet=pr?((parseInt(pr[lf])||0)-(parseInt(pr[sf])||0)):0;
-          processed.push({contract:name,netLong:net,wkChange:net-prevNet,pctOI:Math.round(net/oi*1000)/10,signal:net>=0?'NET LONG':'NET SHORT'});
+          processed.push({contract:match.name,netLong:net,wkChange:net-prevNet,pctOI:Math.round(net/oi*1000)/10,signal:net>=0?'NET LONG':'NET SHORT',_order:match.order});
         });
-        const order=['E-Mini','Nasdaq','Russell','Dow','Gold','Silver','Copper','Crude','Natural','Euro','Japanese','British','Fed','2-Year','5-Year','10-Year','VIX'];
-        processed.sort((a,b)=>{const ai=order.findIndex(o=>a.contract.includes(o));const bi=order.findIndex(o=>b.contract.includes(o));return(ai<0?99:ai)-(bi<0?99:bi)});
+        processed.sort((a,b)=>a._order-b._order);
       }else if(isProcessed){
         processed=rows.map(r=>({contract:r.contract||r.name||'—',netLong:r.net_long||r.netLong||0,wkChange:r.wk_change||r.weekly_change||0,pctOI:r.pct_oi||r.pct_of_oi||0,signal:(r.net_long||r.netLong||0)>=0?'NET LONG':'NET SHORT'}));
       }

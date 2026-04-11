@@ -1839,11 +1839,12 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
         rallyDay++;if(b.close<rallyLow*.995){inRally=false;rallyDay=0;continue}
         if(rallyDay>=4){
           const gain=(b.close/prev.close-1)*100;
+          const volRatio=prev.volume>0?+(b.volume/prev.volume).toFixed(2):0;
           if(gain>=1.25&&b.volume>prev.volume){
             const future=bars.slice(i+1,i+26);
             const held=future.length>=10&&future.every(fb=>fb.close>rallyLow*.995);
             const peak=future.length?+((Math.max(...future.map(fb=>fb.close))/b.close-1)*100).toFixed(1):0;
-            ftds.push({idx:i,rallyDay,gain:+gain.toFixed(2),close:+b.close.toFixed(2),success:held,peakGain:peak});
+            ftds.push({idx:i,rallyDay,gain:+gain.toFixed(2),close:+b.close.toFixed(2),volRatio,success:held,peakGain:peak});
             inRally=false;rallyDay=0;
           }
         }
@@ -2000,8 +2001,22 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     }else if(tab==='ftd'){
       const success=ftds.filter(f=>f.success).length;
       const lastFtd=ftds.length?ftds[ftds.length-1]:null;
-      const marketStatus=lastFtd&&lastFtd.success?'CONFIRMED UPTREND':'RALLY ATTEMPT';
-      const statusClr=lastFtd&&lastFtd.success?'var(--green)':'var(--amber)';
+      // Market status: check rolling 39-day high vs current price
+      const recent=bars.slice(-39);
+      const rollingHigh=recent.length?Math.max(...recent.map(b=>b.high)):0;
+      const curPrice=bars.length?bars[bars.length-1].close:0;
+      const drawdownFromHigh=rollingHigh>0?(rollingHigh-curPrice)/rollingHigh*100:0;
+      let marketStatus,statusClr;
+      if(lastFtd&&lastFtd.success){
+        marketStatus='CONFIRMED UPTREND';statusClr='var(--green)';
+      }else if(drawdownFromHigh>=5&&!lastFtd){
+        marketStatus='MARKET IN CORRECTION';statusClr='var(--red)';
+      }else if(drawdownFromHigh>=5){
+        marketStatus=lastFtd&&!lastFtd.success?'MARKET IN CORRECTION':'RALLY ATTEMPT';
+        statusClr=lastFtd&&!lastFtd.success?'var(--red)':'var(--amber)';
+      }else{
+        marketStatus='RALLY ATTEMPT';statusClr='var(--amber)';
+      }
       el.innerHTML=`
       <div class="card" style="border-color:var(--green-dim)"><div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:8px;letter-spacing:1px">FOLLOW-THROUGH DAY (FTD) — IBD DEFINITION</div>
       <div style="font-size:12px;color:var(--text-muted);line-height:1.6">After a market makes a pivot low and starts a rally attempt, an FTD occurs on <strong style="color:var(--text)">day 4 or later</strong> when a major index closes <strong style="color:var(--text)">up ≥1.25%</strong> on <strong style="color:var(--text)">volume above the prior session</strong>. Confirms the rally is legitimate and institutional money is returning. Every major bull market rally in history began with an FTD. Not every FTD leads to a sustained rally — failure rate historically ~25–35%.</div></div>
@@ -2011,6 +2026,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
         <div style="display:flex;gap:24px;margin-top:8px">
           <div><span style="font-size:10px;color:var(--text-dim)">FTDs DETECTED</span><div style="font-size:18px;font-weight:600">${ftds.length}</div></div>
           <div><span style="font-size:10px;color:var(--text-dim)">SUCCESS RATE</span><div style="font-size:18px;font-weight:600;color:${success/Math.max(1,ftds.length)>.5?'var(--green)':'var(--red)'}">${ftds.length?fmt(success/ftds.length*100,0)+'%':'—%'}</div></div>
+          <div><span style="font-size:10px;color:var(--text-dim)">DRAWDOWN</span><div style="font-size:18px;font-weight:600;color:${drawdownFromHigh>5?'var(--red)':'var(--green)'}">${fmt(drawdownFromHigh,1)}%</div></div>
         </div>
       </div>
       <div class="metrics-row g4">
@@ -2019,16 +2035,36 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
         <div class="m-card"><div class="label">FAILED</div><div class="value down">${ftds.length-success}</div><div class="sub">New lows within 25d</div></div>
         <div class="m-card"><div class="label">AVG FTD GAIN</div><div class="value up">${ftds.length?'+'+fmt(ftds.reduce((s,f)=>s+f.gain,0)/ftds.length,1)+'%':'±—%'}</div><div class="sub">Day-of gain</div></div>
       </div>
-      <div class="card"><div class="card-header">${t} — PRICE + FTD MARKERS (LAST 200 SESSIONS)<span style="font-weight:400;display:flex;gap:12px"><span style="color:var(--green)">| FTD Confirmed</span><span style="color:var(--red)">| FTD Failed</span></span></div><div class="chart-box chart-box-lg"><canvas id="cv-tt-ftd"></canvas></div></div>
+      <div class="card"><div class="card-header">${t} — CANDLESTICK + FTD MARKERS (LAST 200 SESSIONS)<span style="font-weight:400;display:flex;gap:12px"><span style="color:var(--green)">■ FTD Confirmed</span><span style="color:var(--red)">■ FTD Failed</span></span></div><div class="chart-box chart-box-lg"><canvas id="cv-tt-ftd"></canvas></div></div>
       <div class="card"><div class="card-header">FOLLOW-THROUGH DAYS — ${t}</div>
-      <div style="overflow-x:auto"><table><thead><tr><th>Day</th><th>Rally Day</th><th>Gain</th><th>Close</th><th>Held?</th><th>Peak Gain</th></tr></thead>
-      <tbody>${ftds.map(f=>`<tr><td>${f.idx}</td><td>${f.rallyDay}</td><td class="up">+${fmt(f.gain,2)}%</td><td>$${fmt(f.close)}</td><td>${f.success?'<span class="badge b-green">✓ CONFIRMED</span>':'<span class="badge b-red">✗ FAILED</span>'}</td><td class="up">+${f.peakGain}%</td></tr>`).join('')}</tbody></table></div></div>`;
-      // FTD chart
+      <div style="overflow-x:auto"><table><thead><tr><th>Day</th><th>Rally Day</th><th>FTD Gain</th><th>Vol Ratio</th><th>Close</th><th>Held?</th><th>Peak Gain</th></tr></thead>
+      <tbody>${ftds.map(f=>`<tr><td>${f.idx}</td><td>${f.rallyDay}</td><td class="up">+${fmt(f.gain,2)}%</td><td style="color:${(f.volRatio||0)>=1.5?'var(--green)':'var(--text-dim)'}">${f.volRatio||'—'}×</td><td>$${fmt(f.close)}</td><td>${f.success?'<span class="badge b-green">✓ CONFIRMED</span>':'<span class="badge b-red">✗ FAILED</span>'}</td><td class="up">+${f.peakGain}%</td></tr>`).join('')}</tbody></table></div></div>`;
+      // Candlestick + Volume chart with FTD markers
       const slice=bars.slice(-200);const ftdIdxSet=new Set(ftds.map(f=>f.idx));
+      const maxVol=Math.max(...slice.map(b=>b.volume))||1;
+      const minP=Math.min(...slice.map(b=>b.low)),maxP=Math.max(...slice.map(b=>b.high));
+      const volScale=(maxP-minP)*0.22;
       makeChart('cv-tt-ftd',{data:{labels:slice.map((_,i)=>i),datasets:[
-        {type:'line',label:'Close',data:slice.map(b=>b.close),borderColor:'#c8d6e550',backgroundColor:'#c8d6e508',fill:true,tension:.1,pointRadius:0,borderWidth:1.5},
-        {type:'scatter',label:'FTD',data:slice.map((b,i)=>ftdIdxSet.has(b.idx)?{x:i,y:b.close}:null).filter(Boolean),pointRadius:6,pointStyle:'rect',backgroundColor:slice.filter(b=>ftdIdxSet.has(b.idx)).map(b=>{const f=ftds.find(x=>x.idx===b.idx);return f&&f.success?'#00e676':'#ff5252'}),borderColor:'transparent'}
-      ]},options:{plugins:{legend:{display:false}},scales:{x:{display:false},y:{ticks:{callback:v=>'$'+fmt(v,0)}}},interaction:{intersect:false},maintainAspectRatio:false}});
+        // Candle bodies (open-close as floating bar)
+        {type:'bar',label:'Candle',data:slice.map(b=>[Math.min(b.open,b.close),Math.max(b.open,b.close)]),
+          backgroundColor:slice.map(b=>b.close>=b.open?'#00e676cc':'#ff5252cc'),
+          borderColor:slice.map(b=>b.close>=b.open?'#00e676':'#ff5252'),borderWidth:1,barPercentage:0.6,categoryPercentage:0.9},
+        // Wicks (high-low as thin bars)
+        {type:'bar',label:'Wick',data:slice.map(b=>[b.low,b.high]),
+          backgroundColor:'transparent',borderColor:slice.map(b=>b.close>=b.open?'#00e67680':'#ff525280'),
+          borderWidth:1,barPercentage:0.08,categoryPercentage:0.9},
+        // Volume bars at bottom
+        {type:'bar',label:'Volume',data:slice.map(b=>minP+(b.volume/maxVol)*volScale),
+          backgroundColor:slice.map(b=>b.close>=b.open?'#00e67620':'#ff525220'),
+          borderWidth:0,barPercentage:0.7,yAxisID:'y'},
+        // FTD markers
+        {type:'scatter',label:'FTD',data:slice.map((b,i)=>ftdIdxSet.has(b.idx)?{x:i,y:b.high*1.01}:null).filter(Boolean),
+          pointRadius:7,pointStyle:'rect',
+          backgroundColor:slice.filter(b=>ftdIdxSet.has(b.idx)).map(b=>{const f=ftds.find(x=>x.idx===b.idx);return f&&f.success?'#00e676':'#ff5252'}),
+          borderColor:'transparent'}
+      ]},options:{plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>{if(ctx.datasetIndex===0){const b=slice[ctx.dataIndex];return`O:$${fmt(b.open)} H:$${fmt(b.high)} L:$${fmt(b.low)} C:$${fmt(b.close)}`}return''}}}},
+        scales:{x:{display:false},y:{min:minP*0.98,ticks:{callback:v=>v>=minP?'$'+fmt(v,0):''}}},
+        interaction:{mode:'index',intersect:false},maintainAspectRatio:false}});
     }else{
       const selBase=bases.length?bases[bases.length-1]:null;
       const baseNum=bases.length;

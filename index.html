@@ -1471,7 +1471,16 @@ ${a.triple_aligned?'<div class="card" style="border-left:3px solid var(--green);
 <div style="text-align:center;margin:20px 0"><div style="font-size:48px;font-weight:800;color:${gaugeClr}">${w.composite||0}</div>
 <div style="width:100%;max-width:300px;margin:8px auto;height:10px;background:linear-gradient(90deg,var(--red),var(--amber),var(--green));border-radius:5px;position:relative"><div style="position:absolute;left:${w.composite||0}%;top:-3px;width:4px;height:16px;background:#fff;border-radius:2px;transform:translateX(-50%)"></div></div>
 <div style="font-size:13px;font-weight:700;color:${gaugeClr};margin-top:6px">${w.label||'—'}</div></div>
-<div class="card-header">COMPONENT BREAKDOWN</div>${compHTML}</div>`;
+<div class="card-header">COMPONENT BREAKDOWN</div>${compHTML}
+<div class="card" style="margin-top:16px"><div class="card-header">WANDA METHODOLOGY</div>
+<div style="font-size:12px;color:var(--text-dim);line-height:1.8">
+<div style="color:var(--text);font-weight:600;margin-bottom:8px">COMPOSITE = Price_RS × 0.40 + Earnings_Mom × 0.25 + Industry_RS × 0.20 + Float_Liq × 0.15</div>
+<div>Price RS: 63d ret (40%) + 126d (20%) + 189d (20%) + 252d (20%) — all relative to SPX</div>
+<div>Earnings Mom: EPS growth (50%) + Rev accel (30%) + Estimate revisions (20%)</div>
+<div>Industry RS: Sector ETF vs SPX, same weighted time periods</div>
+<div>Float/Liq: Inst ownership (40%) + Float turnover (30%) + Vol trend (30%)</div>
+<div style="margin-top:8px;color:var(--accent)">Score ≥90 = Elite Leader · ≥80 = Strong · ≥60 = Above Avg · &lt;40 = Laggard</div>
+</div></div></div>`;
     }
 
     else if(tab==='ABS STR'){

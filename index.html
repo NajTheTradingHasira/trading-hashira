@@ -208,6 +208,22 @@ tr:hover{background:var(--bg2)}
 .news-item .nmeta{font-size:10px;color:var(--text-dim)}
 .news-item a{color:var(--accent);text-decoration:none}
 .news-item a:hover{text-decoration:underline}
+/* News page v2 */
+.news-header-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;margin-bottom:16px}
+.news-header-card .card-title{font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--text-dim);margin-bottom:12px}
+.news-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.news-controls input{flex:1;min-width:180px;max-width:300px}
+.news-status{font-size:10px;color:var(--green);margin-left:auto;white-space:nowrap}
+.news-filter-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.news-filter-btn{background:transparent;border:1px solid var(--border);color:var(--text-dim);font-size:10px;font-weight:600;padding:5px 14px;border-radius:4px;cursor:pointer;font-family:var(--font-mono);letter-spacing:.5px;transition:all .15s}
+.news-filter-btn:hover{color:var(--text);border-color:var(--text-muted)}
+.news-filter-btn.active{background:var(--text);color:var(--bg);border-color:var(--text)}
+.news-filter-count{font-size:10px;color:var(--text-dim);margin-left:auto}
+.news-columns{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:12px}
+@media(max-width:768px){.news-columns{grid-template-columns:1fr}}
+.news-col-header{font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--text-dim);margin-bottom:8px}
+.news-date-group{font-size:9px;font-weight:700;letter-spacing:1px;color:var(--accent);margin:14px 0 6px;text-transform:uppercase}
+.news-ticker-tag{display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:2px;background:var(--bg);border:1px solid var(--border);color:var(--accent);margin-right:4px}
 
 /* Regime gauges */
 .regime-gauge{
@@ -376,11 +392,25 @@ tr:hover{background:var(--bg2)}
     </div>
     <!-- News -->
     <div class="page" id="pg-news">
-      <div class="input-row">
-        <input id="news-ticker" type="text" placeholder="TICKER" style="width:140px;text-transform:uppercase"/>
-        <button class="btn" onclick="NX.loadNews()">FETCH</button>
+      <div class="news-header-card">
+        <div class="card-title">MARKET & TICKER NEWS</div>
+        <div class="news-controls">
+          <input id="news-ticker" type="text" placeholder="SPY, AAPL, NVDA..." style="text-transform:uppercase"/>
+          <button class="btn" onclick="NX.fetchAllNews()">► Fetch News</button>
+          <button class="btn btn-dim" onclick="NX.refreshAllNews()">↻ Refresh All</button>
+          <span id="news-status" class="news-status"></span>
+        </div>
+        <div class="news-filter-row">
+          <button class="news-filter-btn active" data-cat="all" onclick="NX.filterNews('all',this)">ALL</button>
+          <button class="news-filter-btn" data-cat="earnings" onclick="NX.filterNews('earnings',this)">EARNINGS</button>
+          <button class="news-filter-btn" data-cat="macro" onclick="NX.filterNews('macro',this)">MACRO / FED</button>
+          <button class="news-filter-btn" data-cat="sector" onclick="NX.filterNews('sector',this)">SECTOR</button>
+          <button class="news-filter-btn" data-cat="technical" onclick="NX.filterNews('technical',this)">TECHNICAL</button>
+          <button class="news-filter-btn" data-cat="options" onclick="NX.filterNews('options',this)">OPTIONS FLOW</button>
+          <span id="news-filter-count" class="news-filter-count"></span>
+        </div>
       </div>
-      <div id="news-content"><div class="empty-state"><div class="icon">▤</div>Enter ticker for news feed</div></div>
+      <div id="news-content"><div class="empty-state"><div class="icon">▤</div>Enter tickers or click Refresh All to load watchlist news</div></div>
     </div>
     <!-- Macro: FRED + VIX/Vol + Breadth -->
     <div class="page" id="pg-macro">
@@ -1035,21 +1065,151 @@ const NX={
     }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}
   },
 
-  // ═══ NEWS ═══
-  async loadNews(){
-    const t=$('#news-ticker').value.trim().toUpperCase();if(!t)return;
-    const el=$('#news-content');el.innerHTML='<div class="loading">Fetching news…</div>';
-    try{
-      const d=await NX.apiFetch('/api/news/'+t);
-      const items=d.articles||d.news||d||[];
-      if(!items.length){el.innerHTML='<div class="empty-state"><div class="icon">▤</div>No news found for '+t+'</div>';return}
-      el.innerHTML=`<div class="card"><div class="card-header">${t} NEWS FEED<span style="font-weight:400">${items.length} articles</span></div>${items.slice(0,25).map(a=>{
-        const sent=a.sentiment;
-        const sb=sent?`<span class="badge ${sent>0?'b-green':sent<0?'b-red':'b-amber'}">${sent>0?'BULLISH':sent<0?'BEARISH':'NEUTRAL'}</span>`:'';
-        return `<div class="news-item"><div class="headline">${a.title||a.headline||'—'}</div><div class="nmeta">${a.publisher||a.source||''} · ${a.date||a.published||''} ${sb} ${a.link?`<a href="${a.link}" target="_blank" rel="noopener">↗</a>`:''}</div></div>`;
-      }).join('')}</div>`;
-    }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}
+  // ═══ NEWS v2 — Multi-ticker, Categories, Watchlist Mentions ═══
+  _newsArticles:[],
+  _newsFilter:'all',
+  _newsWLTickers:[],
+
+  _classifyArticle(title){
+    const t=(title||'').toLowerCase();
+    if(/earnings|eps|revenue|beat|miss|guidance|quarter|q[1-4]|profit|loss|income|forecast/.test(t))return 'earnings';
+    if(/fed|fomc|rate cut|rate hike|inflation|cpi|ppi|gdp|jobs|payroll|treasury|yield|recession|tariff|macro|powell|economic|labor|unemployment/.test(t))return 'macro';
+    if(/sector|industry|rotation|cyclical|defensive|energy|tech|health|financ|consumer|utilit|material|industrial|real estate/.test(t))return 'sector';
+    if(/breakout|support|resistance|moving average|rsi|macd|chart|technical|pullback|rally|overbought|oversold|trend|momentum|stage|pattern|gap|base/.test(t))return 'technical';
+    if(/option|call|put|strike|expir|implied vol|iv|gamma|delta|unusual activity|flow|whale|premium|straddle|strangle|spread/.test(t))return 'options';
+    return 'general';
   },
+
+  _getDateGroup(dateStr){
+    if(!dateStr)return 'UNDATED';
+    const d=new Date(dateStr);const now=new Date();
+    const diff=Math.floor((now-d)/(1000*60*60*24));
+    if(diff===0)return 'TODAY';if(diff===1)return 'YESTERDAY';if(diff<7)return `${diff} DAYS AGO`;
+    return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  },
+
+  async fetchAllNews(){
+    const input=$('#news-ticker').value.trim().toUpperCase();
+    if(!input)return;
+    const tickers=input.split(/[,\s]+/).filter(Boolean);
+    await NX._loadNewsForTickers(tickers);
+  },
+
+  async refreshAllNews(){
+    // Pull all watchlist tickers + whatever is in input
+    const wlData=NX._wlGetData();
+    const wlTickers=new Set();
+    Object.values(wlData).forEach(arr=>(arr||[]).forEach(w=>wlTickers.add(w.ticker)));
+    NX._newsWLTickers=[...wlTickers];
+    const input=$('#news-ticker').value.trim().toUpperCase();
+    const inputTickers=input?input.split(/[,\s]+/).filter(Boolean):[];
+    const all=[...new Set([...wlTickers,...inputTickers])];
+    if(!all.length){all.push('SPY','QQQ','IWM');}
+    $('#news-ticker').value=all.join(', ');
+    await NX._loadNewsForTickers(all);
+  },
+
+  async _loadNewsForTickers(tickers){
+    const el=$('#news-content');const status=$('#news-status');
+    el.innerHTML='<div class="loading">Fetching news for '+tickers.length+' tickers…</div>';
+    status.textContent='';
+    let allItems=[];let successCount=0;
+    const wlData=NX._wlGetData();
+    const wlSet=new Set();
+    Object.values(wlData).forEach(arr=>(arr||[]).forEach(w=>wlSet.add(w.ticker)));
+    NX._newsWLTickers=[...wlSet];
+
+    await Promise.allSettled(tickers.map(async t=>{
+      try{
+        const d=await NX.apiFetch('/api/news/'+t);
+        const items=d.articles||d.news||d||[];
+        items.forEach(a=>{a._ticker=t;a._category=NX._classifyArticle(a.title||a.headline);});
+        allItems.push(...items);
+        successCount++;
+      }catch(e){console.warn('News fetch failed for',t,e)}
+    }));
+
+    // Deduplicate by title
+    const seen=new Set();
+    allItems=allItems.filter(a=>{const k=(a.title||a.headline||'').slice(0,60);if(seen.has(k))return false;seen.add(k);return true;});
+    // Sort by date descending
+    allItems.sort((a,b)=>new Date(b.providerPublishTime||b.date||b.published||0)-new Date(a.providerPublishTime||a.date||a.published||0));
+
+    NX._newsArticles=allItems;
+    NX._newsFilter='all';
+    document.querySelectorAll('.news-filter-btn').forEach(b=>b.classList.toggle('active',b.dataset.cat==='all'));
+    const now=new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+    status.innerHTML=`✓ ${allItems.length} articles from ${successCount}/${tickers.length} tickers · ${now}`;
+    NX._renderNews();
+  },
+
+  filterNews(cat,btn){
+    NX._newsFilter=cat;
+    document.querySelectorAll('.news-filter-btn').forEach(b=>b.classList.remove('active'));
+    if(btn)btn.classList.add('active');
+    NX._renderNews();
+  },
+
+  _renderNews(){
+    const el=$('#news-content');
+    const all=NX._newsArticles;
+    if(!all.length){el.innerHTML='<div class="empty-state"><div class="icon">▤</div>No articles loaded</div>';return}
+    const filtered=NX._newsFilter==='all'?all:all.filter(a=>a._category===NX._newsFilter);
+    const fc=$('#news-filter-count');
+    if(fc)fc.textContent=`${filtered.length} / ${all.length} articles`;
+
+    // Watchlist mentions — articles whose ticker is in watchlist
+    const wlSet=new Set(NX._newsWLTickers);
+    const wlArticles=filtered.filter(a=>wlSet.has(a._ticker));
+
+    // Group by date
+    const groups={};
+    filtered.forEach(a=>{
+      const ts=a.providerPublishTime||a.date||a.published;
+      const g=NX._getDateGroup(ts);
+      if(!groups[g])groups[g]=[];
+      groups[g].push(a);
+    });
+
+    const renderItem=a=>{
+      const sent=a.sentiment;
+      const sb=sent?`<span class="badge ${sent>0?'b-green':sent<0?'b-red':'b-amber'}" style="font-size:9px">${sent>0?'BULL':sent<0?'BEAR':'NEUT'}</span>`:'';
+      const catBadge=`<span class="badge" style="font-size:8px;padding:1px 5px;background:var(--bg);border:1px solid var(--border)">${(a._category||'').toUpperCase()}</span>`;
+      const ts=a.providerPublishTime||a.date||a.published;
+      const timeStr=ts?new Date(ts).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}):'';
+      return `<div class="news-item">
+        <div class="headline"><span class="news-ticker-tag">${a._ticker}</span>${a.title||a.headline||'—'}</div>
+        <div class="nmeta">${a.publisher||a.source||''} · ${timeStr} ${catBadge} ${sb} ${a.link?`<a href="${a.link}" target="_blank" rel="noopener">↗ READ</a>`:''}</div>
+      </div>`;
+    };
+
+    let leftHTML='';
+    Object.entries(groups).forEach(([g,items])=>{
+      leftHTML+=`<div class="news-date-group">${g}</div>`;
+      leftHTML+=items.slice(0,50).map(renderItem).join('');
+    });
+
+    let rightHTML='';
+    if(wlArticles.length){
+      // Group watchlist mentions by ticker
+      const byTicker={};
+      wlArticles.forEach(a=>{if(!byTicker[a._ticker])byTicker[a._ticker]=[];byTicker[a._ticker].push(a);});
+      Object.entries(byTicker).forEach(([t,items])=>{
+        rightHTML+=`<div class="news-date-group">${t}</div>`;
+        rightHTML+=items.slice(0,10).map(renderItem).join('');
+      });
+    }else{
+      rightHTML='<div style="color:var(--text-dim);font-size:11px;padding:16px 0">No watchlist tickers matched. Add tickers to your watchlist to see mentions here.</div>';
+    }
+
+    el.innerHTML=`<div class="news-columns">
+      <div><div class="news-col-header">LATEST NEWS</div>${leftHTML}</div>
+      <div><div class="news-col-header">WATCHLIST MENTIONS</div>${rightHTML}</div>
+    </div>`;
+  },
+
+  // Keep legacy loadNews for Enter-key binding
+  async loadNews(){await NX.fetchAllNews()},
 
   // ═══ VIX & VOL ═══
   async loadVol(){
@@ -2490,7 +2650,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
   ];
   pplxPages.forEach(cfg=>{
     const page=document.getElementById(cfg.page);if(!page)return;
-    const row=page.querySelector('.input-row')||page.querySelector('.tab-row');
+    const row=page.querySelector('.input-row')||page.querySelector('.news-controls')||page.querySelector('.tab-row');
     if(!row)return;
     const btn=document.createElement('button');
     btn.className='pplx-btn';
@@ -2501,7 +2661,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
       NX.askPerplexity(cfg.context,ticker||null);
     };
     // Insert after input-row
-    if(row.classList.contains('input-row')){
+    if(row.classList.contains('input-row')||row.classList.contains('news-controls')){
       const wrap=document.createElement('div');
       wrap.style.cssText='margin-bottom:12px';
       wrap.appendChild(btn);

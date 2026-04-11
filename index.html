@@ -367,23 +367,25 @@ tr:hover{background:var(--bg2)}
       <div class="tab-row" id="opt-tabs">
         <button class="tab-btn active" onclick="NX.switchOptTab('chain')">CHAIN</button>
         <button class="tab-btn" onclick="NX.switchOptTab('unusual')">UNUSUAL</button>
-        <button class="tab-btn" onclick="NX.switchOptTab('whale')">WHALE FLOW</button>
+        <button class="tab-btn" onclick="NX.switchOptTab('whale')">WHALE SCANNER</button>
         <button class="tab-btn" onclick="NX.switchOptTab('cot')">COT</button>
       </div>
       <div id="opt-chain" class="opt-panel">
         <div class="input-row">
           <input id="opt-ticker" type="text" placeholder="TICKER" style="width:140px;text-transform:uppercase"/>
           <button class="btn" onclick="NX.loadOptions()">LOAD CHAIN</button>
+          <button class="btn btn-sm" onclick="NX.loadWhaleTickerScan()" style="border-color:var(--purple);color:var(--purple)">🐋 Whale Prints</button>
         </div>
         <div id="opt-content"><div class="empty-state"><div class="icon">◎</div>Enter ticker for options chain + IV surface</div></div>
+        <div id="cv-whale-ticker"></div>
       </div>
       <div id="opt-unusual" class="opt-panel" style="display:none">
         <div style="margin-bottom:12px"><button class="btn" onclick="NX.loadUnusual()">SCAN UNUSUAL</button></div>
         <div id="unusual-content"><div class="empty-state"><div class="icon">◎</div>Scan for unusual options activity</div></div>
       </div>
       <div id="opt-whale" class="opt-panel" style="display:none">
-        <div style="margin-bottom:12px"><button class="btn" onclick="NX.loadWhale()">SCAN WHALE</button></div>
-        <div id="whale-content"><div class="empty-state"><div class="icon">◎</div>Track large block trades &amp; institutional flow</div></div>
+        <div style="margin-bottom:12px"><button class="btn" onclick="NX.loadWhaleFlow()">SCAN WHALE</button></div>
+        <div id="cv-whale"><div class="empty-state"><div class="icon">🐋</div>Scan 20 tickers for large premium options flow</div></div>
       </div>
       <div id="opt-cot" class="opt-panel" style="display:none">
         <div style="margin-bottom:12px"><button class="btn" onclick="NX.loadCOT()">LOAD COT</button></div>
@@ -2566,6 +2568,9 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     document.querySelectorAll('#opt-tabs .tab-btn').forEach((b,i)=>b.classList.toggle('active',['chain','unusual','whale','cot'][i]===tab));
     document.querySelectorAll('.opt-panel').forEach(p=>p.style.display='none');
     const el=document.getElementById('opt-'+tab);if(el)el.style.display='';
+    // Clear cross-tab bleed
+    if(tab!=='whale'){const wh=$('#cv-whale');if(wh&&!wh.querySelector('table'))wh.innerHTML='<div class="empty-state"><div class="icon">🐋</div>Scan 20 tickers for large premium options flow</div>'}
+    if(tab!=='chain'){const wt=$('#cv-whale-ticker');if(wt)wt.innerHTML=''}
   },
 
   // ─── Unusual activity ───
@@ -2577,13 +2582,83 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     }catch(e){el.innerHTML=`<div class="empty-state"><div class="icon">◎</div>Unusual activity endpoint pending — <code>GET /api/options/unusual</code></div>`}
   },
 
-  // ─── Whale flow ───
-  async loadWhale(){
-    const el=$('#whale-content');el.innerHTML='<div class="loading">Scanning whale flow…</div>';
+  // ─── Whale flow (full scan — 20 tickers) ───
+  async loadWhaleFlow(){
+    const el=$('#cv-whale');if(!el)return;
+    el.innerHTML='<div class="loading">Scanning whale flow across 20 tickers…</div>';
     try{
       const d=await NX.apiFetch('/api/options/whale');
-      el.innerHTML=d&&d.length?`<div class="card"><table class="nx-table"><thead><tr><th>TICKER</th><th>TYPE</th><th>PREMIUM</th><th>STRIKE</th><th>EXPIRY</th></tr></thead><tbody>${d.map(r=>`<tr><td><strong>${r.ticker}</strong></td><td><span class="badge ${r.type==='CALL'?'b-green':'b-red'}">${r.type}</span></td><td>$${r.premium?.toLocaleString()}</td><td>${r.strike}</td><td>${r.expiry}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty-state"><div class="icon">◎</div>Whale flow endpoint pending</div>';
-    }catch(e){el.innerHTML=`<div class="empty-state"><div class="icon">◎</div>Whale flow endpoint pending — <code>GET /api/options/whale</code></div>`}
+      NX._renderWhaleTable(el,d,'WHALE SCANNER — CROSS-MARKET');
+    }catch(e){el.innerHTML=`<div class="empty-state"><div class="icon">🐋</div>Whale flow error: ${e.message}<br/><code style="font-size:10px;color:var(--text-dim)">GET /api/options/whale</code></div>`}
+  },
+
+  // ─── Whale prints (single ticker from CHAIN tab) ───
+  async loadWhaleTickerScan(){
+    const t=($('#opt-ticker').value||'').trim().toUpperCase();if(!t)return;
+    const el=$('#cv-whale-ticker');if(!el)return;
+    el.innerHTML=`<div class="loading">Scanning whale prints for ${t}…</div>`;
+    try{
+      const d=await NX.apiFetch('/api/options/whale?tickers='+t);
+      NX._renderWhaleTable(el,d,'🐋 WHALE PRINTS — '+t);
+    }catch(e){el.innerHTML=`<div class="empty-state">Whale scan error: ${e.message}</div>`}
+  },
+
+  // ─── Shared whale table renderer ───
+  _renderWhaleTable(el,data,title){
+    const flows=data.flows||data.whale||[];
+    const s=data.summary||{};
+    const hits=data.hits||data.count||flows.length;
+    const scanned=data.scanned||0;
+
+    // Summary banner
+    const pcr=s.put_call_ratio!=null?s.put_call_ratio.toFixed(2):'—';
+    const regime=(s.put_call_ratio||0)>1.2?'BEARISH':(s.put_call_ratio||0)<0.7?'BULLISH':'NEUTRAL';
+    const regClr=regime==='BULLISH'?'var(--green)':regime==='BEARISH'?'var(--red)':'var(--text-dim)';
+
+    let summaryHTML=`<div class="card" style="display:flex;gap:24px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+      <div class="m-card" style="border:none;padding:0;background:none"><div class="label">REGIME</div><div class="value" style="color:${regClr};font-size:18px;font-weight:700">${regime}</div></div>
+      <div class="m-card" style="border:none;padding:0;background:none"><div class="label">PUT/CALL $</div><div class="value accent-c">${pcr}</div></div>`;
+    if(s.total_call_notional)summaryHTML+=`<div class="m-card" style="border:none;padding:0;background:none"><div class="label">CALL NOTIONAL</div><div class="value up">$${(s.total_call_notional/1e6).toFixed(1)}M</div></div>`;
+    if(s.total_put_notional)summaryHTML+=`<div class="m-card" style="border:none;padding:0;background:none"><div class="label">PUT NOTIONAL</div><div class="value down">$${(s.total_put_notional/1e6).toFixed(1)}M</div></div>`;
+    summaryHTML+=`<div class="m-card" style="border:none;padding:0;background:none"><div class="label">HITS</div><div class="value neutral">${hits}${scanned?' / '+scanned+' tickers':''}</div></div></div>`;
+
+    // Table rows
+    const rowsHTML=flows.map(f=>{
+      const sClr=f.sentiment==='BULLISH'?'var(--green)':f.sentiment==='BEARISH'?'var(--red)':'var(--text-dim)';
+      const sdClr=f.side==='CALL'||f.type==='CALL'?'#00e676':'#ff5252';
+      const side=f.side||f.type||'—';
+      const vol=f.volume||0;const oi=f.oi||0;const volOi=oi?Math.round(vol/oi*10)/10:0;
+      const notional=f.notional||f.premium||0;
+      const notFmt=notional>=1e6?`$${(notional/1e6).toFixed(1)}M`:`$${(notional/1e3).toFixed(0)}K`;
+      const flags=(f.flags||[]).map(fl=>`<span style="background:var(--bg2);border:1px solid var(--border);border-radius:3px;padding:1px 6px;font-size:9px;color:var(--accent);margin-right:4px">${fl}</span>`).join('');
+      return`<tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:8px 10px;font-weight:600;color:var(--accent)">${f.ticker}</td>
+        <td style="padding:8px 6px;color:${sdClr};font-weight:600;font-size:11px">${side}</td>
+        <td style="padding:8px 6px">${f.strike||'—'}</td>
+        <td style="padding:8px 6px;font-size:11px;color:var(--text-dim)">${f.expiry||'—'}</td>
+        <td style="padding:8px 6px;font-weight:600">${vol.toLocaleString()}</td>
+        <td style="padding:8px 6px;color:var(--text-dim)">${oi.toLocaleString()}</td>
+        <td style="padding:8px 6px;font-weight:600;color:${volOi>=10?'var(--red)':volOi>=5?'#ffc107':'var(--text-dim)'}">${volOi}x</td>
+        <td style="padding:8px 6px">${f.iv!=null?(typeof f.iv==='number'&&f.iv<1?(f.iv*100).toFixed(1):f.iv)+'%':'—'}</td>
+        <td style="padding:8px 6px;font-weight:600;color:var(--accent)">${notFmt}</td>
+        <td style="padding:8px 6px;color:${sClr};font-weight:600;font-size:11px">${f.sentiment||'—'}</td>
+        <td style="padding:8px 6px">${flags}</td></tr>`;
+    }).join('');
+
+    el.innerHTML=summaryHTML+`<div class="card" style="overflow-x:auto"><div class="card-header" style="display:flex;justify-content:space-between"><span>${title} — ${flows.length} HITS</span><span style="font-size:10px;color:var(--text-dim)">${new Date().toLocaleTimeString()}</span></div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;font-family:var(--mono)"><thead><tr style="border-bottom:2px solid var(--border)">
+        <th style="text-align:left;padding:8px 10px;font-size:10px;color:var(--text-dim);letter-spacing:1px">TICKER</th>
+        <th style="text-align:left;padding:8px 6px;font-size:10px;color:var(--text-dim)">SIDE</th>
+        <th style="text-align:left;padding:8px 6px;font-size:10px;color:var(--text-dim)">STRIKE</th>
+        <th style="text-align:left;padding:8px 6px;font-size:10px;color:var(--text-dim)">EXPIRY</th>
+        <th style="text-align:left;padding:8px 6px;font-size:10px;color:var(--text-dim)">VOL</th>
+        <th style="text-align:left;padding:8px 6px;font-size:10px;color:var(--text-dim)">OI</th>
+        <th style="text-align:left;padding:8px 6px;font-size:10px;color:var(--text-dim)">V/OI</th>
+        <th style="text-align:left;padding:8px 6px;font-size:10px;color:var(--text-dim)">IV</th>
+        <th style="text-align:left;padding:8px 6px;font-size:10px;color:var(--text-dim)">NOTIONAL</th>
+        <th style="text-align:left;padding:8px 6px;font-size:10px;color:var(--text-dim)">BIAS</th>
+        <th style="text-align:left;padding:8px 6px;font-size:10px;color:var(--text-dim)">FLAGS</th>
+      </tr></thead><tbody>${rowsHTML||'<tr><td colspan="11" class="empty-state" style="padding:30px;text-align:center">No whale flow detected</td></tr>'}</tbody></table></div>`;
   },
 
   // ─── Quant Models tab switching ───

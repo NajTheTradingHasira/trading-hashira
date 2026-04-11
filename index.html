@@ -905,24 +905,50 @@ const NX={
     const el=$('#dash-content');
     el.innerHTML='<div class="loading">Loading dashboard…</div>';
     try{
-      const[portRes,bRes,rRes]=await Promise.allSettled([NX.apiFetch('/api/portfolio'),NX.apiFetch('/api/market-breadth'),NX.apiFetch('/api/hmm')]);
-      const port=portRes.status==='fulfilled'?(portRes.value.portfolio||portRes.value):{};
+      const[bRes,rRes]=await Promise.allSettled([NX.apiFetch('/api/market-breadth'),NX.apiFetch('/api/hmm')]);
       const breadth=bRes.status==='fulfilled'?(bRes.value.breadth||bRes.value):{};
       const regime=rRes.status==='fulfilled'?rRes.value:{};
-      const nav=port.nav||port.total_value||0;
-      const dayPnl=port.day_pnl||0;
-      const dayPct=port.day_pnl_pct||port.day_pct||0;
-      const positions=(port.positions||port.holdings||[]).length;
+
+      // Options P&L from localStorage
+      const trades=JSON.parse(localStorage.getItem('optionsTrades')||'[]');
+      const optPos={};
+      trades.forEach(t=>{
+        const key=`${t.ticker}_${t.expiry}_${t.optionType}_${t.strike}`;
+        if(!optPos[key])optPos[key]={netQty:0,totalBuyQty:0,totalSellQty:0,totalBuyCost:0,totalSellProceeds:0,totalFees:0};
+        const p=optPos[key];p.totalFees+=(t.fees||0);
+        if(t.action==='BUY'){p.netQty+=t.qty;p.totalBuyQty+=t.qty;p.totalBuyCost+=t.qty*t.price*100}
+        else{p.netQty-=t.qty;p.totalSellQty+=t.qty;p.totalSellProceeds+=t.qty*t.price*100}
+      });
+      let realizedPnL=0,openCost=0,openCount=0,closedCount=0,wins=0;
+      Object.values(optPos).forEach(p=>{
+        const cq=Math.min(p.totalBuyQty,p.totalSellQty);
+        if(cq>0){const ab=p.totalBuyCost/p.totalBuyQty,as=p.totalSellProceeds/p.totalSellQty;const pnl=(as-ab)*cq-p.totalFees;realizedPnL+=pnl;closedCount++;if(pnl>0)wins++}
+        if(p.netQty>0){openCost+=p.totalBuyCost/p.totalBuyQty*p.netQty;openCount++}
+      });
+      const winRate=closedCount?Math.round(wins/closedCount*100):null;
+
+      // Daily P&L by trade date (for chart)
+      const dailyPnL={};
+      trades.forEach(t=>{
+        const d=t.tradeDate||'';if(!d)return;
+        if(!dailyPnL[d])dailyPnL[d]=0;
+        const sign=t.action==='SELL'?1:-1;
+        dailyPnL[d]+=sign*t.qty*t.price*100-(t.fees||0);
+      });
+      const sortedDates=Object.keys(dailyPnL).sort();
+      let cumPnL=0;const cumData=sortedDates.map(d=>{cumPnL+=dailyPnL[d];return cumPnL});
+
       const reg=(regime.regime||regime.state||'Unknown').toUpperCase();
       let regCls='rg-neutral';
       if(reg.includes('BULL')||reg.includes('RISK-ON'))regCls='rg-bull';
       else if(reg.includes('BEAR')||reg.includes('RISK-OFF'))regCls='rg-bear';
       else if(reg.includes('VOLAT')||reg.includes('CRISIS'))regCls='rg-vol';
       el.innerHTML=`
-<div class="metrics-row g4">
-  <div class="m-card"><div class="label">NAV</div><div class="value neutral">$${fmtK(nav)}</div></div>
-  <div class="m-card"><div class="label">DAY P&L</div><div class="value ${pc(dayPnl)}">${psDollar(dayPnl)}</div><div class="sub">${ps(dayPct)}</div></div>
-  <div class="m-card"><div class="label">POSITIONS</div><div class="value accent-c">${positions}</div></div>
+<div class="metrics-row g5">
+  <div class="m-card"><div class="label">OPEN COST BASIS</div><div class="value neutral">$${fmtK(openCost)}</div></div>
+  <div class="m-card"><div class="label">REALIZED P&L</div><div class="value ${pc(realizedPnL)}">${psDollar(realizedPnL)}</div></div>
+  <div class="m-card"><div class="label">WIN RATE</div><div class="value ${winRate&&winRate>=50?'up':'down'}">${winRate!==null?winRate+'%':'—'}</div><div class="sub">${closedCount} closed</div></div>
+  <div class="m-card"><div class="label">OPEN POSITIONS</div><div class="value accent-c">${openCount}</div><div class="sub">${trades.length} total trades</div></div>
   <div class="m-card"><div class="label">REGIME</div><div class="regime-gauge ${regCls}" style="margin:0;padding:8px 12px;font-size:13px">${reg}</div></div>
 </div>
 <div class="grid g2">
@@ -934,11 +960,18 @@ const NX={
       <div class="m-card"><div class="label">NEW LOWS</div><div class="value down">${breadth.new_lows||'—'}</div></div>
     </div>
   </div>
-  <div class="card"><div class="card-header">QUICK CHART</div><div class="chart-box"><canvas id="cv-dash-perf"></canvas></div></div>
+  <div class="card"><div class="card-header">CUMULATIVE P&L</div><div class="chart-box"><canvas id="cv-dash-perf"></canvas></div></div>
 </div>`;
-      const labels=Array.from({length:30},(_,i)=>{const d=new Date();d.setDate(d.getDate()-29+i);return(d.getMonth()+1)+'/'+d.getDate()});
-      let c=0;const data=labels.map(()=>{c+=(Math.random()-.45)*800;return c});
-      makeChart('cv-dash-perf',{type:'line',data:{labels,datasets:[{data,borderColor:'#00b8d4',backgroundColor:'#00b8d415',fill:true,tension:.3,pointRadius:0,borderWidth:1.5}]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksToLimit:6}},y:{ticks:{callback:v=>'$'+fmtK(v)}}},interaction:{intersect:false},maintainAspectRatio:false}});
+      // Chart: cumulative P&L from options trades
+      if(sortedDates.length>=2){
+        const chartLabels=sortedDates.map(d=>{const[,m,dy]=(d||'').split('-');return(m||'')+'/'+( dy||'')});
+        makeChart('cv-dash-perf',{type:'line',data:{labels:chartLabels,datasets:[
+          {data:cumData,borderColor:cumPnL>=0?'#00e676':'#ff5252',backgroundColor:(cumPnL>=0?'#00e676':'#ff5252')+'15',fill:true,tension:.3,pointRadius:0,borderWidth:1.5},
+          {data:chartLabels.map(()=>0),borderColor:'#ffffff15',borderDash:[4,4],pointRadius:0,borderWidth:1}
+        ]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksToLimit:8}},y:{ticks:{callback:v=>'$'+fmtK(v)}}},interaction:{intersect:false},maintainAspectRatio:false}});
+      }else{
+        makeChart('cv-dash-perf',{type:'line',data:{labels:['No trades'],datasets:[{data:[0],borderColor:'#333',pointRadius:0}]},options:{plugins:{legend:{display:false}},scales:{x:{display:false},y:{display:false}},maintainAspectRatio:false}});
+      }
     }catch(e){el.innerHTML='<div class="error-msg">'+e.message+'</div>'}
   },
 

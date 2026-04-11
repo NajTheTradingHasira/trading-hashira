@@ -3932,7 +3932,10 @@ function parseWebullRow(line) {
   
   // Look for specific patterns
   // After B or S, next number is usually qty, then price
-  const afterAction = line.split(/\b[BS]\b/)[1] || '';
+  // Fix: PDF copy removes spaces — "4.001.41-564.000.00-0.19"
+  // Insert space before negative numbers and between back-to-back decimals
+  let afterAction = line.split(/\b[BS]\b/)[1] || '';
+  afterAction = afterAction.replace(/(\d)(-)/g, '$1 -').replace(/(\.\d{2})(\d)/g, '$1 $2');
   const afterNums = afterAction.match(/-?\d+\.?\d*/g) || [];
   
   if (afterNums.length >= 2) {

@@ -2669,10 +2669,10 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
       const dayPct=+((r()-.45)*5).toFixed(2);
       const baseP=80+Math.floor(r()*400);const price=+(baseP*(.95+r()*.1)).toFixed(2);
       const alerts=[];
-      if(whales>=4)alerts.push('WHALE ALERT');
-      if(sent>55)alerts.push('ACCUMULATION');
-      else if(sent<35)alerts.push('DISTRIBUTION');
-      if(dpVol>55)alerts.push('UNUSUAL VOL');
+      if(whales>=4)alerts.push('WHALE');
+      if(sent>55)alerts.push('ACCUM');
+      else if(sent<35)alerts.push('DIST');
+      if(dpVol>55)alerts.push('SPIKE');
       if(stages[i]&&(stages[i]==='2A'||stages[i]==='1B')&&sent>50)alerts.push('SQ SETUP');
       return{ticker:tk,sector:sectorMap[tk],price,dayPct,dpVol,shortPct,sent,whales,blocks,notional,score,alerts,stage:stages[i]||'2A',
         dpSup:+(price*(.94+r()*.04)).toFixed(2),dpRes:price*1.05+r()*price*.08>0?+(price*(1.02+r()*.06)).toFixed(2):null,
@@ -2729,7 +2729,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
       NX._dpScored=tickers.map(t=>({
         ticker:t.ticker,
         sector:t.sector||'Unknown',
-        price:0, dayPct:0,
+        price:0, dayPct:t.pct_change||0,
         dpVol:t.dp_vol_pct||0,
         shortPct:t.short_pct||0,
         sent:t.sentiment||50,
@@ -2826,9 +2826,9 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
   // ─── FLOW MONITOR TAB ───
   _renderDPMonitor(el){
     const scored=NX._dpScored;const af=NX._dpAlertFilt;
-    const accum=scored.filter(s=>s.alerts.includes('ACCUMULATION')).length;
-    const distrib=scored.filter(s=>s.alerts.includes('DISTRIBUTION')).length;
-    const wh=scored.filter(s=>s.alerts.includes('WHALE ALERT')).length;
+    const accum=scored.filter(s=>s.alerts.includes('ACCUM')).length;
+    const distrib=scored.filter(s=>s.alerts.includes('DIST')).length;
+    const wh=scored.filter(s=>s.alerts.includes('WHALE')).length;
     const avgSent=scored.length?(scored.reduce((s,d)=>s+d.sent,0)/scored.length).toFixed(1):'0';
     const regime=+avgSent>=55?'NET BUYING BIAS':+avgSent<=45?'NET SELLING BIAS':'NEUTRAL FLOW';
     const regClr=+avgSent>=55?'var(--green)':+avgSent<=45?'var(--red)':'var(--amber)';
@@ -2837,10 +2837,10 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
 
     let filtered=[...scored];
     if(af==='ALERTS')filtered=filtered.filter(s=>s.alerts.length>0);
-    else if(af==='ACCUM')filtered=filtered.filter(s=>s.alerts.includes('ACCUMULATION'));
-    else if(af==='DISTRIB')filtered=filtered.filter(s=>s.alerts.includes('DISTRIBUTION'));
-    else if(af==='WHALE')filtered=filtered.filter(s=>s.alerts.includes('WHALE ALERT'));
-    else if(af==='UNUSUAL')filtered=filtered.filter(s=>s.alerts.includes('UNUSUAL VOL'));
+    else if(af==='ACCUM')filtered=filtered.filter(s=>s.alerts.includes('ACCUM'));
+    else if(af==='DISTRIB')filtered=filtered.filter(s=>s.alerts.includes('DIST'));
+    else if(af==='WHALE')filtered=filtered.filter(s=>s.alerts.includes('WHALE'));
+    else if(af==='UNUSUAL')filtered=filtered.filter(s=>s.alerts.includes('SPIKE'));
     else if(af==='SQ SETUP')filtered=filtered.filter(s=>s.alerts.includes('SQ SETUP'));
 
     el.innerHTML=`
@@ -2862,7 +2862,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     <div style="font-size:11px;color:var(--amber);font-weight:600;margin-bottom:8px">● ALERTS — ${alertNames.length} NAMES FLAGGED</div>
     <div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:8px;margin-bottom:16px">
       ${alertNames.slice(0,8).map(s=>{
-        const aClr=s.alerts.includes('WHALE ALERT')?'var(--purple)':s.alerts.includes('ACCUMULATION')?'var(--green)':'var(--red)';
+        const aClr=s.alerts.includes('WHALE')?'var(--purple)':s.alerts.includes('ACCUM')?'var(--green)':'var(--red)';
         const topAlert=s.alerts[0]||'';
         const alertBg=topAlert.includes('WHALE')?'b-purple':topAlert.includes('ACCUM')?'b-green':'b-red';
         return `<div class="card" style="min-width:200px;border-color:${aClr}30;padding:12px;margin:0">
@@ -2882,7 +2882,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     </div>
     <div style="display:flex;gap:6px;margin-bottom:14px;align-items:center;flex-wrap:wrap">
       ${['ALL','ALERTS','ACCUM','DISTRIB','WHALE','UNUSUAL','SQ SETUP'].map((s,i)=>{
-        const cnt=s==='ALL'?scored.length:s==='ALERTS'?alertNames.length:scored.filter(x=>x.alerts.includes(s==='ACCUM'?'ACCUMULATION':s==='DISTRIB'?'DISTRIBUTION':s)).length;
+        const cnt=s==='ALL'?scored.length:s==='ALERTS'?alertNames.length:scored.filter(x=>x.alerts.includes(s==='ACCUM'?'ACCUM':s==='DISTRIB'?'DIST':s==='UNUSUAL'?'SPIKE':s)).length;
         return `<button class="btn btn-sm" style="${NX._dpAlertFilt===s?'background:var(--accent);color:var(--bg0);border-color:var(--accent)':''}" onclick="NX._dpAlertFilt='${s}';NX._renderDP()">${s}${cnt?' ('+cnt+')':''}</button>`;
       }).join('')}
       <select class="nx-input" style="margin-left:auto;font-size:10px;padding:4px 8px" onchange="NX._dpSectorFilt=this.value;NX._renderDP()">
@@ -2900,13 +2900,13 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
         <td style="font-weight:600"><span style="display:inline-block;width:40px;height:6px;border-radius:3px;background:${scoreClr};margin-right:6px"></span>${s.score}</td>
         <td><strong>${s.ticker}</strong><br/><span style="font-size:10px;color:${s.dayPct>=0?'var(--green)':'var(--red)'}">${s.dayPct>=0?'+':''}${s.dayPct}%</span></td>
         <td style="color:var(--text-dim);font-size:10px">${s.sector}</td>
-        <td>${s.dpVol}%</td>
-        <td>${s.shortPct}%</td>
+        <td>${s.dpVol!=null?s.dpVol+'%':'—'}</td>
+        <td>${s.shortPct!=null?s.shortPct+'%':'—'}</td>
         <td style="color:${s.sent>55?'var(--green)':s.sent<40?'var(--red)':'var(--amber)'}"><strong>${s.sent}%</strong></td>
         <td>${s.whales}</td>
         <td>${s.blocks}</td>
         <td>$${s.notional}M</td>
-        <td style="max-width:200px">${s.alerts.map(a=>{const c=a.includes('WHALE')?'b-purple':a.includes('ACCUM')?'b-green':a.includes('DISTRIB')?'b-red':a.includes('UNUSUAL')?'b-amber':'b-accent';return`<span class="badge ${c}" style="font-size:8px;margin:1px">${a}</span>`}).join(' ')}</td>
+        <td style="max-width:200px">${s.alerts.map(a=>{const c=a.includes('WHALE')?'b-purple':a.includes('ACCUM')?'b-green':a.includes('DIST')?'b-red':a.includes('SPIKE')?'b-amber':'b-accent';return`<span class="badge ${c}" style="font-size:8px;margin:1px">${a}</span>`}).join(' ')}</td>
         <td style="color:var(--text-dim)">${s.stage}</td>
       </tr>`;
     }).join('')}</tbody></table></div></div>`;
@@ -2924,7 +2924,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     </div>
     ${scored.map((s,i)=>{
       const topAlert=s.alerts[0]||'';
-      const alertBg=topAlert.includes('WHALE')?'b-purple':topAlert.includes('ACCUM')?'b-green':topAlert.includes('DISTRIB')?'b-red':'b-amber';
+      const alertBg=topAlert.includes('WHALE')?'b-purple':topAlert.includes('ACCUM')?'b-green':topAlert.includes('DIST')?'b-red':'b-amber';
       return `<div class="card" style="padding:14px 18px;cursor:pointer" onclick="this.querySelector('.dp-expand').style.display=this.querySelector('.dp-expand').style.display==='none'?'block':'none'">
         <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
           <span style="font-size:14px;color:var(--text-dim);width:24px;font-weight:600">${i+1}</span>

@@ -4199,10 +4199,10 @@ function getDTEClass(dte) {
 // ── Calculate Positions from Trades ────────────────────────────────────────────
 function calculatePositions(trades) {
   const positions = {};
-  
+
   for (const trade of trades) {
     const key = getContractKey(trade);
-    
+
     if (!positions[key]) {
       positions[key] = {
         ticker: trade.ticker,
@@ -4218,22 +4218,35 @@ function calculatePositions(trades) {
         trades: []
       };
     }
-    
+
     const pos = positions[key];
     pos.trades.push(trade);
     pos.totalFees += trade.fees || 0;
-    
+
+    const gross = Math.abs(trade.total || 0) || (trade.qty * trade.price * 100);
     if (trade.action === 'BUY') {
       pos.netQty += trade.qty;
       pos.totalBuyQty += trade.qty;
-      pos.totalBuyCost += trade.qty * trade.price * 100; // Options = 100 shares
+      pos.totalBuyCost += gross;
     } else {
       pos.netQty -= trade.qty;
       pos.totalSellQty += trade.qty;
-      pos.totalSellProceeds += trade.qty * trade.price * 100;
+      pos.totalSellProceeds += gross;
     }
   }
-  
+
+  // Auto-close expired options
+  const today = new Date().toISOString().slice(0, 10);
+  for (const key in positions) {
+    const pos = positions[key];
+    if (pos.netQty > 0 && pos.expiry && pos.expiry < today) {
+      pos.totalSellQty += pos.netQty;
+      // sell_proceeds stays 0 for the expired qty (expired worthless)
+      pos.netQty = 0;
+      pos.expired = true;
+    }
+  }
+
   return positions;
 }
 

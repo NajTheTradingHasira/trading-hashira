@@ -3774,8 +3774,17 @@ function getTradeHistoryStyles() {
 function getTradeHistoryHTML() {
   return `
     <div id="options-tracker">
-      <!-- Sub-tabs: Positions | Trade History | P&L + Sync -->
-      <div class="options-subtab-row" style="justify-content:space-between;flex-wrap:wrap">
+      <!-- 1. Top Summary Cards -->
+      <div class="metrics-row g5" id="opt-summary-cards">
+        <div class="m-card"><div class="label">OPEN COST BASIS</div><div class="value neutral" id="opt-nav">$0</div></div>
+        <div class="m-card"><div class="label">DAY P&L</div><div class="value neutral" id="opt-day-pnl">$0</div></div>
+        <div class="m-card"><div class="label">TOTAL P&L</div><div class="value neutral" id="opt-total-pnl">$0</div></div>
+        <div class="m-card"><div class="label">POSITIONS</div><div class="value accent-c" id="opt-pos-count">0</div></div>
+        <div class="m-card"><div class="label">WIN RATE</div><div class="value neutral" id="opt-win-rate">—</div></div>
+      </div>
+
+      <!-- 2. Sub-tabs: Positions | Trade History | P&L + Sync -->
+      <div class="options-subtab-row" style="justify-content:space-between;flex-wrap:wrap;margin-bottom:12px">
         <div style="display:flex;gap:8px">
           <button class="options-subtab active" onclick="switchOptionsView('positions')" id="subtab-positions">Open Positions</button>
           <button class="options-subtab" onclick="switchOptionsView('history')" id="subtab-history">Trade History</button>
@@ -3788,40 +3797,31 @@ function getTradeHistoryHTML() {
         </div>
       </div>
 
-      <!-- P&L Summary Bar (always visible) -->
-      <div class="pnl-summary">
-        <div class="pnl-summary-item">
-          <div class="pnl-summary-value" id="pnl-realized">$0</div>
-          <div class="pnl-summary-label">Realized P&L</div>
-        </div>
-        <div class="pnl-summary-item">
-          <div class="pnl-summary-value" id="pnl-open-cost">$0</div>
-          <div class="pnl-summary-label">Open Cost Basis</div>
-        </div>
-        <div class="pnl-summary-item">
-          <div class="pnl-summary-value" id="pnl-total-trades">0</div>
-          <div class="pnl-summary-label">Total Trades</div>
-        </div>
-        <div class="pnl-summary-item">
-          <div class="pnl-summary-value" id="pnl-win-rate">—</div>
-          <div class="pnl-summary-label">Win Rate</div>
-        </div>
+      <!-- View Containers (positions / history / pnl) -->
+      <div id="view-positions"></div>
+      <div id="view-history" style="display:none;"></div>
+      <div id="view-pnl" style="display:none;"></div>
+
+      <!-- 3. Cumulative P&L + Daily P&L Charts -->
+      <div class="grid g2" style="margin-top:16px">
+        <div class="card"><div class="card-header">CUMULATIVE P&L</div><div class="chart-box"><canvas id="cv-opt-cum-pnl"></canvas></div></div>
+        <div class="card"><div class="card-header">DAILY P&L</div><div class="chart-box"><canvas id="cv-opt-daily-pnl"></canvas></div></div>
       </div>
 
-      <!-- P&L Charts -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px" id="options-charts-row">
-        <div style="padding:14px;background:rgba(0,0,0,0.3);border-radius:8px;border:1px solid #333">
-          <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">CUMULATIVE P&L</div>
-          <div style="height:160px"><canvas id="cv-opt-cum-pnl"></canvas></div>
-        </div>
-        <div style="padding:14px;background:rgba(0,0,0,0.3);border-radius:8px;border:1px solid #333">
-          <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">DAILY P&L</div>
-          <div style="height:160px"><canvas id="cv-opt-daily-pnl"></canvas></div>
-        </div>
+      <!-- 4. Sector Allocation + Strategy Allocation -->
+      <div class="grid g2" style="margin-top:16px">
+        <div class="card"><div class="card-header">SECTOR ALLOCATION</div><div class="donut-box"><canvas id="cv-opt-sector"></canvas></div></div>
+        <div class="card"><div class="card-header">STRATEGY ALLOCATION</div><div class="donut-box"><canvas id="cv-opt-strat"></canvas></div></div>
       </div>
 
-      <!-- Add Trade Section -->
-      <div class="trade-form-section">
+      <!-- 5. Exposure Summary + Recent Daily P&L -->
+      <div class="grid g2" style="margin-top:16px">
+        <div class="card"><div class="card-header">EXPOSURE SUMMARY</div><div id="opt-exposure-body"></div></div>
+        <div class="card"><div class="card-header">DAILY P&L <span style="font-weight:400;color:var(--text-dim)">Last 30 days</span></div><div class="chart-box"><canvas id="cv-opt-daily30"></canvas></div></div>
+      </div>
+
+      <!-- 6. Add Trade Section -->
+      <div class="trade-form-section" style="margin-top:16px">
         <div class="trade-form-title">Add Trade</div>
         <div class="options-subtab-row" id="import-tabs" style="margin-bottom:12px">
           <button class="options-subtab active" onclick="switchImportTab('webull')">Webull Paste</button>
@@ -3888,11 +3888,6 @@ function getTradeHistoryHTML() {
           <button class="trade-btn trade-btn-primary" style="margin-top:12px" onclick="addManualTrade()">+ Add Trade</button>
         </div>
       </div>
-
-      <!-- View Containers -->
-      <div id="view-positions"></div>
-      <div id="view-history" style="display:none;"></div>
-      <div id="view-pnl" style="display:none;"></div>
     </div>
   `;
 }
@@ -4301,24 +4296,55 @@ function switchOptionsView(view) {
   renderCurrentView();
 }
 
+// Sector map for options tickers
+const _OPT_SECTOR_MAP = {
+  SPY:'Index',QQQ:'Index',IWM:'Index',DIA:'Index',XLK:'Technology',XLF:'Financials',XLE:'Energy',XLV:'Healthcare',XLY:'Consumer',XLP:'Consumer Staples',
+  AAPL:'Technology',MSFT:'Technology',NVDA:'Technology',GOOGL:'Technology',GOOG:'Technology',META:'Technology',AMD:'Technology',AVGO:'Technology',CRM:'Technology',PLTR:'Technology',SMCI:'Technology',MSTR:'Technology',
+  AMZN:'Consumer',TSLA:'Consumer',HD:'Consumer',NKE:'Consumer',
+  JPM:'Financials',BAC:'Financials',GS:'Financials',V:'Financials',COIN:'Financials',SOFI:'Financials',
+  UNH:'Healthcare',JNJ:'Healthcare',LLY:'Healthcare',PFE:'Healthcare',
+  XOM:'Energy',CVX:'Energy',COP:'Energy',
+  DELL:'Technology',RTX:'Industrials',NSC:'Industrials',IBM:'Technology',BA:'Industrials',CAT:'Industrials',UNP:'Industrials',HON:'Industrials',LMT:'Industrials',GE:'Industrials',
+};
+const _SECTOR_COLORS = ['#00e676','#00b8d4','#ffc107','#ff5252','#b388ff','#ff6e40','#69f0ae','#40c4ff','#ffab40','#ea80fc','#8c9eff','#a7ffeb'];
+const _STRAT_COLORS = ['#00b8d4','#ff5252','#ffc107','#b388ff'];
+
 function renderCurrentView() {
   const trades = getTrades();
   const positions = calculatePositions(trades);
   const pnl = calculatePnL(positions);
-  
-  // Update summary bar
-  const realizedEl = document.getElementById('pnl-realized');
-  realizedEl.textContent = (pnl.realizedPnL >= 0 ? '+' : '') + '$' + pnl.realizedPnL.toFixed(2);
-  realizedEl.className = 'pnl-summary-value ' + (pnl.realizedPnL >= 0 ? 'positive' : 'negative');
-  
-  document.getElementById('pnl-open-cost').textContent = '$' + pnl.openCostBasis.toFixed(2);
-  document.getElementById('pnl-total-trades').textContent = trades.length;
-  document.getElementById('pnl-win-rate').textContent = pnl.winRate !== null ? pnl.winRate + '%' : '—';
 
-  // Render P&L charts
-  _renderOptionsPnLCharts(trades);
+  // Count open positions
+  const openCount = Object.values(positions).filter(p => p.netQty > 0).length;
 
-  // Render active view
+  // Compute today's P&L
+  const todayStr = new Date().toISOString().slice(0, 10);
+  let dayPnl = 0;
+  trades.forEach(t => {
+    if ((t.tradeDate || t.date || '') === todayStr) {
+      const sign = t.action === 'SELL' ? 1 : -1;
+      const gross = Math.abs(t.total || 0) || (t.qty * t.price * 100);
+      dayPnl += sign * gross - (t.fees || 0);
+    }
+  });
+
+  // 1. Update top summary cards
+  const navEl = document.getElementById('opt-nav');
+  if (navEl) { navEl.textContent = '$' + fmtK(pnl.openCostBasis); }
+
+  const dayEl = document.getElementById('opt-day-pnl');
+  if (dayEl) { dayEl.textContent = psDollar(dayPnl); dayEl.className = 'value ' + pc(dayPnl); }
+
+  const totalEl = document.getElementById('opt-total-pnl');
+  if (totalEl) { totalEl.textContent = psDollar(pnl.realizedPnL); totalEl.className = 'value ' + pc(pnl.realizedPnL); }
+
+  const posEl = document.getElementById('opt-pos-count');
+  if (posEl) { posEl.textContent = openCount; }
+
+  const wrEl = document.getElementById('opt-win-rate');
+  if (wrEl) { wrEl.textContent = pnl.winRate !== null ? pnl.winRate + '%' : '—'; }
+
+  // 2. Render active view (positions/history/pnl)
   if (currentOptionsView === 'positions') {
     renderPositionsView(positions);
   } else if (currentOptionsView === 'history') {
@@ -4326,58 +4352,125 @@ function renderCurrentView() {
   } else if (currentOptionsView === 'pnl') {
     renderPnLView(positions, pnl);
   }
+
+  // 3. Render all charts and dashboard sections
+  _renderOptionsDashboard(trades, positions, pnl);
 }
 
-// ── Options P&L Charts ────────────────────────────────────────────────────────
-function _renderOptionsPnLCharts(trades) {
-  if (!trades.length || typeof makeChart !== 'function') return;
+function _renderOptionsDashboard(trades, positions, pnl) {
+  if (typeof makeChart !== 'function') return;
 
-  // Build daily P&L by trade date
+  // ── Build daily P&L data ──
   const dailyPnL = {};
   trades.forEach(t => {
-    const d = t.tradeDate || ''; if (!d) return;
+    const d = t.tradeDate || t.date || ''; if (!d) return;
     if (!dailyPnL[d]) dailyPnL[d] = 0;
     const sign = t.action === 'SELL' ? 1 : -1;
-    dailyPnL[d] += sign * t.qty * t.price * 100 - (t.fees || 0);
+    const gross = Math.abs(t.total || 0) || (t.qty * t.price * 100);
+    dailyPnL[d] += sign * gross - (t.fees || 0);
   });
   const sortedDates = Object.keys(dailyPnL).sort();
-  if (!sortedDates.length) return;
+  const fmtLabel = d => { const p = d.split('-'); return (p[1]||'') + '/' + (p[2]||''); };
 
-  const labels = sortedDates.map(d => { const p = d.split('-'); return (p[1] || '') + '/' + (p[2] || ''); });
-  const dailyData = sortedDates.map(d => Math.round(dailyPnL[d] * 100) / 100);
-  let cum = 0;
-  const cumData = sortedDates.map(d => { cum += dailyPnL[d]; return Math.round(cum * 100) / 100; });
+  if (sortedDates.length) {
+    const labels = sortedDates.map(fmtLabel);
+    const dailyData = sortedDates.map(d => Math.round(dailyPnL[d] * 100) / 100);
+    let cum = 0;
+    const cumData = sortedDates.map(d => { cum += dailyPnL[d]; return Math.round(cum * 100) / 100; });
 
-  // Cumulative P&L line chart
-  try {
-    makeChart('cv-opt-cum-pnl', {
-      type: 'line',
-      data: {
-        labels,
-        datasets: [
-          { data: cumData, borderColor: cum >= 0 ? '#4caf50' : '#ff5252', backgroundColor: (cum >= 0 ? '#4caf50' : '#ff5252') + '15', fill: true, tension: .3, pointRadius: 0, borderWidth: 1.5 },
+    // Cumulative P&L line chart
+    try {
+      makeChart('cv-opt-cum-pnl', {
+        type: 'line',
+        data: { labels, datasets: [
+          { data: cumData, borderColor: cum >= 0 ? '#00e676' : '#ff5252', backgroundColor: (cum >= 0 ? '#00e676' : '#ff5252') + '12', fill: true, tension: .3, pointRadius: 0, borderWidth: 1.5 },
           { data: labels.map(() => 0), borderColor: '#ffffff15', borderDash: [4, 4], pointRadius: 0, borderWidth: 1 }
-        ]
-      },
-      options: { plugins: { legend: { display: false } }, scales: { x: { ticks: { maxTicksToLimit: 6, font: { size: 9 } } }, y: { ticks: { callback: v => '$' + v.toLocaleString() } } }, interaction: { intersect: false }, maintainAspectRatio: false }
-    });
-  } catch (e) { console.warn('Cum PnL chart:', e); }
+        ]},
+        options: { plugins: { legend: { display: false } }, scales: { x: { ticks: { maxTicksToLimit: 6 } }, y: { ticks: { callback: v => '$' + fmtK(v) } } }, interaction: { intersect: false }, maintainAspectRatio: false }
+      });
+    } catch (e) {}
 
-  // Daily P&L bar chart
-  try {
-    makeChart('cv-opt-daily-pnl', {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [{
-          data: dailyData,
-          backgroundColor: dailyData.map(v => v >= 0 ? '#4caf5080' : '#ff525280'),
-          borderRadius: 2
-        }]
-      },
-      options: { plugins: { legend: { display: false } }, scales: { x: { ticks: { maxTicksToLimit: 8, font: { size: 9 } } }, y: { ticks: { callback: v => '$' + v.toLocaleString() } } }, maintainAspectRatio: false }
-    });
-  } catch (e) { console.warn('Daily PnL chart:', e); }
+    // Daily P&L bar chart (full range)
+    try {
+      makeChart('cv-opt-daily-pnl', {
+        type: 'bar',
+        data: { labels, datasets: [{ data: dailyData, backgroundColor: dailyData.map(v => v >= 0 ? '#00e67680' : '#ff525280'), borderRadius: 2 }] },
+        options: { plugins: { legend: { display: false } }, scales: { x: { ticks: { maxTicksToLimit: 8 } }, y: { ticks: { callback: v => '$' + fmtK(v) } } }, maintainAspectRatio: false }
+      });
+    } catch (e) {}
+
+    // Daily P&L last 30 days bar chart
+    try {
+      const last30d = sortedDates.slice(-30);
+      const l30Labels = last30d.map(fmtLabel);
+      const l30Data = last30d.map(d => Math.round(dailyPnL[d] * 100) / 100);
+      makeChart('cv-opt-daily30', {
+        type: 'bar',
+        data: { labels: l30Labels, datasets: [{ data: l30Data, backgroundColor: l30Data.map(v => v >= 0 ? '#00e67680' : '#ff525280'), borderRadius: 2 }] },
+        options: { plugins: { legend: { display: false } }, scales: { x: { ticks: { maxTicksToLimit: 8 } }, y: { ticks: { callback: v => '$' + fmtK(v) } } }, maintainAspectRatio: false }
+      });
+    } catch (e) {}
+  }
+
+  // ── Sector Allocation (by total notional traded per ticker sector) ──
+  const sectors = {};
+  trades.forEach(t => {
+    const sec = _OPT_SECTOR_MAP[t.ticker] || 'Other';
+    const notional = Math.abs(t.total || 0) || (t.qty * t.price * 100);
+    sectors[sec] = (sectors[sec] || 0) + notional;
+  });
+  const sL = Object.keys(sectors), sD = Object.values(sectors);
+  if (sL.length) {
+    try {
+      makeChart('cv-opt-sector', {
+        type: 'doughnut',
+        data: { labels: sL, datasets: [{ data: sD, backgroundColor: _SECTOR_COLORS.slice(0, sL.length), borderWidth: 0 }] },
+        options: { plugins: { legend: { position: 'right', labels: { boxWidth: 10, padding: 6, font: { size: 10 }, color: '#c8d6e5' } } }, cutout: '65%', maintainAspectRatio: false }
+      });
+    } catch (e) {}
+  }
+
+  // ── Strategy Allocation (Calls vs Puts capital deployed) ──
+  const strats = { 'Long Calls': 0, 'Long Puts': 0, 'Short Calls': 0, 'Short Puts': 0 };
+  trades.forEach(t => {
+    const isBuy = t.action === 'BUY';
+    const ot = (t.optionType || '').toUpperCase();
+    const label = (isBuy ? 'Long ' : 'Short ') + (ot === 'CALL' ? 'Calls' : 'Puts');
+    const notional = Math.abs(t.total || 0) || (t.qty * t.price * 100);
+    strats[label] = (strats[label] || 0) + notional;
+  });
+  // Filter out zero values
+  const filtStrats = {};
+  for (const [k, v] of Object.entries(strats)) { if (v > 0) filtStrats[k] = v; }
+  const tL = Object.keys(filtStrats), tD = Object.values(filtStrats);
+  if (tL.length) {
+    try {
+      makeChart('cv-opt-strat', {
+        type: 'doughnut',
+        data: { labels: tL, datasets: [{ data: tD, backgroundColor: _STRAT_COLORS.slice(0, tL.length), borderWidth: 0 }] },
+        options: { plugins: { legend: { position: 'right', labels: { boxWidth: 10, padding: 6, font: { size: 10 }, color: '#c8d6e5' } } }, cutout: '65%', maintainAspectRatio: false }
+      });
+    } catch (e) {}
+  }
+
+  // ── Exposure Summary ──
+  const longExp = Object.values(positions).filter(p => p.netQty > 0).reduce((s, p) => s + (p.totalBuyCost / p.totalBuyQty * p.netQty), 0);
+  const shortExp = 0;
+  const netExp = longExp - shortExp;
+  const nav = pnl.openCostBasis || 1;
+  const expBody = document.getElementById('opt-exposure-body');
+  if (expBody) {
+    expBody.innerHTML = `
+      <div class="exposure-row"><span class="elbl">Long Exposure</span><span class="eval"><span class="big up">$${fmtK(longExp)}</span><br/><span class="small">${fmt(nav ? longExp / nav * 100 : 0, 1)}% of cost basis</span></span></div>
+      <div class="exposure-row"><span class="elbl">Short Exposure</span><span class="eval"><span class="big down">$${fmtK(shortExp)}</span><br/><span class="small">0.0%</span></span></div>
+      <div class="exposure-row"><span class="elbl">Net Exposure</span><span class="eval"><span class="big ${pc(netExp)}">$${fmtK(netExp)}</span><br/><span class="small">${fmt(nav ? netExp / nav * 100 : 0, 1)}% net</span></span></div>
+      <div class="exposure-row"><span class="elbl">Total Trades</span><span class="eval"><span class="big neutral">${trades.length}</span></span></div>
+      <div class="exposure-row"><span class="elbl">Closed Positions</span><span class="eval"><span class="big neutral">${pnl.closedTrades}</span></span></div>
+      <div style="margin-top:8px;font-size:10px;color:var(--text-dim)">Exposure Gauge</div>
+      <div class="gauge-track"><div class="gauge-fill" style="width:${Math.min(100, Math.max(0, longExp > 0 ? 75 : 5))}%"></div></div>
+      <div class="gauge-labels"><span>No Positions</span><span>Moderate</span><span>Fully Deployed</span></div>
+    `;
+  }
 }
 
 // ── Render Positions View ──────────────────────────────────────────────────────

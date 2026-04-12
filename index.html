@@ -811,8 +811,7 @@ const NX={
     // Init
     if(typeof renderCurrentView==='function')renderCurrentView();
     NX._tradeHistoryLoaded=true;
-    // Init drop zones and auto-sync
-    setTimeout(()=>{_initPDFDropZone();_initCSVDropZone()},100);
+    // Drop zones init happens inside renderHistoryView when History tab is active
     initTradeSync();
   },
 
@@ -3771,56 +3770,8 @@ function getTradeHistoryStyles() {
 }
 
 // ── HTML Template ──────────────────────────────────────────────────────────────
-function getTradeHistoryHTML() {
+function _getAddTradeHTML() {
   return `
-    <div id="options-tracker">
-      <!-- 1. Top Summary Cards -->
-      <div class="metrics-row g5" id="opt-summary-cards">
-        <div class="m-card"><div class="label">OPEN COST BASIS</div><div class="value neutral" id="opt-nav">$0</div></div>
-        <div class="m-card"><div class="label">DAY P&L</div><div class="value neutral" id="opt-day-pnl">$0</div></div>
-        <div class="m-card"><div class="label">TOTAL P&L</div><div class="value neutral" id="opt-total-pnl">$0</div></div>
-        <div class="m-card"><div class="label">POSITIONS</div><div class="value accent-c" id="opt-pos-count">0</div></div>
-        <div class="m-card"><div class="label">WIN RATE</div><div class="value neutral" id="opt-win-rate">—</div></div>
-      </div>
-
-      <!-- 2. Sub-tabs: Positions | Trade History | P&L + Sync -->
-      <div class="options-subtab-row" style="justify-content:space-between;flex-wrap:wrap;margin-bottom:12px">
-        <div style="display:flex;gap:8px">
-          <button class="options-subtab active" onclick="switchOptionsView('positions')" id="subtab-positions">Open Positions</button>
-          <button class="options-subtab" onclick="switchOptionsView('history')" id="subtab-history">Trade History</button>
-          <button class="options-subtab" onclick="switchOptionsView('pnl')" id="subtab-pnl">P&L Summary</button>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <span id="trades-sync-badge" style="font-size:10px;color:#666;font-family:'JetBrains Mono',monospace">○ NOT SYNCED</span>
-          <button class="trade-btn trade-btn-secondary" style="padding:4px 10px;font-size:10px" onclick="bulkSyncTrades()">⟳ Sync</button>
-          <button class="trade-btn trade-btn-danger" style="padding:4px 10px;font-size:10px" onclick="deleteAllTrades()">Clear All</button>
-        </div>
-      </div>
-
-      <!-- View Containers (positions / history / pnl) -->
-      <div id="view-positions"></div>
-      <div id="view-history" style="display:none;"></div>
-      <div id="view-pnl" style="display:none;"></div>
-
-      <!-- 3. Cumulative P&L + Daily P&L Charts -->
-      <div class="grid g2" style="margin-top:16px">
-        <div class="card"><div class="card-header">CUMULATIVE P&L</div><div class="chart-box"><canvas id="cv-opt-cum-pnl"></canvas></div></div>
-        <div class="card"><div class="card-header">DAILY P&L</div><div class="chart-box"><canvas id="cv-opt-daily-pnl"></canvas></div></div>
-      </div>
-
-      <!-- 4. Sector Allocation + Strategy Allocation -->
-      <div class="grid g2" style="margin-top:16px">
-        <div class="card"><div class="card-header">SECTOR ALLOCATION</div><div class="donut-box"><canvas id="cv-opt-sector"></canvas></div></div>
-        <div class="card"><div class="card-header">STRATEGY ALLOCATION</div><div class="donut-box"><canvas id="cv-opt-strat"></canvas></div></div>
-      </div>
-
-      <!-- 5. Exposure Summary + Recent Daily P&L -->
-      <div class="grid g2" style="margin-top:16px">
-        <div class="card"><div class="card-header">EXPOSURE SUMMARY</div><div id="opt-exposure-body"></div></div>
-        <div class="card"><div class="card-header">DAILY P&L <span style="font-weight:400;color:var(--text-dim)">Last 30 days</span></div><div class="chart-box"><canvas id="cv-opt-daily30"></canvas></div></div>
-      </div>
-
-      <!-- 6. Add Trade Section -->
       <div class="trade-form-section" style="margin-top:16px">
         <div class="trade-form-title">Add Trade</div>
         <div class="options-subtab-row" id="import-tabs" style="margin-bottom:12px">
@@ -3829,8 +3780,6 @@ function getTradeHistoryHTML() {
           <button class="options-subtab" onclick="switchImportTab('robinhood')">Robinhood CSV</button>
           <button class="options-subtab" onclick="switchImportTab('manual')">Manual Entry</button>
         </div>
-
-        <!-- Webull Paste -->
         <div id="import-webull" class="import-panel">
           <div class="trade-paste-hint">Paste Webull row: <code style="color:#00e5ff;">SPY 260330P00634000 ... B 4.00 1.41 -564.00 0.00 -0.19</code></div>
           <textarea class="trade-paste-area" id="trade-paste-input" placeholder="Paste trade confirmation rows here (one per line)..."></textarea>
@@ -3841,8 +3790,6 @@ function getTradeHistoryHTML() {
             <button class="trade-btn trade-btn-secondary" onclick="clearTradePaste()">Clear</button>
           </div>
         </div>
-
-        <!-- Webull PDF -->
         <div id="import-webull-pdf" class="import-panel" style="display:none">
           <div id="pdf-drop" style="border:2px dashed #444;padding:40px;text-align:center;border-radius:8px;cursor:pointer;transition:border-color .2s">
             <div style="font-size:24px;margin-bottom:8px;opacity:.5">📄</div>
@@ -3856,8 +3803,6 @@ function getTradeHistoryHTML() {
             <button class="trade-btn trade-btn-secondary" onclick="clearPDFImport()">Clear</button>
           </div>
         </div>
-
-        <!-- Robinhood CSV -->
         <div id="import-robinhood" class="import-panel" style="display:none">
           <div id="csv-drop" style="border:2px dashed #444;padding:40px;text-align:center;border-radius:8px;cursor:pointer">
             <div style="font-size:24px;margin-bottom:8px;opacity:.5">📊</div>
@@ -3870,8 +3815,6 @@ function getTradeHistoryHTML() {
             <button class="trade-btn trade-btn-secondary" onclick="clearCSVImport()">Clear</button>
           </div>
         </div>
-
-        <!-- Manual Entry -->
         <div id="import-manual" class="import-panel" style="display:none">
           <div class="trade-form-grid" style="margin-top:8px">
             <div class="trade-form-group"><label>Ticker</label><input type="text" id="trade-ticker" placeholder="SPY" maxlength="5" style="text-transform:uppercase"></div>
@@ -3887,7 +3830,29 @@ function getTradeHistoryHTML() {
           </div>
           <button class="trade-btn trade-btn-primary" style="margin-top:12px" onclick="addManualTrade()">+ Add Trade</button>
         </div>
+      </div>`;
+}
+
+function getTradeHistoryHTML() {
+  return `
+    <div id="options-tracker">
+      <!-- Sub-tabs -->
+      <div class="options-subtab-row" style="justify-content:space-between;flex-wrap:wrap;margin-bottom:12px">
+        <div style="display:flex;gap:8px">
+          <button class="options-subtab active" onclick="switchOptionsView('positions')" id="subtab-positions">Open Positions</button>
+          <button class="options-subtab" onclick="switchOptionsView('history')" id="subtab-history">Trade History</button>
+          <button class="options-subtab" onclick="switchOptionsView('pnl')" id="subtab-pnl">P&L Summary</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span id="trades-sync-badge" style="font-size:10px;color:#666;font-family:'JetBrains Mono',monospace">○ NOT SYNCED</span>
+          <button class="trade-btn trade-btn-secondary" style="padding:4px 10px;font-size:10px" onclick="bulkSyncTrades()">⟳ Sync</button>
+          <button class="trade-btn trade-btn-danger" style="padding:4px 10px;font-size:10px" onclick="deleteAllTrades()">Clear All</button>
+        </div>
       </div>
+      <!-- Each view renders its own complete section -->
+      <div id="view-positions"></div>
+      <div id="view-history" style="display:none;"></div>
+      <div id="view-pnl" style="display:none;"></div>
     </div>
   `;
 }
@@ -4283,20 +4248,15 @@ let currentOptionsView = 'positions';
 
 function switchOptionsView(view) {
   currentOptionsView = view;
-  
-  // Update subtab active states
   document.querySelectorAll('.options-subtab').forEach(t => t.classList.remove('active'));
-  document.getElementById(`subtab-${view}`).classList.add('active');
-  
-  // Show/hide views
+  const btn = document.getElementById(`subtab-${view}`);
+  if (btn) btn.classList.add('active');
   document.getElementById('view-positions').style.display = view === 'positions' ? 'block' : 'none';
   document.getElementById('view-history').style.display = view === 'history' ? 'block' : 'none';
   document.getElementById('view-pnl').style.display = view === 'pnl' ? 'block' : 'none';
-  
   renderCurrentView();
 }
 
-// Sector map for options tickers
 const _OPT_SECTOR_MAP = {
   SPY:'Index',QQQ:'Index',IWM:'Index',DIA:'Index',XLK:'Technology',XLF:'Financials',XLE:'Energy',XLV:'Healthcare',XLY:'Consumer',XLP:'Consumer Staples',
   AAPL:'Technology',MSFT:'Technology',NVDA:'Technology',GOOGL:'Technology',GOOG:'Technology',META:'Technology',AMD:'Technology',AVGO:'Technology',CRM:'Technology',PLTR:'Technology',SMCI:'Technology',MSTR:'Technology',
@@ -4309,358 +4269,277 @@ const _OPT_SECTOR_MAP = {
 const _SECTOR_COLORS = ['#00e676','#00b8d4','#ffc107','#ff5252','#b388ff','#ff6e40','#69f0ae','#40c4ff','#ffab40','#ea80fc','#8c9eff','#a7ffeb'];
 const _STRAT_COLORS = ['#00b8d4','#ff5252','#ffc107','#b388ff'];
 
+// ── Shared helpers ────────────────────────────────────────────────────────────
+function _buildDailyPnL(trades) {
+  const daily = {};
+  trades.forEach(t => {
+    const d = t.tradeDate || t.date || ''; if (!d) return;
+    if (!daily[d]) daily[d] = 0;
+    const sign = t.action === 'SELL' ? 1 : -1;
+    const gross = Math.abs(t.total || 0) || (t.qty * t.price * 100);
+    daily[d] += sign * gross - (t.fees || 0);
+  });
+  return daily;
+}
+
+function _buildWeeklyPnL(dailyPnL) {
+  const weekly = {};
+  for (const [d, val] of Object.entries(dailyPnL)) {
+    const dt = new Date(d + 'T00:00:00');
+    const day = dt.getDay(); const diff = dt.getDate() - day + (day === 0 ? -6 : 1);
+    const mon = new Date(dt); mon.setDate(diff);
+    const wk = (mon.getMonth()+1) + '/' + mon.getDate();
+    weekly[wk] = (weekly[wk] || 0) + val;
+  }
+  return weekly;
+}
+
+function _buildMonthlyPnL(dailyPnL) {
+  const monthly = {};
+  const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  for (const [d, val] of Object.entries(dailyPnL)) {
+    const dt = new Date(d + 'T00:00:00');
+    const key = monthNames[dt.getMonth()] + ' ' + dt.getFullYear().toString().slice(2);
+    monthly[key] = (monthly[key] || 0) + val;
+  }
+  return monthly;
+}
+
+function _chartCumPnL(canvasId, dailyPnL) {
+  const sorted = Object.keys(dailyPnL).sort();
+  if (!sorted.length) return;
+  const labels = sorted.map(d => { const p = d.split('-'); return (p[1]||'')+'/'+(p[2]||''); });
+  let cum = 0;
+  const cumData = sorted.map(d => { cum += dailyPnL[d]; return Math.round(cum*100)/100; });
+  try {
+    makeChart(canvasId, {
+      type:'line',
+      data:{labels, datasets:[
+        {data:cumData, borderColor:cum>=0?'#00e676':'#ff5252', backgroundColor:(cum>=0?'#00e676':'#ff5252')+'12', fill:true, tension:.3, pointRadius:0, borderWidth:1.5},
+        {data:labels.map(()=>0), borderColor:'#ffffff15', borderDash:[4,4], pointRadius:0, borderWidth:1}
+      ]},
+      options:{plugins:{legend:{display:false}}, scales:{x:{ticks:{maxTicksToLimit:6}}, y:{ticks:{callback:v=>'$'+fmtK(v)}}}, interaction:{intersect:false}, maintainAspectRatio:false}
+    });
+  } catch(e){}
+}
+
+function _chartBar(canvasId, dataObj, maxTicks) {
+  const labels = Object.keys(dataObj);
+  const data = Object.values(dataObj).map(v => Math.round(v*100)/100);
+  if (!labels.length) return;
+  try {
+    makeChart(canvasId, {
+      type:'bar',
+      data:{labels, datasets:[{data, backgroundColor:data.map(v=>v>=0?'#00e67680':'#ff525280'), borderRadius:2}]},
+      options:{plugins:{legend:{display:false}}, scales:{x:{ticks:{maxTicksToLimit:maxTicks||10}}, y:{ticks:{callback:v=>'$'+fmtK(v)}}}, maintainAspectRatio:false}
+    });
+  } catch(e){}
+}
+
+function _chartDonut(canvasId, labels, data, colors) {
+  if (!labels.length) return;
+  try {
+    makeChart(canvasId, {
+      type:'doughnut',
+      data:{labels, datasets:[{data, backgroundColor:colors.slice(0,labels.length), borderWidth:0}]},
+      options:{plugins:{legend:{position:'right', labels:{boxWidth:10, padding:6, font:{size:10}, color:'#c8d6e5'}}}, cutout:'65%', maintainAspectRatio:false}
+    });
+  } catch(e){}
+}
+
+// ── renderCurrentView dispatches to the active tab ────────────────────────────
 function renderCurrentView() {
   const trades = getTrades();
   const positions = calculatePositions(trades);
   const pnl = calculatePnL(positions);
-
-  // Count open positions
-  const openCount = Object.values(positions).filter(p => p.netQty > 0).length;
-
-  // Compute today's P&L
-  const todayStr = new Date().toISOString().slice(0, 10);
-  let dayPnl = 0;
-  trades.forEach(t => {
-    if ((t.tradeDate || t.date || '') === todayStr) {
-      const sign = t.action === 'SELL' ? 1 : -1;
-      const gross = Math.abs(t.total || 0) || (t.qty * t.price * 100);
-      dayPnl += sign * gross - (t.fees || 0);
-    }
-  });
-
-  // 1. Update top summary cards
-  const navEl = document.getElementById('opt-nav');
-  if (navEl) { navEl.textContent = '$' + fmtK(pnl.openCostBasis); }
-
-  const dayEl = document.getElementById('opt-day-pnl');
-  if (dayEl) { dayEl.textContent = psDollar(dayPnl); dayEl.className = 'value ' + pc(dayPnl); }
-
-  const totalEl = document.getElementById('opt-total-pnl');
-  if (totalEl) { totalEl.textContent = psDollar(pnl.realizedPnL); totalEl.className = 'value ' + pc(pnl.realizedPnL); }
-
-  const posEl = document.getElementById('opt-pos-count');
-  if (posEl) { posEl.textContent = openCount; }
-
-  const wrEl = document.getElementById('opt-win-rate');
-  if (wrEl) { wrEl.textContent = pnl.winRate !== null ? pnl.winRate + '%' : '—'; }
-
-  // 2. Render active view (positions/history/pnl)
-  if (currentOptionsView === 'positions') {
-    renderPositionsView(positions);
-  } else if (currentOptionsView === 'history') {
-    renderHistoryView(trades);
-  } else if (currentOptionsView === 'pnl') {
-    renderPnLView(positions, pnl);
-  }
-
-  // 3. Render all charts and dashboard sections
-  _renderOptionsDashboard(trades, positions, pnl);
+  if (currentOptionsView === 'positions') renderPositionsView(trades, positions, pnl);
+  else if (currentOptionsView === 'history') renderHistoryView(trades, positions, pnl);
+  else if (currentOptionsView === 'pnl') renderPnLView(trades, positions, pnl);
 }
 
-function _renderOptionsDashboard(trades, positions, pnl) {
-  if (typeof makeChart !== 'function') return;
-
-  // ── Build daily P&L data ──
-  const dailyPnL = {};
-  trades.forEach(t => {
-    const d = t.tradeDate || t.date || ''; if (!d) return;
-    if (!dailyPnL[d]) dailyPnL[d] = 0;
-    const sign = t.action === 'SELL' ? 1 : -1;
-    const gross = Math.abs(t.total || 0) || (t.qty * t.price * 100);
-    dailyPnL[d] += sign * gross - (t.fees || 0);
-  });
-  const sortedDates = Object.keys(dailyPnL).sort();
-  const fmtLabel = d => { const p = d.split('-'); return (p[1]||'') + '/' + (p[2]||''); };
-
-  if (sortedDates.length) {
-    const labels = sortedDates.map(fmtLabel);
-    const dailyData = sortedDates.map(d => Math.round(dailyPnL[d] * 100) / 100);
-    let cum = 0;
-    const cumData = sortedDates.map(d => { cum += dailyPnL[d]; return Math.round(cum * 100) / 100; });
-
-    // Cumulative P&L line chart
-    try {
-      makeChart('cv-opt-cum-pnl', {
-        type: 'line',
-        data: { labels, datasets: [
-          { data: cumData, borderColor: cum >= 0 ? '#00e676' : '#ff5252', backgroundColor: (cum >= 0 ? '#00e676' : '#ff5252') + '12', fill: true, tension: .3, pointRadius: 0, borderWidth: 1.5 },
-          { data: labels.map(() => 0), borderColor: '#ffffff15', borderDash: [4, 4], pointRadius: 0, borderWidth: 1 }
-        ]},
-        options: { plugins: { legend: { display: false } }, scales: { x: { ticks: { maxTicksToLimit: 6 } }, y: { ticks: { callback: v => '$' + fmtK(v) } } }, interaction: { intersect: false }, maintainAspectRatio: false }
-      });
-    } catch (e) {}
-
-    // Daily P&L bar chart (full range)
-    try {
-      makeChart('cv-opt-daily-pnl', {
-        type: 'bar',
-        data: { labels, datasets: [{ data: dailyData, backgroundColor: dailyData.map(v => v >= 0 ? '#00e67680' : '#ff525280'), borderRadius: 2 }] },
-        options: { plugins: { legend: { display: false } }, scales: { x: { ticks: { maxTicksToLimit: 8 } }, y: { ticks: { callback: v => '$' + fmtK(v) } } }, maintainAspectRatio: false }
-      });
-    } catch (e) {}
-
-    // Daily P&L last 30 days bar chart
-    try {
-      const last30d = sortedDates.slice(-30);
-      const l30Labels = last30d.map(fmtLabel);
-      const l30Data = last30d.map(d => Math.round(dailyPnL[d] * 100) / 100);
-      makeChart('cv-opt-daily30', {
-        type: 'bar',
-        data: { labels: l30Labels, datasets: [{ data: l30Data, backgroundColor: l30Data.map(v => v >= 0 ? '#00e67680' : '#ff525280'), borderRadius: 2 }] },
-        options: { plugins: { legend: { display: false } }, scales: { x: { ticks: { maxTicksToLimit: 8 } }, y: { ticks: { callback: v => '$' + fmtK(v) } } }, maintainAspectRatio: false }
-      });
-    } catch (e) {}
-  }
-
-  // ── Sector Allocation (by total notional traded per ticker sector) ──
-  const sectors = {};
-  trades.forEach(t => {
-    const sec = _OPT_SECTOR_MAP[t.ticker] || 'Other';
-    const notional = Math.abs(t.total || 0) || (t.qty * t.price * 100);
-    sectors[sec] = (sectors[sec] || 0) + notional;
-  });
-  const sL = Object.keys(sectors), sD = Object.values(sectors);
-  if (sL.length) {
-    try {
-      makeChart('cv-opt-sector', {
-        type: 'doughnut',
-        data: { labels: sL, datasets: [{ data: sD, backgroundColor: _SECTOR_COLORS.slice(0, sL.length), borderWidth: 0 }] },
-        options: { plugins: { legend: { position: 'right', labels: { boxWidth: 10, padding: 6, font: { size: 10 }, color: '#c8d6e5' } } }, cutout: '65%', maintainAspectRatio: false }
-      });
-    } catch (e) {}
-  }
-
-  // ── Strategy Allocation (Calls vs Puts capital deployed) ──
-  const strats = { 'Long Calls': 0, 'Long Puts': 0, 'Short Calls': 0, 'Short Puts': 0 };
-  trades.forEach(t => {
-    const isBuy = t.action === 'BUY';
-    const ot = (t.optionType || '').toUpperCase();
-    const label = (isBuy ? 'Long ' : 'Short ') + (ot === 'CALL' ? 'Calls' : 'Puts');
-    const notional = Math.abs(t.total || 0) || (t.qty * t.price * 100);
-    strats[label] = (strats[label] || 0) + notional;
-  });
-  // Filter out zero values
-  const filtStrats = {};
-  for (const [k, v] of Object.entries(strats)) { if (v > 0) filtStrats[k] = v; }
-  const tL = Object.keys(filtStrats), tD = Object.values(filtStrats);
-  if (tL.length) {
-    try {
-      makeChart('cv-opt-strat', {
-        type: 'doughnut',
-        data: { labels: tL, datasets: [{ data: tD, backgroundColor: _STRAT_COLORS.slice(0, tL.length), borderWidth: 0 }] },
-        options: { plugins: { legend: { position: 'right', labels: { boxWidth: 10, padding: 6, font: { size: 10 }, color: '#c8d6e5' } } }, cutout: '65%', maintainAspectRatio: false }
-      });
-    } catch (e) {}
-  }
-
-  // ── Exposure Summary ──
-  const longExp = Object.values(positions).filter(p => p.netQty > 0).reduce((s, p) => s + (p.totalBuyCost / p.totalBuyQty * p.netQty), 0);
-  const shortExp = 0;
-  const netExp = longExp - shortExp;
-  const nav = pnl.openCostBasis || 1;
-  const expBody = document.getElementById('opt-exposure-body');
-  if (expBody) {
-    expBody.innerHTML = `
-      <div class="exposure-row"><span class="elbl">Long Exposure</span><span class="eval"><span class="big up">$${fmtK(longExp)}</span><br/><span class="small">${fmt(nav ? longExp / nav * 100 : 0, 1)}% of cost basis</span></span></div>
-      <div class="exposure-row"><span class="elbl">Short Exposure</span><span class="eval"><span class="big down">$${fmtK(shortExp)}</span><br/><span class="small">0.0%</span></span></div>
-      <div class="exposure-row"><span class="elbl">Net Exposure</span><span class="eval"><span class="big ${pc(netExp)}">$${fmtK(netExp)}</span><br/><span class="small">${fmt(nav ? netExp / nav * 100 : 0, 1)}% net</span></span></div>
-      <div class="exposure-row"><span class="elbl">Total Trades</span><span class="eval"><span class="big neutral">${trades.length}</span></span></div>
-      <div class="exposure-row"><span class="elbl">Closed Positions</span><span class="eval"><span class="big neutral">${pnl.closedTrades}</span></span></div>
-      <div style="margin-top:8px;font-size:10px;color:var(--text-dim)">Exposure Gauge</div>
-      <div class="gauge-track"><div class="gauge-fill" style="width:${Math.min(100, Math.max(0, longExp > 0 ? 75 : 5))}%"></div></div>
-      <div class="gauge-labels"><span>No Positions</span><span>Moderate</span><span>Fully Deployed</span></div>
-    `;
-  }
-}
-
-// ── Render Positions View ──────────────────────────────────────────────────────
-function renderPositionsView(positions) {
+// ══════════════════════════════════════════════════════════════════════════════
+// OPEN POSITIONS TAB
+// ══════════════════════════════════════════════════════════════════════════════
+function renderPositionsView(trades, positions, pnl) {
   const container = document.getElementById('view-positions');
-  
-  // Filter to open positions only
-  const openPositions = Object.entries(positions)
-    .filter(([_, pos]) => pos.netQty > 0)
-    .sort((a, b) => new Date(a[1].expiry) - new Date(b[1].expiry));
-  
-  if (openPositions.length === 0) {
-    container.innerHTML = `
-      <div class="trade-empty-state">
-        <div class="trade-empty-icon">📭</div>
-        <div class="trade-empty-text">No open positions.<br>Add trades to track your portfolio.</div>
-      </div>
-    `;
-    return;
+  const openPositions = Object.entries(positions).filter(([_,p])=>p.netQty>0).sort((a,b)=>new Date(a[1].expiry)-new Date(b[1].expiry));
+  const openCount = openPositions.length;
+  const todayStr = new Date().toISOString().slice(0,10);
+  let dayPnl = 0;
+  trades.forEach(t => { if((t.tradeDate||t.date||'')===todayStr){const s=t.action==='SELL'?1:-1;dayPnl+=s*(Math.abs(t.total||0)||(t.qty*t.price*100))-(t.fees||0);} });
+  const longExp = Object.values(positions).filter(p=>p.netQty>0).reduce((s,p)=>s+(p.totalBuyCost/p.totalBuyQty*p.netQty),0);
+  const netExp = longExp;
+
+  let html = `
+    <div class="metrics-row" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+      <div class="m-card"><div class="label">OPEN COST BASIS</div><div class="value neutral">$${fmtK(pnl.openCostBasis)}</div></div>
+      <div class="m-card"><div class="label">DAY P&L</div><div class="value ${pc(dayPnl)}">${psDollar(dayPnl)}</div></div>
+      <div class="m-card"><div class="label">POSITIONS</div><div class="value accent-c">${openCount}</div></div>
+      <div class="m-card"><div class="label">NET EXPOSURE</div><div class="value ${pc(netExp)}">$${fmtK(netExp)}</div></div>
+    </div>`;
+
+  if (openCount === 0) {
+    html += `<div class="trade-empty-state"><div class="trade-empty-icon">📭</div><div class="trade-empty-text">No open positions.<br>Add trades to track your portfolio.</div></div>`;
+  } else {
+    html += `<div class="position-cards">${openPositions.map(([key,pos])=>{
+      const dte=calculateDTE(pos.expiry); const dteClass=getDTEClass(dte);
+      const avgCost=pos.totalBuyCost/pos.totalBuyQty; const costBasis=avgCost*pos.netQty;
+      return `<div class="position-card"><div><div class="position-ticker">${pos.ticker}</div><div class="position-details"><span class="${pos.optionType==='CALL'?'trade-type-call':'trade-type-put'}">${pos.optionType}</span> $${pos.strike} · ${pos.expiry}</div></div><div class="position-metric"><div class="position-metric-value ${dteClass}">${dte}d</div><div class="position-metric-label">DTE</div></div><div class="position-metric"><div class="position-metric-value">${pos.netQty}</div><div class="position-metric-label">Contracts</div></div><div class="position-metric"><div class="position-metric-value">$${(avgCost/100).toFixed(2)}</div><div class="position-metric-label">Avg Cost</div></div><div class="position-metric"><div class="position-metric-value">$${costBasis.toFixed(0)}</div><div class="position-metric-label">Cost Basis</div></div></div>`;
+    }).join('')}</div>`;
   }
-  
-  container.innerHTML = `
-    <div class="position-cards">
-      ${openPositions.map(([key, pos]) => {
-        const dte = calculateDTE(pos.expiry);
-        const dteClass = getDTEClass(dte);
-        const avgCost = pos.totalBuyCost / pos.totalBuyQty;
-        const costBasis = avgCost * pos.netQty;
-        
-        return `
-          <div class="position-card">
-            <div>
-              <div class="position-ticker">${pos.ticker}</div>
-              <div class="position-details">
-                <span class="${pos.optionType === 'CALL' ? 'trade-type-call' : 'trade-type-put'}">${pos.optionType}</span>
-                $${pos.strike} · ${pos.expiry}
-              </div>
-            </div>
-            <div class="position-metric">
-              <div class="position-metric-value ${dteClass}">${dte}d</div>
-              <div class="position-metric-label">DTE</div>
-            </div>
-            <div class="position-metric">
-              <div class="position-metric-value">${pos.netQty}</div>
-              <div class="position-metric-label">Contracts</div>
-            </div>
-            <div class="position-metric">
-              <div class="position-metric-value">$${(avgCost / 100).toFixed(2)}</div>
-              <div class="position-metric-label">Avg Cost</div>
-            </div>
-            <div class="position-metric">
-              <div class="position-metric-value">$${costBasis.toFixed(0)}</div>
-              <div class="position-metric-label">Cost Basis</div>
-            </div>
-          </div>
-        `;
-      }).join('')}
+
+  // Charts + Exposure + Allocation
+  html += `
+    <div class="grid g2" style="margin-top:16px">
+      <div class="card"><div class="card-header">CUMULATIVE P&L</div><div class="chart-box"><canvas id="cv-pos-cum"></canvas></div></div>
+      <div class="card"><div class="card-header">WEEKLY P&L</div><div class="chart-box"><canvas id="cv-pos-weekly"></canvas></div></div>
     </div>
-  `;
+    <div class="grid g2" style="margin-top:16px">
+      <div class="card"><div class="card-header">EXPOSURE SUMMARY</div>
+        <div class="exposure-row"><span class="elbl">Long Exposure</span><span class="eval"><span class="big up">$${fmtK(longExp)}</span></span></div>
+        <div class="exposure-row"><span class="elbl">Short Exposure</span><span class="eval"><span class="big down">$0</span></span></div>
+        <div class="exposure-row"><span class="elbl">Net Exposure</span><span class="eval"><span class="big ${pc(netExp)}">$${fmtK(netExp)}</span></span></div>
+        <div style="margin-top:8px;font-size:10px;color:var(--text-dim)">Exposure Gauge</div>
+        <div class="gauge-track"><div class="gauge-fill" style="width:${Math.min(100,Math.max(0,longExp>0?75:5))}%"></div></div>
+        <div class="gauge-labels"><span>None</span><span>Moderate</span><span>Full</span></div>
+      </div>
+      <div class="card"><div class="card-header">SECTOR ALLOCATION</div><div class="donut-box"><canvas id="cv-pos-sector"></canvas></div></div>
+    </div>
+    <div class="grid g2" style="margin-top:16px">
+      <div class="card"><div class="card-header">STRATEGY ALLOCATION</div><div class="donut-box"><canvas id="cv-pos-strat"></canvas></div></div>
+      <div class="card" style="display:flex;align-items:center;justify-content:center;min-height:200px;color:var(--text-dim);font-size:12px">
+        <div style="text-align:center"><div style="font-size:28px;margin-bottom:8px;opacity:.4">📈</div>${openCount} open position${openCount!==1?'s':''}<br>${pnl.closedTrades} closed</div>
+      </div>
+    </div>`;
+
+  container.innerHTML = html;
+
+  // Render charts after DOM update
+  if (typeof makeChart === 'function') {
+    const daily = _buildDailyPnL(trades);
+    _chartCumPnL('cv-pos-cum', daily);
+    _chartBar('cv-pos-weekly', _buildWeeklyPnL(daily), 12);
+    // Sector
+    const sectors = {};
+    trades.forEach(t => { const sec=_OPT_SECTOR_MAP[t.ticker]||'Other'; sectors[sec]=(sectors[sec]||0)+(Math.abs(t.total||0)||(t.qty*t.price*100)); });
+    _chartDonut('cv-pos-sector', Object.keys(sectors), Object.values(sectors), _SECTOR_COLORS);
+    // Strategy
+    const strats = {};
+    trades.forEach(t => { const lb=(t.action==='BUY'?'Long ':'Short ')+((t.optionType||'').toUpperCase()==='CALL'?'Calls':'Puts'); strats[lb]=(strats[lb]||0)+(Math.abs(t.total||0)||(t.qty*t.price*100)); });
+    const filt = {}; for(const[k,v] of Object.entries(strats)) if(v>0) filt[k]=v;
+    _chartDonut('cv-pos-strat', Object.keys(filt), Object.values(filt), _STRAT_COLORS);
+  }
 }
 
-// ── Render History View ────────────────────────────────────────────────────────
-function renderHistoryView(trades) {
+// ══════════════════════════════════════════════════════════════════════════════
+// TRADE HISTORY TAB
+// ══════════════════════════════════════════════════════════════════════════════
+function renderHistoryView(trades, positions, pnl) {
   const container = document.getElementById('view-history');
-  
+  const todayStr = new Date().toISOString().slice(0,10);
+  const todayTrades = trades.filter(t=>(t.tradeDate||t.date||'')===todayStr).length;
+  const totalContracts = trades.reduce((s,t)=>s+(t.qty||0),0);
+
+  let html = `
+    <div class="metrics-row" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
+      <div class="m-card"><div class="label">TOTAL TRADES</div><div class="value neutral">${trades.length}</div></div>
+      <div class="m-card"><div class="label">TODAY'S TRADES</div><div class="value accent-c">${todayTrades}</div></div>
+      <div class="m-card"><div class="label">TOTAL VOLUME</div><div class="value neutral">${totalContracts} contracts</div></div>
+    </div>`;
+
   if (trades.length === 0) {
-    container.innerHTML = `
-      <div class="trade-empty-state">
-        <div class="trade-empty-icon">📋</div>
-        <div class="trade-empty-text">No trades yet.<br>Paste trade confirmations to get started.</div>
-      </div>
-    `;
-    return;
+    html += `<div class="trade-empty-state"><div class="trade-empty-icon">📋</div><div class="trade-empty-text">No trades yet.<br>Paste trade confirmations to get started.</div></div>`;
+  } else {
+    const sorted = [...trades].sort((a,b)=>new Date(b.tradeDate||b.date||0)-new Date(a.tradeDate||a.date||0));
+    html += `<div class="trade-table-container"><table class="trade-table"><thead><tr><th>Date</th><th>Ticker</th><th>Type</th><th>Strike</th><th>Expiry</th><th>Action</th><th>Qty</th><th>Price</th><th>Total</th><th>Fees</th><th>Broker</th><th></th></tr></thead><tbody>`;
+    html += sorted.map(t => {
+      const total = Math.abs(t.total||0)||(t.qty*t.price*100);
+      return `<tr><td>${t.tradeDate||t.date||''}</td><td style="font-weight:600;color:#fff;">${t.ticker}</td><td class="${t.optionType==='CALL'?'trade-type-call':'trade-type-put'}">${t.optionType}</td><td>$${t.strike}</td><td>${t.expiry}</td><td class="${t.action==='BUY'?'trade-action-buy':'trade-action-sell'}">${t.action}</td><td>${t.qty}</td><td>$${(t.price||0).toFixed(2)}</td><td>$${total.toFixed(0)}</td><td style="color:#666;">$${(t.fees||0).toFixed(2)}</td><td><span class="trade-broker-badge trade-broker-${t.broker||'unknown'}">${t.broker||'?'}</span></td><td><button class="trade-btn trade-btn-danger" style="padding:2px 6px;font-size:9px;" onclick="deleteTrade('${t.id}')">✕</button></td></tr>`;
+    }).join('');
+    html += `</tbody></table></div>`;
   }
-  
-  // Sort by date descending
-  const sorted = [...trades].sort((a, b) => new Date(b.tradeDate) - new Date(a.tradeDate));
-  
-  container.innerHTML = `
-    <div class="trade-table-container">
-      <table class="trade-table">
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Ticker</th>
-            <th>Type</th>
-            <th>Strike</th>
-            <th>Expiry</th>
-            <th>Action</th>
-            <th>Qty</th>
-            <th>Price</th>
-            <th>Total</th>
-            <th>Fees</th>
-            <th>Broker</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${sorted.map(t => {
-            const total = t.qty * t.price * 100;
-            const brokerClass = `trade-broker-${t.broker || 'unknown'}`;
-            return `
-              <tr>
-                <td>${t.tradeDate}</td>
-                <td style="font-weight:600;color:#fff;">${t.ticker}</td>
-                <td class="${t.optionType === 'CALL' ? 'trade-type-call' : 'trade-type-put'}">${t.optionType}</td>
-                <td>$${t.strike}</td>
-                <td>${t.expiry}</td>
-                <td class="${t.action === 'BUY' ? 'trade-action-buy' : 'trade-action-sell'}">${t.action}</td>
-                <td>${t.qty}</td>
-                <td>$${t.price.toFixed(2)}</td>
-                <td>$${total.toFixed(0)}</td>
-                <td style="color:#666;">$${(t.fees || 0).toFixed(2)}</td>
-                <td><span class="trade-broker-badge ${brokerClass}">${t.broker || '?'}</span></td>
-                <td>
-                  <button class="trade-btn trade-btn-danger" style="padding:2px 6px;font-size:9px;" onclick="deleteTrade('${t.id}')">✕</button>
-                </td>
-              </tr>
-            `;
-          }).join('')}
-        </tbody>
-      </table>
-    </div>
-  `;
+
+  // Add Trade section
+  html += _getAddTradeHTML();
+  container.innerHTML = html;
+  // Re-init drop zones after DOM insert
+  setTimeout(()=>{_initPDFDropZone();_initCSVDropZone()},50);
 }
 
-// ── Render P&L View ────────────────────────────────────────────────────────────
-function renderPnLView(positions, pnl) {
+// ══════════════════════════════════════════════════════════════════════════════
+// P&L SUMMARY TAB
+// ══════════════════════════════════════════════════════════════════════════════
+function renderPnLView(trades, positions, pnl) {
   const container = document.getElementById('view-pnl');
-  
-  // Get closed positions
+
+  // Closed positions analysis
   const closedPositions = Object.entries(positions)
-    .filter(([_, pos]) => pos.totalSellQty > 0)
-    .map(([key, pos]) => {
-      const closedQty = Math.min(pos.totalBuyQty, pos.totalSellQty);
-      const avgBuy = pos.totalBuyCost / pos.totalBuyQty;
-      const avgSell = pos.totalSellProceeds / pos.totalSellQty;
-      const pnl = ((avgSell - avgBuy) * closedQty) - pos.totalFees;
-      const pnlPercent = ((avgSell / avgBuy) - 1) * 100;
-      
-      return { ...pos, closedQty, avgBuy, avgSell, pnl, pnlPercent };
-    })
-    .sort((a, b) => b.pnl - a.pnl);
-  
-  container.innerHTML = `
-    <h3 style="color:#fff;font-size:14px;margin-bottom:16px;">Closed Trades P&L</h3>
-    ${closedPositions.length === 0 ? `
-      <div class="trade-empty-state">
-        <div class="trade-empty-icon">📊</div>
-        <div class="trade-empty-text">No closed trades yet.</div>
+    .filter(([_,pos])=>pos.totalSellQty>0)
+    .map(([key,pos])=>{
+      const cq=Math.min(pos.totalBuyQty,pos.totalSellQty);
+      const ab=pos.totalBuyCost/pos.totalBuyQty; const as=pos.totalSellProceeds/pos.totalSellQty;
+      const p=((as-ab)*cq)-pos.totalFees; const pp=((as/ab)-1)*100;
+      // Find entry/exit dates from trades
+      const t=pos.trades||[]; const buys=t.filter(x=>x.action==='BUY'); const sells=t.filter(x=>x.action==='SELL');
+      const entry=buys.length?buys.sort((a,b)=>(a.tradeDate||a.date||'').localeCompare(b.tradeDate||b.date||''))[0]:{};
+      const exit=sells.length?sells.sort((a,b)=>(b.tradeDate||b.date||'').localeCompare(a.tradeDate||a.date||''))[0]:{};
+      const entryDate=entry.tradeDate||entry.date||''; const exitDate=exit.tradeDate||exit.date||'';
+      const holdDays=entryDate&&exitDate?Math.max(0,Math.round((new Date(exitDate)-new Date(entryDate))/(86400000))):0;
+      return {...pos, closedQty:cq, avgBuy:ab, avgSell:as, pnl:p, pnlPercent:pp, entryDate, exitDate, holdDays};
+    }).sort((a,b)=>b.pnl-a.pnl);
+
+  const wins = closedPositions.filter(p=>p.pnl>0);
+  const losses = closedPositions.filter(p=>p.pnl<=0);
+  const avgWin = wins.length ? wins.reduce((s,p)=>s+p.pnl,0)/wins.length : 0;
+  const avgLoss = losses.length ? Math.abs(losses.reduce((s,p)=>s+p.pnl,0)/losses.length) : 0;
+  const profitFactor = avgLoss>0 ? (wins.reduce((s,p)=>s+p.pnl,0) / Math.abs(losses.reduce((s,p)=>s+p.pnl,0)||1)) : wins.length ? 999 : 0;
+  const best = closedPositions.length ? closedPositions[0] : null;
+  const worst = closedPositions.length ? closedPositions[closedPositions.length-1] : null;
+
+  let html = `
+    <div class="metrics-row" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+      <div class="m-card"><div class="label">REALIZED P&L</div><div class="value ${pc(pnl.realizedPnL)}">${psDollar(pnl.realizedPnL)}</div></div>
+      <div class="m-card"><div class="label">WIN RATE</div><div class="value neutral">${pnl.winRate!==null?pnl.winRate+'%':'—'}</div></div>
+      <div class="m-card"><div class="label">PROFIT FACTOR</div><div class="value ${pc(profitFactor-1)}">${profitFactor>=100?'∞':profitFactor.toFixed(2)}</div></div>
+      <div class="m-card"><div class="label">AVG WIN / AVG LOSS</div><div class="value neutral">$${avgWin.toFixed(0)} / $${avgLoss.toFixed(0)}</div></div>
+    </div>
+    <div class="grid g2" style="margin-top:16px">
+      <div class="card"><div class="card-header">CUMULATIVE P&L</div><div class="chart-box"><canvas id="cv-pnl-cum"></canvas></div></div>
+      <div class="card"><div class="card-header">MONTHLY P&L</div><div class="chart-box"><canvas id="cv-pnl-monthly"></canvas></div></div>
+    </div>`;
+
+  // Best / Worst callouts
+  if (best && worst && closedPositions.length >= 2) {
+    html += `<div class="grid g2" style="margin-top:16px">
+      <div class="card" style="border-left:3px solid var(--green)"><div class="card-header">BEST TRADE</div>
+        <div style="padding:8px 0"><span style="font-weight:600;color:#fff">${best.ticker}</span> <span class="${best.optionType==='CALL'?'trade-type-call':'trade-type-put'}">${best.optionType}</span> $${best.strike}<br/>
+        <span class="up" style="font-size:18px;font-weight:700">${psDollar(best.pnl)}</span> <span style="color:var(--text-dim);font-size:11px">(${best.pnlPercent>=0?'+':''}${best.pnlPercent.toFixed(1)}%)</span></div>
       </div>
-    ` : `
-      <div class="trade-table-container">
-        <table class="trade-table">
-          <thead>
-            <tr>
-              <th>Contract</th>
-              <th>Qty Closed</th>
-              <th>Avg Buy</th>
-              <th>Avg Sell</th>
-              <th>Fees</th>
-              <th>P&L</th>
-              <th>P&L %</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${closedPositions.map(p => `
-              <tr>
-                <td>
-                  <span style="font-weight:600;color:#fff;">${p.ticker}</span>
-                  <span class="${p.optionType === 'CALL' ? 'trade-type-call' : 'trade-type-put'}">${p.optionType}</span>
-                  $${p.strike} ${p.expiry}
-                </td>
-                <td>${p.closedQty}</td>
-                <td>$${(p.avgBuy / 100).toFixed(2)}</td>
-                <td>$${(p.avgSell / 100).toFixed(2)}</td>
-                <td style="color:#666;">$${p.totalFees.toFixed(2)}</td>
-                <td class="${p.pnl >= 0 ? 'trade-pnl-positive' : 'trade-pnl-negative'}">
-                  ${p.pnl >= 0 ? '+' : ''}$${p.pnl.toFixed(2)}
-                </td>
-                <td class="${p.pnlPercent >= 0 ? 'trade-pnl-positive' : 'trade-pnl-negative'}">
-                  ${p.pnlPercent >= 0 ? '+' : ''}${p.pnlPercent.toFixed(1)}%
-                </td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
+      <div class="card" style="border-left:3px solid var(--red)"><div class="card-header">WORST TRADE</div>
+        <div style="padding:8px 0"><span style="font-weight:600;color:#fff">${worst.ticker}</span> <span class="${worst.optionType==='CALL'?'trade-type-call':'trade-type-put'}">${worst.optionType}</span> $${worst.strike}<br/>
+        <span class="down" style="font-size:18px;font-weight:700">${psDollar(worst.pnl)}</span> <span style="color:var(--text-dim);font-size:11px">(${worst.pnlPercent>=0?'+':''}${worst.pnlPercent.toFixed(1)}%)</span></div>
       </div>
-    `}
-  `;
+    </div>`;
+  }
+
+  // Closed trades table
+  if (closedPositions.length) {
+    html += `<div class="card" style="margin-top:16px"><div class="card-header">CLOSED TRADES</div>
+      <div class="trade-table-container"><table class="trade-table"><thead><tr><th>Entry</th><th>Exit</th><th>Contract</th><th>Qty</th><th>Avg Buy</th><th>Avg Sell</th><th>Fees</th><th>P&L</th><th>Return</th><th>Hold</th></tr></thead><tbody>`;
+    html += closedPositions.map(p=>`<tr><td>${p.entryDate||'—'}</td><td>${p.exitDate||(p.expired?'Expired':'—')}</td><td><span style="font-weight:600;color:#fff">${p.ticker}</span> <span class="${p.optionType==='CALL'?'trade-type-call':'trade-type-put'}">${p.optionType}</span> $${p.strike}</td><td>${p.closedQty}</td><td>$${(p.avgBuy/100).toFixed(2)}</td><td>$${(p.avgSell/100).toFixed(2)}</td><td style="color:#666">$${p.totalFees.toFixed(2)}</td><td class="${p.pnl>=0?'trade-pnl-positive':'trade-pnl-negative'}">${p.pnl>=0?'+':''}$${p.pnl.toFixed(2)}</td><td class="${p.pnlPercent>=0?'trade-pnl-positive':'trade-pnl-negative'}">${p.pnlPercent>=0?'+':''}${p.pnlPercent.toFixed(1)}%</td><td>${p.holdDays}d</td></tr>`).join('');
+    html += `</tbody></table></div></div>`;
+  } else {
+    html += `<div class="trade-empty-state" style="margin-top:16px"><div class="trade-empty-icon">📊</div><div class="trade-empty-text">No closed trades yet.</div></div>`;
+  }
+
+  container.innerHTML = html;
+
+  // Charts
+  if (typeof makeChart === 'function') {
+    const daily = _buildDailyPnL(trades);
+    _chartCumPnL('cv-pnl-cum', daily);
+    _chartBar('cv-pnl-monthly', _buildMonthlyPnL(daily), 8);
+  }
 }
 
 // ── Paste Preview ──────────────────────────────────────────────────────────────

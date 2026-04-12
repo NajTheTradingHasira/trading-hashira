@@ -3906,9 +3906,9 @@ function _portfolioApi() {
 }
 
 function getTrades() {
-  // Return cache if available, else localStorage fallback
-  if (_tradesCache) return _tradesCache;
-  try { return JSON.parse(localStorage.getItem(TRADES_STORAGE_KEY) || '[]'); } catch { return []; }
+  // Return cache if available, else localStorage fallback — always normalized
+  if (_tradesCache) return _tradesCache.map(_normalizeTrade);
+  try { return JSON.parse(localStorage.getItem(TRADES_STORAGE_KEY) || '[]').map(_normalizeTrade); } catch { return []; }
 }
 
 function saveTrades(trades) {
@@ -3922,17 +3922,31 @@ function generateTradeId() {
 
 // ── API helpers ───────────────────────────────────────────────────────────────
 
+function _normalizeTrade(t) {
+  // Ensure both old (optionType/qty/tradeDate) and new (option_type/quantity/date) field names
+  return {
+    ...t,
+    optionType: t.optionType || t.option_type || null,
+    option_type: t.option_type || t.optionType || null,
+    qty: t.qty || t.quantity || 1,
+    quantity: t.quantity || t.qty || 1,
+    tradeDate: t.tradeDate || t.date || '',
+    date: t.date || t.tradeDate || '',
+    total: t.total || ((t.qty||t.quantity||1) * (t.price||0) * 100),
+  };
+}
+
 async function apiFetchTrades(type) {
-  const base = _portfolioApi(); if (!base) return getTrades();
+  const base = _portfolioApi(); if (!base) return getTrades().map(_normalizeTrade);
   try {
     const url = base + '/api/portfolio/trades' + (type ? '?type=' + type : '');
     const r = await fetch(url); if (!r.ok) throw 0;
     const d = await r.json();
-    const trades = d.trades || [];
+    const trades = (d.trades || []).map(_normalizeTrade);
     _tradesCache = trades;
     localStorage.setItem(TRADES_STORAGE_KEY, JSON.stringify(trades));
     return trades;
-  } catch { return getTrades(); }
+  } catch { return getTrades().map(_normalizeTrade); }
 }
 
 async function apiSaveTrades(tradesArr) {

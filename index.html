@@ -3784,6 +3784,7 @@ function getTradeHistoryHTML() {
         <div style="display:flex;align-items:center;gap:8px">
           <span id="trades-sync-badge" style="font-size:10px;color:#666;font-family:'JetBrains Mono',monospace">○ NOT SYNCED</span>
           <button class="trade-btn trade-btn-secondary" style="padding:4px 10px;font-size:10px" onclick="bulkSyncTrades()">⟳ Sync</button>
+          <button class="trade-btn trade-btn-danger" style="padding:4px 10px;font-size:10px" onclick="deleteAllTrades()">Clear All</button>
         </div>
       </div>
 
@@ -4713,8 +4714,9 @@ async function apiPreviewWebullPDF(base64) {
 
 async function confirmPDFImport() {
   if (!_pdfParsedTrades.length) return;
-  await apiSaveTrades(_pdfParsedTrades.map(t => ({ ...t, id: t.id || generateTradeId() })));
-  const all = getTrades().concat(_pdfParsedTrades);
+  const newTrades = _pdfParsedTrades.map(t => ({ ...t, id: t.id || generateTradeId() }));
+  await apiSaveTrades(newTrades);
+  const all = getTrades().concat(newTrades);
   saveTrades(all);
   _pdfParsedTrades = [];
   document.getElementById('pdf-preview').innerHTML = '';
@@ -4775,8 +4777,9 @@ async function uploadRobinhoodCSV(file) {
 
 async function confirmCSVImport() {
   if (!_csvParsedTrades.length) return;
-  await apiSaveTrades(_csvParsedTrades.map(t => ({ ...t, id: t.id || generateTradeId() })));
-  const all = getTrades().concat(_csvParsedTrades);
+  const newTrades = _csvParsedTrades.map(t => ({ ...t, id: t.id || generateTradeId() }));
+  await apiSaveTrades(newTrades);
+  const all = getTrades().concat(newTrades);
   saveTrades(all);
   _csvParsedTrades = [];
   document.getElementById('csv-preview').innerHTML = '<span style="color:#4caf50">✓ Imported</span>';
@@ -4852,13 +4855,24 @@ function addManualTrade() {
 }
 
 // ── Delete Trade ───────────────────────────────────────────────────────────────
-function deleteTrade(id) {
+async function deleteTrade(id) {
+  if (!id || id === 'undefined') { alert('Trade has no ID — try syncing first.'); return; }
   if (!confirm('Delete this trade?')) return;
-
+  await apiDeleteTrade(id);
   let trades = getTrades();
   trades = trades.filter(t => t.id !== id);
   saveTrades(trades);
-  apiDeleteTrade(id);
+  renderCurrentView();
+}
+
+async function deleteAllTrades() {
+  if (!confirm('Delete ALL trades? This cannot be undone.')) return;
+  const base = _portfolioApi();
+  if (base) {
+    try { await fetch(base + '/api/portfolio/trades', { method: 'DELETE' }); } catch {}
+  }
+  saveTrades([]);
+  _tradesCache = [];
   renderCurrentView();
 }
 

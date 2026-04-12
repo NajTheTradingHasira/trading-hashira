@@ -2623,9 +2623,13 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
   _dpData:[],_dpScored:[],_dpLevels:[],_dpTab:'monitor',_dpLive:false,
   _dpSizeFilt:'ALL',_dpSideFilt:'ALL',_dpSectorFilt:'ALL',_dpAlertFilt:'ALL',
   _dpSectors:['Technology','Communication','Consumer Discretionary','Financials','Healthcare','Industrials','Energy','Materials','Utilities','Real Estate'],
+  // Live Feed state
+  _dpFeedPrints:[],_dpFeedSrcFilt:'ALL',_dpFeedSzFilt:'ALL',_dpFeedTicker:'',_dpFeedSort:'time',_dpFeedSortDir:'desc',
+  _dpFeedTimer:null,_dpFeedCountdown:30,_dpFeedLastTs:'',
 
   switchDPTab(tab){
     NX._dpTab=tab;
+    if(tab!=='feed')NX._stopFeedRefresh();
     const btns=$$('#dp-main-tabs .tab-btn');
     ['feed','monitor','levels'].forEach((t,i)=>{
       btns[i].style.borderColor=t===tab?'var(--accent-dim)':'var(--border)';
@@ -2772,41 +2776,78 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
   },
 
   // ─── LIVE FEED TAB ───
+  async _fetchDPFeed(){
+    try{
+      const r=await fetch(NX.getBase()+'/api/darkpool/feed');
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      const d=await r.json();
+      NX._dpFeedPrints=d.prints||[];
+      NX._dpFeedLastTs=d.last_updated||'';
+      return d;
+    }catch(e){console.warn('[DP Feed]',e.message);return null;}
+  },
+
+  _startFeedRefresh(){
+    NX._stopFeedRefresh();
+    NX._dpFeedCountdown=30;
+    NX._dpFeedTimer=setInterval(()=>{
+      NX._dpFeedCountdown--;
+      const cdEl=$('#dp-feed-cd');if(cdEl)cdEl.textContent=NX._dpFeedCountdown+'s';
+      if(NX._dpFeedCountdown<=0){
+        NX._dpFeedCountdown=30;
+        const tbl=$('#dp-feed-table');
+        if(!tbl||tbl.scrollTop<50){NX._fetchDPFeed().then(()=>NX._renderDPFeedTable());}
+      }
+    },1000);
+  },
+  _stopFeedRefresh(){if(NX._dpFeedTimer){clearInterval(NX._dpFeedTimer);NX._dpFeedTimer=null;}},
+
+  _dpFeedSortFn(a,b){
+    const s=NX._dpFeedSort,dir=NX._dpFeedSortDir==='asc'?1:-1;
+    if(s==='premium')return dir*((a.premium||0)-(b.premium||0));
+    if(s==='size')return dir*((a.size||0)-(b.size||0));
+    if(s==='pct_vol')return dir*((a.pct_vol||0)-(b.pct_vol||0));
+    if(s==='ticker')return dir*((a.ticker||'').localeCompare(b.ticker||''));
+    return dir*((a.time||'').localeCompare(b.time||''));
+  },
+
   _renderDPFeed(el){
+    if(NX._dpLive){
+      // Live mode: fetch combined DP+lit feed then render
+      el.innerHTML='<div class="loading">Fetching dark pool + lit flow prints...</div>';
+      NX._fetchDPFeed().then(d=>{
+        NX._renderDPFeedLive(el,d);
+        NX._startFeedRefresh();
+      });
+    } else {
+      // Mock mode: use existing mock data
+      NX._stopFeedRefresh();
+      NX._renderDPFeedMock(el);
+    }
+  },
+
+  _renderDPFeedMock(el){
     let data=[...NX._dpData];
     const sf=NX._dpSizeFilt,sdf=NX._dpSideFilt,secf=NX._dpSectorFilt;
     if(sf!=='ALL')data=data.filter(d=>d.sizeCategory===sf);
     if(sdf==='BUY')data=data.filter(d=>d.aboveVwap);
     else if(sdf==='SELL')data=data.filter(d=>!d.aboveVwap);
     if(secf!=='ALL')data=data.filter(d=>d.sector===secf);
-
     const totalVol=data.reduce((s,d)=>s+d.volume,0);
     const totalNot=data.reduce((s,d)=>s+d.notional,0);
     const buyPct=data.length?(data.filter(d=>d.aboveVwap).length/data.length*100).toFixed(1):'0';
     const whales=data.filter(d=>d.sizeCategory==='WHALE').length;
     const megas=data.filter(d=>d.sizeCategory==='MEGA').length;
     const uniq=[...new Set(data.map(d=>d.ticker))].length;
-    const now=new Date();const ts=now.toLocaleTimeString('en-US',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
-
+    const ts=new Date().toLocaleTimeString('en-US',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
     el.innerHTML=`
     <div class="metrics-row g4">
       <div class="m-card"><div class="label">MARKET DP VOLUME</div><div class="value accent-c">${fmtK(totalVol)}</div><div class="sub">${uniq} tickers active</div></div>
       <div class="m-card"><div class="label">TOTAL NOTIONAL</div><div class="value neutral">$${fmtK(totalNot)}</div></div>
-      <div class="m-card"><div class="label">NET SIGNAL</div><div class="value ${+buyPct>=50?'up':'down'}">${buyPct}% ${+buyPct>=50?'BUY':'SELL'}</div><div class="sub">${+buyPct>=55?'Institutional buying':+buyPct<=45?'Institutional selling':'Neutral'}</div></div>
-      <div class="m-card"><div class="label">WHALE / MEGA</div><div class="value" style="color:var(--purple)">${whales} / ${megas}</div><div class="sub">≥1M / ≥500K shares</div></div>
+      <div class="m-card"><div class="label">NET SIGNAL</div><div class="value ${+buyPct>=50?'up':'down'}">${buyPct}% ${+buyPct>=50?'BUY':'SELL'}</div></div>
+      <div class="m-card"><div class="label">WHALE / MEGA</div><div class="value" style="color:var(--purple)">${whales} / ${megas}</div></div>
     </div>
-    <div style="display:flex;gap:6px;margin-bottom:14px;align-items:center;flex-wrap:wrap">
-      ${['ALL','WHALE','MEGA','BLOCK'].map(s=>`<button class="btn btn-sm" style="${NX._dpSizeFilt===s?'background:var(--accent);color:var(--bg0);border-color:var(--accent)':''}" onclick="NX._dpSizeFilt='${s}';NX._renderDP()">${s}</button>`).join('')}
-      <span style="width:1px;height:20px;background:var(--border);margin:0 4px"></span>
-      ${['ALL','▲ BUY','▼ SELL'].map((s,i)=>{const v=['ALL','BUY','SELL'][i];return`<button class="btn btn-sm" style="${NX._dpSideFilt===v?'background:var(--bg4);border-color:var(--text-dim)':''}" onclick="NX._dpSideFilt='${v}';NX._renderDP()">${s}</button>`}).join('')}
-      <select class="nx-input" style="margin-left:auto;font-size:10px;padding:4px 8px" onchange="NX._dpSectorFilt=this.value;NX._renderDP()">
-        <option value="ALL">ALL SECTORS</option>
-        ${NX._dpSectors.map(s=>`<option value="${s}"${NX._dpSectorFilt===s?' selected':''}>${s}</option>`).join('')}
-      </select>
-      <span style="font-size:9px;color:${NX._dpLive?'var(--green)':'var(--text-dim)'}">${NX._dpLive?'● LIVE':'○ MOCK'}</span>
-    </div>
-    ${NX._dpLive?`<div style="font-size:10px;color:var(--green);margin-bottom:8px">● LIVE · Last: ${NX._dpLastUpdated?new Date(NX._dpLastUpdated).toLocaleTimeString('en-US',{hour12:false}):ts} <span style="float:right">${data.length} names</span></div>
-    <div class="card" style="padding:14px;margin-bottom:12px;border-color:var(--accent-dim)"><div style="font-size:11px;color:var(--text-muted)">Live individual print feed requires WebSocket — coming soon. Use <strong>Flow Monitor</strong> tab for aggregated per-ticker view with scores, alerts, and regime detection.</div></div>`:`<div style="font-size:10px;color:var(--text-dim);margin-bottom:8px">○ MOCK · Last: ${ts} <span style="float:right">${data.length} prints</span></div>`}
+    <div style="font-size:10px;color:var(--text-dim);margin-bottom:8px">○ MOCK · Last: ${ts} <span style="float:right">${data.length} prints</span></div>
     <div class="card" style="padding:0"><div style="overflow-x:auto;max-height:520px;overflow-y:auto"><table>
     <thead><tr><th>TIME</th><th>TICKER</th><th>SECTOR</th><th>PRICE</th><th>VWAP</th><th>SHARES</th><th>NOTIONAL</th><th>VENUE</th><th>TYPE</th><th>SIGNAL</th></tr></thead>
     <tbody>${data.slice(0,80).map(d=>`<tr${d.sizeCategory==='WHALE'?' style="background:var(--purple-bg)"':''}>
@@ -2821,6 +2862,80 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
       <td><span class="badge ${d.sizeCategory==='WHALE'?'b-purple':d.sizeCategory==='MEGA'?'b-accent':'b-amber'}">${d.sizeCategory}</span></td>
       <td><span class="badge ${d.aboveVwap?'b-green':'b-red'}">${d.aboveVwap?'▲ BUY':'▼ SELL'}</span></td>
     </tr>`).join('')}</tbody></table></div></div>`;
+  },
+
+  _renderDPFeedLive(el, apiData){
+    const prints=NX._dpFeedPrints;
+    const dpCnt=apiData?.dp_count||prints.filter(p=>p.source==='DARKPOOL').length;
+    const litCnt=apiData?.lit_count||prints.filter(p=>p.source==='LIT').length;
+    const sweepCnt=prints.filter(p=>(p.trade_code||'').includes('sweep')).length;
+    const ts=NX._dpFeedLastTs?new Date(NX._dpFeedLastTs).toLocaleTimeString('en-US',{hour12:false}):'—';
+
+    el.innerHTML=`
+    <div style="font-size:10px;color:var(--green);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
+      <span>● LIVE · ${prints.length} prints · ${dpCnt} dark pool · ${litCnt} lit · <strong style="color:var(--purple)">${sweepCnt} sweeps detected</strong> · Last: ${ts}</span>
+      <span style="display:flex;align-items:center;gap:6px"><span id="dp-feed-cd" style="color:var(--text-dim)">30s</span><button class="btn btn-sm" onclick="NX._dpFeedCountdown=0" style="font-size:10px;padding:2px 8px">↻</button></span>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
+      ${['ALL','DARKPOOL','LIT','SWEEPS'].map(s=>`<button class="btn btn-sm" style="${NX._dpFeedSrcFilt===s?'background:var(--accent);color:var(--bg0);border-color:var(--accent)':''}" onclick="NX._dpFeedSrcFilt='${s}';NX._renderDPFeedTable()">${s==='SWEEPS'?'SWEEPS ONLY':s}</button>`).join('')}
+      <span style="width:1px;height:20px;background:var(--border);margin:0 4px"></span>
+      ${['ALL','WHALE','MEGA','BLOCK'].map(s=>`<button class="btn btn-sm" style="${NX._dpFeedSzFilt===s?'background:var(--bg4);border-color:var(--text-dim)':''}" onclick="NX._dpFeedSzFilt='${s}';NX._renderDPFeedTable()">${s==='ALL'?'ALL SIZES':s}</button>`).join('')}
+      <input class="nx-input" type="text" placeholder="Ticker..." value="${NX._dpFeedTicker}" oninput="NX._dpFeedTicker=this.value.toUpperCase();NX._renderDPFeedTable()" style="margin-left:auto;width:80px;font-size:10px;padding:4px 8px;text-transform:uppercase"/>
+    </div>
+    <div id="dp-feed-tbody-wrap"></div>`;
+    NX._renderDPFeedTable();
+  },
+
+  _renderDPFeedTable(){
+    const wrap=$('#dp-feed-tbody-wrap');if(!wrap)return;
+    let data=[...NX._dpFeedPrints];
+    // Filters
+    const sf=NX._dpFeedSrcFilt;
+    if(sf==='DARKPOOL')data=data.filter(d=>d.source==='DARKPOOL');
+    else if(sf==='LIT')data=data.filter(d=>d.source==='LIT');
+    else if(sf==='SWEEPS')data=data.filter(d=>(d.trade_code||'').includes('sweep'));
+    const sz=NX._dpFeedSzFilt;
+    if(sz==='WHALE')data=data.filter(d=>(d.premium||0)>1000000);
+    else if(sz==='MEGA')data=data.filter(d=>(d.premium||0)>5000000);
+    else if(sz==='BLOCK')data=data.filter(d=>(d.size||0)>10000);
+    if(NX._dpFeedTicker)data=data.filter(d=>(d.ticker||'').includes(NX._dpFeedTicker));
+    // Sort
+    data.sort(NX._dpFeedSortFn);
+
+    const hdr=(col,label)=>{
+      const active=NX._dpFeedSort===col;
+      const arrow=active?(NX._dpFeedSortDir==='desc'?' ▼':' ▲'):'';
+      return `<th style="cursor:pointer;user-select:none${active?';color:var(--accent)':''}" onclick="if(NX._dpFeedSort==='${col}'){NX._dpFeedSortDir=NX._dpFeedSortDir==='desc'?'asc':'desc'}else{NX._dpFeedSort='${col}';NX._dpFeedSortDir='desc'};NX._renderDPFeedTable()">${label}${arrow}</th>`;
+    };
+
+    const fmtSz=n=>{if(!n)return'0';if(n>=1e6)return(n/1e6).toFixed(1)+'M';if(n>=1e3)return(n/1e3).toFixed(1)+'K';return n.toLocaleString();};
+    const fmtPrem=n=>{if(!n)return'$0';if(n>=1e6)return'$'+(n/1e6).toFixed(1)+'M';if(n>=1e3)return'$'+(n/1e3).toFixed(0)+'K';return'$'+n.toFixed(0);};
+
+    wrap.innerHTML=`
+    <div class="card" style="padding:0"><div id="dp-feed-table" style="overflow-x:auto;max-height:520px;overflow-y:auto"><table>
+    <thead><tr>${hdr('time','TIME')}${hdr('ticker','TICKER')}<th>PRICE</th>${hdr('size','SIZE')}${hdr('premium','PREMIUM')}${hdr('pct_vol','% VOL')}<th>SECTOR</th><th>SOURCE</th><th>TRADE CODE</th><th>SETTLE</th></tr></thead>
+    <tbody>${data.slice(0,200).map(d=>{
+      const isSweep=(d.trade_code||'').includes('sweep');
+      const pvClr=!d.pct_vol?'var(--text-dim)':d.pct_vol>5?'var(--red)':d.pct_vol>1?'var(--amber)':'var(--text)';
+      const tcBadge=isSweep?'<span class="badge b-purple" style="font-size:8px">SWEEP</span>'
+        :d.source==='DARKPOOL'?'<span class="badge" style="font-size:8px;background:var(--bg4);color:var(--text-dim)">OFF-EXCHANGE</span>'
+        :'<span class="badge" style="font-size:8px;background:var(--bg4);color:var(--text-dim)">REGULAR</span>';
+      const srcBadge=d.source==='DARKPOOL'?'<span class="badge b-accent" style="font-size:8px">DARKPOOL</span>':'<span class="badge b-purple" style="font-size:8px">LIT</span>';
+      const settleStr=(d.ext_hours||'').includes('extended')?'<span style="color:var(--amber)">EXT HRS</span>':'REG';
+      return `<tr${isSweep?' style="background:rgba(224,64,251,0.06)"':''}>
+        <td style="color:var(--text-dim);font-size:11px;white-space:nowrap">${d.time}</td>
+        <td style="font-weight:700;color:#fff">${d.ticker}</td>
+        <td>$${fmt(d.price)}</td>
+        <td style="font-weight:600">${fmtSz(d.size)}</td>
+        <td style="color:var(--green);font-weight:600">${fmtPrem(d.premium)}</td>
+        <td style="color:${pvClr}">${d.pct_vol!=null?d.pct_vol.toFixed(2)+'%':'—'}</td>
+        <td style="color:var(--text-dim);font-size:10px">${d.sector||'—'}</td>
+        <td>${srcBadge}</td>
+        <td>${tcBadge}</td>
+        <td style="font-size:10px">${settleStr}</td>
+      </tr>`;
+    }).join('')}</tbody></table></div></div>
+    <div style="font-size:10px;color:var(--text-dim);margin-top:6px">${data.length} prints shown</div>`;
   },
 
   // ─── FLOW MONITOR TAB ───

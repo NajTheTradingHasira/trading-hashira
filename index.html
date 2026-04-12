@@ -578,8 +578,8 @@ tr:hover{background:var(--bg2)}
         <button class="tab-btn" onclick="NX.switchDPTab('levels')" style="flex:1;text-align:center;padding:12px 0;border:1px solid var(--border);border-radius:0 4px 4px 0"><span style="font-size:14px">▤</span> INST. LEVELS<br/><span style="font-size:9px;color:var(--text-dim)">Hidden S/R · Auto</span></button>
       </div>
       <div style="display:flex;gap:10px;align-items:center;margin:16px 0;flex-wrap:wrap">
-        <span class="badge b-amber" style="font-size:10px;padding:4px 10px">● DEMO MODE · NO API CALLS · SEEDED MOCK DATA</span>
-        <button class="btn btn-sm" id="dp-live-btn" onclick="NX._dpLive=!NX._dpLive;NX.loadDarkPool()" style="border-color:var(--accent)">→ SWITCH TO LIVE</button>
+        <span class="badge b-amber" id="dp-mode-badge" style="font-size:10px;padding:4px 10px">● DEMO MODE · NO API CALLS · SEEDED MOCK DATA</span>
+        <button class="btn btn-sm" id="dp-live-btn" onclick="NX._toggleDPLive()" style="border-color:var(--accent)">→ SWITCH TO LIVE</button>
         <button class="pplx-btn" style="margin-left:auto" onclick="NX.askPerplexity('darkpool')">🔍 DARK POOL INTEL (PERPLEXITY)</button>
       </div>
       <div id="dp-content"></div>
@@ -2680,11 +2680,88 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     }).sort((a,b)=>b.score-a.score);
   },
 
-  loadDarkPool(){
-    if(!NX._dpData.length||NX._dpLive)NX._dpData=NX._genDPFeed();
-    NX._dpScored=NX._genDPScored();
-    const nc=$('#dp-name-count');if(nc)nc.textContent=NX._dpScored.length;
-    NX._renderDP();
+  _dpLastUpdated:'',
+
+  _toggleDPLive(){
+    NX._dpLive=!NX._dpLive;
+    const btn=$('#dp-live-btn');const badge=$('#dp-mode-badge');
+    if(NX._dpLive){
+      if(btn)btn.textContent='→ SWITCH TO MOCK';
+      if(badge){badge.className='badge b-green';badge.style.cssText='font-size:10px;padding:4px 10px';badge.textContent='● LIVE · UNUSUAL WHALES API';}
+    } else {
+      if(btn)btn.textContent='→ SWITCH TO LIVE';
+      if(badge){badge.className='badge b-amber';badge.style.cssText='font-size:10px;padding:4px 10px';badge.textContent='● DEMO MODE · NO API CALLS · SEEDED MOCK DATA';}
+    }
+    NX.loadDarkPool();
+  },
+
+  async loadDarkPool(){
+    if(NX._dpLive){
+      await NX._loadDPLive();
+    } else {
+      NX._dpLastUpdated='';
+      if(!NX._dpData.length)NX._dpData=NX._genDPFeed();
+      NX._dpScored=NX._genDPScored();
+      const nc=$('#dp-name-count');if(nc)nc.textContent=NX._dpScored.length;
+      NX._renderDP();
+    }
+  },
+
+  async _loadDPLive(){
+    const el=$('#dp-content');
+    if(el)el.innerHTML='<div class="loading">Fetching dark pool data...</div>';
+    try{
+      const base=NX.getBase();
+      const r=await fetch(base+'/api/darkpool');
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      const d=await r.json();
+
+      if(d.mock===true){
+        // API returned mock fallback — show warning
+        const badge=$('#dp-mode-badge');
+        if(badge){badge.className='badge b-amber';badge.textContent='● LIVE (MOCK FALLBACK) · UW API UNAVAILABLE';}
+      }
+
+      NX._dpLastUpdated=d.last_updated||'';
+      const tickers=d.tickers||[];
+
+      // Map live API → _dpScored format
+      NX._dpScored=tickers.map(t=>({
+        ticker:t.ticker,
+        sector:t.sector||'Unknown',
+        price:0, dayPct:0,
+        dpVol:t.dp_vol_pct||0,
+        shortPct:t.short_pct||0,
+        sent:t.sentiment||50,
+        whales:t.whales||0,
+        blocks:t.blocks||0,
+        notional:t.notional>=1e6?+((t.notional/1e6).toFixed(1)):+((t.notional/1e3).toFixed(0))/1000,
+        score:t.score||0,
+        alerts:t.alerts||[],
+        stage:t.stage||'—',
+        dpSup:0, dpRes:null, strongLevels:0,
+      })).sort((a,b)=>b.score-a.score);
+
+      // Build feed from live data (for Live Feed tab — basic representation)
+      NX._dpData=tickers.map((t,i)=>({
+        id:i, time:'—', ticker:t.ticker, sector:t.sector||'Unknown',
+        price:0, vwap:0, volume:0, notional:t.notional||0,
+        venue:'UW API', aboveVwap:t.sentiment>50,
+        sizeCategory:t.whales>0?'WHALE':t.blocks>50?'MEGA':'BLOCK',
+      }));
+
+      const nc=$('#dp-name-count');if(nc)nc.textContent=NX._dpScored.length;
+      NX._renderDP();
+    }catch(e){
+      console.warn('Dark pool live fetch failed:',e.message);
+      // Fallback to mock
+      const badge=$('#dp-mode-badge');
+      if(badge){badge.className='badge b-amber';badge.textContent='● LIVE FAILED · FALLING BACK TO MOCK';}
+      NX._dpData=NX._genDPFeed();
+      NX._dpScored=NX._genDPScored();
+      const nc=$('#dp-name-count');if(nc)nc.textContent=NX._dpScored.length;
+      NX._renderDP();
+    }
   },
 
   _renderDP(){
@@ -2726,9 +2803,10 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
         <option value="ALL">ALL SECTORS</option>
         ${NX._dpSectors.map(s=>`<option value="${s}"${NX._dpSectorFilt===s?' selected':''}>${s}</option>`).join('')}
       </select>
-      <span style="font-size:9px;color:var(--text-dim)">○ MOCK</span>
+      <span style="font-size:9px;color:${NX._dpLive?'var(--green)':'var(--text-dim)'}">${NX._dpLive?'● LIVE':'○ MOCK'}</span>
     </div>
-    <div style="font-size:10px;color:var(--text-dim);margin-bottom:8px">○ MOCK · Last: ${ts} <span style="float:right">${data.length} prints</span></div>
+    ${NX._dpLive?`<div style="font-size:10px;color:var(--green);margin-bottom:8px">● LIVE · Last: ${NX._dpLastUpdated?new Date(NX._dpLastUpdated).toLocaleTimeString('en-US',{hour12:false}):ts} <span style="float:right">${data.length} names</span></div>
+    <div class="card" style="padding:14px;margin-bottom:12px;border-color:var(--accent-dim)"><div style="font-size:11px;color:var(--text-muted)">Live individual print feed requires WebSocket — coming soon. Use <strong>Flow Monitor</strong> tab for aggregated per-ticker view with scores, alerts, and regime detection.</div></div>`:`<div style="font-size:10px;color:var(--text-dim);margin-bottom:8px">○ MOCK · Last: ${ts} <span style="float:right">${data.length} prints</span></div>`}
     <div class="card" style="padding:0"><div style="overflow-x:auto;max-height:520px;overflow-y:auto"><table>
     <thead><tr><th>TIME</th><th>TICKER</th><th>SECTOR</th><th>PRICE</th><th>VWAP</th><th>SHARES</th><th>NOTIONAL</th><th>VENUE</th><th>TYPE</th><th>SIGNAL</th></tr></thead>
     <tbody>${data.slice(0,80).map(d=>`<tr${d.sizeCategory==='WHALE'?' style="background:var(--purple-bg)"':''}>
@@ -2771,7 +2849,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
         <div>
           <div style="font-size:10px;color:var(--text-dim)">DARK POOL REGIME · ${scored.length} NAMES</div>
           <div style="font-size:24px;font-weight:700;color:${regClr};letter-spacing:2px;margin-top:4px">${regime}</div>
-          <div style="font-size:10px;color:var(--text-dim);margin-top:2px">○ MOCK · Last: ${ts}</div>
+          <div style="font-size:10px;color:${NX._dpLive?'var(--green)':'var(--text-dim)'};margin-top:2px">${NX._dpLive?'● LIVE':'○ MOCK'} · Last: ${NX._dpLive&&NX._dpLastUpdated?new Date(NX._dpLastUpdated).toLocaleTimeString('en-US',{hour12:false}):ts}</div>
         </div>
         <div style="display:flex;gap:20px;text-align:center">
           <div><div style="font-size:10px;color:var(--text-dim)">ACCUM</div><div style="font-size:20px;font-weight:700;color:var(--green)">${accum}</div></div>
@@ -2812,7 +2890,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
         ${NX._dpSectors.map(s=>`<option value="${s}">${s}</option>`).join('')}
       </select>
       <button class="btn btn-sm" onclick="NX.loadDarkPool()">↻</button>
-      <span style="font-size:9px;color:var(--text-dim)">○ MOCK</span>
+      <span style="font-size:9px;color:${NX._dpLive?'var(--green)':'var(--text-dim)'}">${NX._dpLive?'● LIVE':'○ MOCK'}</span>
     </div>
     <div class="card" style="padding:0"><div style="overflow-x:auto;max-height:500px;overflow-y:auto"><table>
     <thead><tr><th>SCORE ↓</th><th>TICKER</th><th>SECTOR</th><th>DP VOL%</th><th>SHORT%</th><th>SENT</th><th>WHALES</th><th>BLOCKS</th><th>NOTIONAL</th><th>ALERTS</th><th>STAGE</th></tr></thead>
@@ -2841,7 +2919,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
 
     el.innerHTML=`
     <div class="card">
-      <div style="font-size:12px;font-weight:700;letter-spacing:1px;margin-bottom:4px">INSTITUTIONAL LEVEL MAP — ${scored.length} FLAGGED NAMES <span style="font-weight:400;color:var(--text-dim)">○ MOCK</span></div>
+      <div style="font-size:12px;font-weight:700;letter-spacing:1px;margin-bottom:4px">INSTITUTIONAL LEVEL MAP — ${scored.length} FLAGGED NAMES <span style="font-weight:400;color:${NX._dpLive?'var(--green)':'var(--text-dim)'}">${NX._dpLive?'● LIVE':'○ MOCK'}</span></div>
       <div style="font-size:11px;color:var(--text-dim)">Auto-derived from the Flow Monitor's alert stream. Click any row to expand the full level map.</div>
     </div>
     ${scored.map((s,i)=>{

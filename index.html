@@ -3923,11 +3923,13 @@ function generateTradeId() {
 // ── API helpers ───────────────────────────────────────────────────────────────
 
 function _normalizeTrade(t) {
-  // Ensure both old (optionType/qty/tradeDate) and new (option_type/quantity/date) field names
+  // Normalize casing: "Call"→"CALL", "put"→"PUT"
+  const rawType = t.optionType || t.option_type || null;
+  const ot = rawType ? rawType.toUpperCase() : null;
   return {
     ...t,
-    optionType: t.optionType || t.option_type || null,
-    option_type: t.option_type || t.optionType || null,
+    optionType: ot,
+    option_type: ot,
     qty: t.qty || t.quantity || 1,
     quantity: t.quantity || t.qty || 1,
     tradeDate: t.tradeDate || t.date || '',
@@ -4793,7 +4795,8 @@ function _renderTradePreviewTable(trades) {
   return '<div style="max-height:200px;overflow-y:auto;margin-top:8px"><table class="trade-table"><thead><tr><th>Ticker</th><th>Type</th><th>Strike</th><th>Expiry</th><th>Action</th><th>Qty</th><th>Price</th><th>Total</th><th>Fees</th></tr></thead><tbody>' +
     trades.map(t => {
       const ot = t.option_type || t.optionType || '?';
-      return '<tr><td style="font-weight:600;color:#fff">' + (t.ticker||'?') + '</td><td class="' + (ot==='CALL'?'trade-type-call':'trade-type-put') + '">' + ot + '</td><td>$' + (t.strike||0) + '</td><td>' + (t.expiry||t.date||'') + '</td><td class="' + (t.action==='BUY'?'trade-action-buy':'trade-action-sell') + '">' + (t.action||'?') + '</td><td>' + (t.quantity||t.qty||0) + '</td><td>$' + ((t.price||0).toFixed?t.price.toFixed(2):t.price) + '</td><td>$' + (t.total||0) + '</td><td style="color:#666">$' + ((t.fees||0).toFixed?t.fees.toFixed(2):t.fees) + '</td></tr>';
+      const isCall = ot.toUpperCase() === 'CALL';
+      return '<tr><td style="font-weight:600;color:#fff">' + (t.ticker||'?') + '</td><td class="' + (isCall?'trade-type-call':'trade-type-put') + '">' + ot + '</td><td>$' + (t.strike||0) + '</td><td>' + (t.expiry||t.date||'') + '</td><td class="' + (t.action==='BUY'?'trade-action-buy':'trade-action-sell') + '">' + (t.action||'?') + '</td><td>' + (t.quantity||t.qty||0) + '</td><td>$' + ((t.price||0).toFixed?t.price.toFixed(2):t.price) + '</td><td>$' + (t.total||0) + '</td><td style="color:#666">$' + ((t.fees||0).toFixed?t.fees.toFixed(2):t.fees) + '</td></tr>';
     }).join('') + '</tbody></table></div>';
 }
 

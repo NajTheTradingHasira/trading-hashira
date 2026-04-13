@@ -7,24 +7,17 @@ Currently generates seeded mock data. Ready for live feed integration
 
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
+import json
+import pathlib
 import random
 import hashlib
 from datetime import datetime
 
 router = APIRouter(prefix="/api/darkpool", tags=["darkpool"])
 
-TICKERS = [
-    ("NVDA", "Technology"), ("AAPL", "Technology"), ("MSFT", "Technology"),
-    ("META", "Communication"), ("GOOGL", "Communication"), ("AMZN", "Consumer Discretionary"),
-    ("TSLA", "Consumer Discretionary"), ("AMD", "Technology"), ("CRM", "Technology"),
-    ("NFLX", "Communication"), ("PLTR", "Technology"), ("AVGO", "Technology"),
-    ("JPM", "Financials"), ("GS", "Financials"), ("V", "Financials"),
-    ("UNH", "Healthcare"), ("MA", "Financials"), ("HD", "Consumer Discretionary"),
-    ("BA", "Industrials"), ("CAT", "Industrials"), ("LMT", "Industrials"),
-    ("NOW", "Technology"), ("RIOT", "Financials"), ("CRWD", "Technology"),
-    ("COIN", "Financials"), ("SNOW", "Technology"), ("NET", "Technology"),
-    ("SQ", "Financials"), ("SHOP", "Technology"), ("LCID", "Consumer Discretionary"),
-]
+# ── Load tickers from centralized registry ─────────────────────────────
+_REG = json.loads((pathlib.Path(__file__).parent / "tickers.json").read_text())
+TICKERS = [(t, _REG["sectors"].get(t, "Technology")) for t in _REG["core"]]
 
 VENUES = ["NYSE DP", "BATS DP", "FINRA TRF", "MEMX DP", "FINRA ADF", "EDGX DP"]
 

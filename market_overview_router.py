@@ -12,9 +12,14 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from typing import Optional
 import asyncio
+import json
+import pathlib
 import httpx
 
 router = APIRouter(prefix="/api", tags=["market-overview"])
+
+# ── Load tickers from centralized registry ─────────────────────────────
+_REG = json.loads((pathlib.Path(__file__).parent / "tickers.json").read_text())
 
 # ── Sector / Heatmap Tickers ────────────────────────────────────────────
 
@@ -32,15 +37,8 @@ SECTOR_ETFS = {
     "Communication":   "XLC",
 }
 
-# Default universe for movers — mega/large caps + popular names
-MOVERS_UNIVERSE = [
-    "SPY","QQQ","IWM","DIA",
-    "AAPL","MSFT","NVDA","GOOGL","AMZN","META","TSLA","BRK-B",
-    "JPM","V","UNH","MA","HD","PG","JNJ","LLY",
-    "AVGO","COST","NFLX","AMD","CRM","ORCL","ADBE","INTC",
-    "XOM","CVX","BA","CAT","GE","RTX",
-    "COIN","MSTR","PLTR","SMCI","ARM","MARA",
-]
+# Default universe for movers — core + etfs + custom (from tickers.json)
+MOVERS_UNIVERSE = list(dict.fromkeys(_REG["core"] + _REG["etfs"] + _REG["custom"]))
 
 # ── Models ──────────────────────────────────────────────────────────────
 

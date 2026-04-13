@@ -14,17 +14,18 @@ Add to your FastAPI app:
 
 from fastapi import APIRouter, Query
 from datetime import datetime, timedelta
+import json
+import pathlib
 import yfinance as yf
 import math
 
 router = APIRouter(prefix="/api/options", tags=["options"])
 
-# ── Defaults ──────────────────────────────────────────────
-DEFAULT_TICKERS = [
-    "SPY", "QQQ", "IWM", "AAPL", "MSFT", "NVDA", "TSLA", "AMZN",
-    "META", "GOOG", "AMD", "NFLX", "JPM", "GS", "XLF", "XLE",
-    "GLD", "SLV", "TLT", "BITO"
-]
+# ── Load tickers from centralized registry ─────────────────────────────
+_REG = json.loads((pathlib.Path(__file__).parent / "tickers.json").read_text())
+# Whale scanner: high-liquidity core names + all ETFs
+_WHALE_CORE = ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "META", "GOOG", "AMD", "NFLX", "JPM", "GS"]
+DEFAULT_TICKERS = list(dict.fromkeys(_REG["etfs"] + [t for t in _REG["core"] if t in set(_WHALE_CORE)]))
 
 MIN_NOTIONAL = 500_000      # $500K premium
 VOL_OI_RATIO = 5.0          # volume/OI threshold

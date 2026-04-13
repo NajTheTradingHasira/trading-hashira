@@ -722,7 +722,7 @@ function goTo(id){
     sectors:()=>NX.loadSectors(),
     darkpool:()=>NX.loadDarkPool(),
     news:()=>{if(!NX._newsArticles.length)NX.refreshAllNews()},
-    earnings:()=>{$('#earn-presets').innerHTML=['NVDA','META','CRM','AAPL','GOOGL','AMZN','TSLA','AMD','PLTR','CRWD'].map(t=>`<button class="btn btn-sm" onclick="$('#earn-ticker').value='${t}';NX.loadEarnings()">${t}</button>`).join('')},
+    earnings:()=>{const reg=getRegistry();const presets=reg.core.length?reg.core.slice(0,10):['NVDA','META','CRM','AAPL','GOOGL','AMZN','TSLA','AMD','PLTR','CRWD'];$('#earn-presets').innerHTML=presets.map(t=>`<button class="btn btn-sm" onclick="$('#earn-ticker').value='${t}';NX.loadEarnings()">${t}</button>`).join('')},
     settings:()=>{NX.loadHeatmap();NX.loadAlerts()},
     'stage-scanner':()=>renderStageScanner(),
   };
@@ -752,6 +752,25 @@ function tick(){
     :'<span class="closed">● MARKET CLOSED</span>';
 }
 setInterval(tick,1000);tick();
+
+// ═══════════════════════════════════════════════════════════════
+//  TICKER REGISTRY — loaded once from tickers.json
+// ═══════════════════════════════════════════════════════════════
+let _tickerRegistry=null;
+async function loadTickerRegistry(){
+  if(_tickerRegistry)return _tickerRegistry;
+  try{
+    const r=await fetch('tickers.json');
+    _tickerRegistry=await r.json();
+  }catch(e){
+    console.warn('tickers.json fetch failed, using fallback');
+    _tickerRegistry={core:['NVDA','AAPL','MSFT','META','GOOGL','AMZN','TSLA','AMD','CRM','NFLX','PLTR','AVGO','JPM','GS','V','UNH','MA','HD','BA','CAT','LMT','NOW','RIOT','CRWD','COIN','SNOW','NET','SQ','SHOP','LCID'],etfs:['SPY','QQQ','IWM','DIA'],custom:[],extended:[],sectors:{}};
+  }
+  return _tickerRegistry;
+}
+function getRegistry(){return _tickerRegistry||{core:[],etfs:[],custom:[],extended:[],sectors:{}};}
+// Pre-load on page init
+loadTickerRegistry();
 
 // ═══════════════════════════════════════════════════════════════
 //  NX — NEXUS API & MODULE ENGINE
@@ -2689,8 +2708,9 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
   },
 
   _genDPFeed(count=120){
-    const tickers=['NVDA','AAPL','MSFT','META','GOOGL','AMZN','TSLA','AMD','CRM','NFLX','PLTR','AVGO','JPM','GS','V','UNH','MA','HD','BA','CAT','LMT','NOW','RIOT','LCID','COIN','CRWD','SNOW','NET','SQ','SHOP'];
-    const sectorMap={'NVDA':'Technology','AAPL':'Technology','MSFT':'Technology','META':'Communication','GOOGL':'Communication','AMZN':'Consumer Discretionary','TSLA':'Consumer Discretionary','AMD':'Technology','CRM':'Technology','NFLX':'Communication','PLTR':'Technology','AVGO':'Technology','JPM':'Financials','GS':'Financials','V':'Financials','UNH':'Healthcare','MA':'Financials','HD':'Consumer Discretionary','BA':'Industrials','CAT':'Industrials','LMT':'Industrials','NOW':'Technology','RIOT':'Financials','LCID':'Consumer Discretionary','COIN':'Financials','CRWD':'Technology','SNOW':'Technology','NET':'Technology','SQ':'Financials','SHOP':'Technology'};
+    const reg=getRegistry();
+    const tickers=reg.core.length?reg.core:['NVDA','AAPL','MSFT','META','GOOGL','AMZN','TSLA','AMD','CRM','NFLX','PLTR','AVGO','JPM','GS','V','UNH','MA','HD','BA','CAT','LMT','NOW','RIOT','LCID','COIN','CRWD','SNOW','NET','SQ','SHOP'];
+    const sectorMap=reg.sectors||{};
     const venues=['NYSE DP','BATS DP','FINRA TRF','MEMX DP','FINRA ADF','EDGX DP'];
     const feed=[];const h=NX._tickerHash('dp'+new Date().toDateString()),rng=NX._seededRng(h);const r=()=>rng();
     for(let i=0;i<count;i++){
@@ -2708,8 +2728,9 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
 
   _genDPScored(){
     const h=NX._tickerHash('dpscore'+new Date().toDateString()),rng=NX._seededRng(h);const r=()=>rng();
-    const tickers=['RIOT','JPM','LMT','NOW','NVDA','LCID','CRWD','META','AAPL','MSFT','AMZN','TSLA','AMD','GS','AVGO','PLTR','HD','BA','COIN','SNOW','NET','V','UNH','GOOGL','CAT','SQ','SHOP','CRM','NFLX','MA'];
-    const sectorMap={'RIOT':'Financials','JPM':'Financials','LMT':'Industrials','NOW':'Technology','NVDA':'Technology','LCID':'Consumer Discretionary','CRWD':'Technology','META':'Communication','AAPL':'Technology','MSFT':'Technology','AMZN':'Consumer Discretionary','TSLA':'Consumer Discretionary','AMD':'Technology','GS':'Financials','AVGO':'Technology','PLTR':'Technology','HD':'Consumer Discretionary','BA':'Industrials','COIN':'Financials','SNOW':'Technology','NET':'Technology','V':'Financials','UNH':'Healthcare','GOOGL':'Communication','CAT':'Industrials','SQ':'Financials','SHOP':'Technology','CRM':'Technology','NFLX':'Communication','MA':'Financials'};
+    const reg=getRegistry();
+    const tickers=reg.core.length?[...reg.core].sort(()=>NX._seededRng(h)()-.5):['RIOT','JPM','LMT','NOW','NVDA','LCID','CRWD','META','AAPL','MSFT','AMZN','TSLA','AMD','GS','AVGO','PLTR','HD','BA','COIN','SNOW','NET','V','UNH','GOOGL','CAT','SQ','SHOP','CRM','NFLX','MA'];
+    const sectorMap=reg.sectors||{};
     const stages=['1B','2A','2A','2B','2A','4A','2A','2B','2A','2A','3A','3B','2A','4A','2A','1B','2B','3A','3B','2A','2A','2A','2A','2A','2B','2A','2A','2A','2B','2A'];
     return tickers.map((tk,i)=>{
       const dpVol=+(40+r()*25).toFixed(1);
@@ -3593,7 +3614,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
 });
 
 // ─── Ticker Bar ───
-const TICKER_BAR_STOCK_SYMS=['SPY','QQQ','IWM','DIA','AAPL'];
+const TICKER_BAR_STOCK_SYMS=(()=>{const reg=getRegistry();return reg.etfs.length?[...reg.etfs.slice(0,4),'AAPL']:['SPY','QQQ','IWM','DIA','AAPL'];})();
 async function refreshTickerBar(){
   const el=$('#ticker-bar');if(!el)return;
   try{

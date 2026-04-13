@@ -79,8 +79,10 @@ async def hmm_stock(ticker: str):
 @app.get("/api/options/unusual")
 async def options_unusual():
     import yfinance as yf
-    tickers = ["NVDA","AAPL","TSLA","META","AMZN","AMD","GOOGL","MSFT","SPY","QQQ",
-               "PLTR","COIN","MARA","RIOT","SOFI","BAC","F","NIO","INTC","SNAP"]
+    # Load from centralized registry: core + etfs + custom
+    import json, pathlib
+    _reg = json.loads((pathlib.Path(__file__).parent / "tickers.json").read_text())
+    tickers = list(dict.fromkeys(_reg["core"] + _reg["etfs"] + _reg["custom"]))
     results = []
     for sym in tickers:
         try:
@@ -128,7 +130,10 @@ async def options_unusual():
 @app.get("/api/options/whale")
 async def options_whale():
     import yfinance as yf
-    tickers = ["SPY","QQQ","NVDA","AAPL","TSLA","META","AMZN","GOOGL","MSFT","AMD"]
+    # Load from centralized registry: etfs + top core names
+    import json, pathlib
+    _reg = json.loads((pathlib.Path(__file__).parent / "tickers.json").read_text())
+    tickers = list(dict.fromkeys(_reg["etfs"][:4] + _reg["core"][:10]))
     results = []
     for sym in tickers:
         try:

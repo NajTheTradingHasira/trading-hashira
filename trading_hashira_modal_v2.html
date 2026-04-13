@@ -731,7 +731,6 @@ function goTo(id){
 
 // Keyboard shortcuts
 document.addEventListener('keydown',e=>{
-  // Watchlist edit modal keyboard
   if(NX._wlEditCtx){if(e.key==='Enter')NX._wlEditSave();if(e.key==='Escape')NX._wlEditCancel();return}
   if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT')return;
   const pg=PAGES.find(p=>p.key.toLowerCase()===e.key.toLowerCase());

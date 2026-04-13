@@ -2263,32 +2263,165 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     return ftds;
   },
   _detectBases(bars){
-    // Convert daily to weekly
+    // ── Convert daily to weekly using ISO week alignment (deterministic) ──
     const weekly=[];
-    for(let i=0;i<bars.length;i+=5){
-      const chunk=bars.slice(i,i+5);if(!chunk.length)continue;
-      weekly.push({wkIdx:weekly.length,dayStart:i,open:chunk[0].open,close:chunk[chunk.length-1].close,
+    const groups={};
+    for(const b of bars){
+      // Parse date and compute ISO week key (YYYY-Www)
+      let wk;
+      if(b.date){
+        const d=new Date(b.date);
+        // ISO week: Monday-aligned. Get the Thursday of the week to determine ISO year/week.
+        const thu=new Date(d);thu.setDate(d.getDate()-((d.getDay()+6)%7)+3);
+        const jan4=new Date(thu.getFullYear(),0,4);
+        const wNum=Math.ceil(((thu-jan4)/864e5+jan4.getDay()+6)/7);
+        wk=`${thu.getFullYear()}-W${String(wNum).padStart(2,'0')}`;
+      }else{
+        // Fallback: chunk by index (5 bars per week)
+        wk=`chunk-${Math.floor(b.idx/5)}`;
+      }
+      if(!groups[wk])groups[wk]=[];
+      groups[wk].push(b);
+    }
+    const wkKeys=Object.keys(groups).sort();
+    for(const k of wkKeys){
+      const chunk=groups[k];
+      weekly.push({wkIdx:weekly.length,wkKey:k,dayStart:chunk[0].idx,
+        open:chunk[0].open,close:chunk[chunk.length-1].close,
         high:Math.max(...chunk.map(b=>b.high)),low:Math.min(...chunk.map(b=>b.low)),
         vol:chunk.reduce((s,b)=>s+b.volume,0)});
     }
     if(weekly.length<8)return[];
+
+    // ── Precompute 10-week SMA and ATR series ──
+    const sma10=weekly.map((_,i)=>{
+      if(i<9)return null;
+      let s=0;for(let j=i-9;j<=i;j++)s+=weekly[j].close;
+      return s/10;
+    });
+    const atr=weekly.map((w,i)=>{
+      if(i<1)return w.high-w.low;
+      const prev=weekly[i-1];
+      return Math.max(w.high-w.low,Math.abs(w.high-prev.close),Math.abs(w.low-prev.close));
+    });
+
+    // ── Volume dry-up helper (right 2 weeks vs left 2 weeks) ──
+    const volDryUpCalc=(baseWeeks)=>{
+      if(baseWeeks.length<4){
+        const full=baseWeeks.reduce((s,w)=>s+w.vol,0)/baseWeeks.length||1;
+        const right=baseWeeks.slice(-1).reduce((s,w)=>s+w.vol,0)||1;
+        return +((right/full)*100).toFixed(0);
+      }
+      const left2=baseWeeks.slice(0,2).reduce((s,w)=>s+w.vol,0)/2||1;
+      const right2=baseWeeks.slice(-2).reduce((s,w)=>s+w.vol,0)/2||1;
+      return +((right2/left2)*100).toFixed(0);
+    };
+
+    // ── HTF Detection (separate pass — High Tight Flag) ──
+    const htfBases=[];
+    for(let pi=0;pi<weekly.length-7;pi++){
+      // Phase 1: Power Pole — look for 80%+ gain in 4-12 weeks
+      for(let dur=4;dur<=12&&pi+dur<weekly.length;dur++){
+        const poleStart=weekly[pi].low;
+        const poleEnd=weekly[pi+dur].high;
+        if(poleStart<=0)continue;
+        const poleGain=(poleEnd-poleStart)/poleStart*100;
+        if(poleGain<80)continue;
+        // Phase 2: Flag — 3-8 weeks after pole, max 25% drawdown, narrow channel
+        const flagStart=pi+dur+1;
+        for(let fLen=3;fLen<=8&&flagStart+fLen<=weekly.length;fLen++){
+          const flagWeeks=weekly.slice(flagStart,flagStart+fLen);
+          const poleHigh=poleEnd;
+          const flagHigh=Math.max(...flagWeeks.map(w=>w.high));
+          const flagLow=Math.min(...flagWeeks.map(w=>w.low));
+          const flagDD=(poleHigh-flagLow)/poleHigh*100;
+          const flagRange=flagHigh-flagLow;
+          const poleRange=poleEnd-poleStart;
+          if(flagDD>25)continue;
+          if(flagRange>poleRange*0.25)continue;
+          // Valid HTF found
+          const flagSlope=flagWeeks.length>=2?(flagWeeks[flagWeeks.length-1].close-flagWeeks[0].close)/flagWeeks[0].close*100:0;
+          const poleSlope=poleGain/dur;
+          let htfType='High Tight Flag';
+          if(flagSlope>0&&flagSlope<poleSlope)htfType='High Tight Flag (Ascending)';
+          const pivot=+poleHigh.toFixed(2);
+          const volDU=volDryUpCalc(flagWeeks);
+          htfBases.push({startWk:pi,endWk:flagStart+fLen-1,startDay:weekly[pi].dayStart,
+            endDay:weekly[flagStart+fLen-1].dayStart,
+            weeks:dur+fLen,depth:+flagDD.toFixed(1),type:htfType,
+            pivot,buyZoneLow:pivot,buyZoneHigh:+(pivot*1.05).toFixed(2),
+            baseLow:+flagLow.toFixed(2),volDryUp:volDU,baseNum:0});
+          // Take the first valid flag length, skip ahead
+          pi=flagStart+fLen-1;
+          dur=999;fLen=999;// break both inner loops
+        }
+      }
+    }
+
+    // ── Standard + Ascending Base Detection ──
     const bases=[];let wi=5;
     while(wi<weekly.length-3){
-      // Rolling 10-week high as local peak
       const lookback=weekly.slice(Math.max(0,wi-10),wi+1);
       const localHigh=Math.max(...lookback.map(w=>w.high));
       const curLow=weekly[wi].low;
       const drawdown=(localHigh-curLow)/localHigh*100;
-      // Start a base when price pulls back >=8% from local high
-      if(drawdown<8){wi++;continue}
+
+      // ── Ascending Base check (shallow patterns, depth < 15%) ──
+      // Check BEFORE the 8% gate so ascending structures aren't rejected
+      if(drawdown<15&&wi>=12){
+        const window=weekly.slice(Math.max(0,wi-12),wi+1);
+        const wLen=window.length;
+        // All closes above 10w SMA?
+        const startIdx=Math.max(0,wi-12);
+        let allAboveSMA=true;
+        for(let k=0;k<wLen;k++){
+          const si=startIdx+k;
+          if(sma10[si]!==null&&window[k].close<sma10[si]*0.98){allAboveSMA=false;break}
+        }
+        // 10w SMA rising?
+        const smaStart=sma10[startIdx];
+        const smaEnd=sma10[wi];
+        const smaRising=smaStart&&smaEnd&&smaEnd>smaStart;
+        // ATR decreasing?
+        const atrStart=atr.slice(startIdx,startIdx+3).reduce((s,v)=>s+v,0)/3;
+        const atrEnd=atr.slice(wi-2,wi+1).reduce((s,v)=>s+v,0)/3;
+        const atrDecreasing=atrEnd<atrStart*0.85;
+        // Count higher lows (pullbacks)
+        let higherLows=0;let prevLo=Infinity;
+        for(let k=1;k<wLen;k++){
+          if(window[k].low<window[k-1].low&&window[k].low>prevLo){higherLows++;prevLo=window[k].low}
+          else if(window[k].low<prevLo)prevLo=window[k].low;
+        }
+        // Max drawdown from swing high in window
+        const winHigh=Math.max(...window.map(w=>w.high));
+        const winLow=Math.min(...window.map(w=>w.low));
+        const maxDD=(winHigh-winLow)/winHigh*100;
+        // Volume dry-up confirmation for shallow patterns
+        const volRatio=volDryUpCalc(window)/100;
+
+        if(allAboveSMA&&smaRising&&(atrDecreasing||higherLows>=3)&&maxDD<20&&wLen>=3&&volRatio<0.75){
+          const pivot=+Math.max(...window.map(w=>w.close)).toFixed(2);
+          const baseLow=+winLow.toFixed(2);
+          const endWk=wi;const startWk=Math.max(0,wi-wLen+1);
+          bases.push({startWk,endWk,startDay:weekly[startWk].dayStart,endDay:weekly[endWk].dayStart,
+            weeks:wLen,depth:+maxDD.toFixed(1),type:'Ascending Base',
+            pivot,buyZoneLow:pivot,buyZoneHigh:+(pivot*1.05).toFixed(2),
+            baseLow,volDryUp:Math.round(volRatio*100),baseNum:bases.length+1});
+          wi=endWk+2;continue;
+        }
+      }
+
+      // ── Standard base detection ──
+      // For shallow patterns (depth < 15%), allow entry if volume confirms
+      const depthGate=drawdown>=8||(drawdown>=3&&wi>=9);
+      if(!depthGate){wi++;continue}
+
       // Scan forward for base completion
       let bH=localHigh,bL=curLow,bEnd=wi;
       for(let j=wi+1;j<Math.min(wi+65,weekly.length);j++){
         const w=weekly[j];
         bL=Math.min(bL,w.low);bH=Math.max(bH,localHigh);
-        // Abandon if drops >45% from base high
         if((bH-w.low)/bH>0.45){bEnd=-1;break}
-        // Base completes when price recovers above prior high
         if(w.high>=localHigh){bEnd=j;break}
         bEnd=j;
       }
@@ -2296,39 +2429,41 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
       const wks=bEnd-wi+1;
       const depth=+((bH-bL)/bH*100).toFixed(1);
       if(wks<3){wi++;continue}
-      // Volume dry-up: right half avg vol vs full base avg vol
+
       const baseWeeks=weekly.slice(wi,bEnd+1);
-      const fullAvgVol=baseWeeks.reduce((s,w)=>s+w.vol,0)/baseWeeks.length||1;
-      const rightHalf=baseWeeks.slice(Math.floor(baseWeeks.length/2));
-      const rightAvgVol=rightHalf.reduce((s,w)=>s+w.vol,0)/rightHalf.length||1;
-      const volDryUp=+((rightAvgVol/fullAvgVol)*100).toFixed(0);
+      const volDryUp=volDryUpCalc(baseWeeks);
       const baseLow=+bL.toFixed(2);
-      // Pattern classification
+
+      // ── Shallow pattern volume gate (change #3) ──
+      if(depth<15&&volDryUp/100>=0.75){
+        // Shallow pattern without volume contraction — reject
+        wi++;continue;
+      }
+
+      // ── Pattern classification ──
       let type='Base';
-      // 3-Weeks-Tight: 3-4 weeks, depth <=4%, closes within 1.5%
+      // 3-Weeks-Tight
       if(wks>=3&&wks<=4&&depth<=4){
         const closes=baseWeeks.map(w=>w.close);
         const cMax=Math.max(...closes),cMin=Math.min(...closes);
         if(cMax>0&&(cMax-cMin)/cMax*100<=1.5)type='3-Weeks-Tight';
       }
-      // Double Bottom: two distinct lows with rally between
+      // Double Bottom
       if(type==='Base'&&wks>=5){
         const lows=baseWeeks.map(w=>w.low);
         const mid=Math.floor(lows.length/2);
         const firstHalf=lows.slice(0,mid),secondHalf=lows.slice(mid);
         const low1=Math.min(...firstHalf),low2=Math.min(...secondHalf);
         const low1Idx=firstHalf.indexOf(low1),low2Idx=mid+secondHalf.indexOf(low2);
-        // Check lows are within 5% of each other (second can undercut by up to 5%)
         if(low1>0&&Math.abs(low2-low1)/low1*100<=5){
-          // Check for rally of >=5% between the two lows
           const between=baseWeeks.slice(low1Idx,low2Idx+1);
           const peakBetween=Math.max(...between.map(w=>w.high));
           if((peakBetween-low1)/low1*100>=5)type='Double Bottom';
         }
       }
-      // Flat Base: 5-15 weeks, depth <=15%
+      // Flat Base
       if(type==='Base'&&wks>=5&&wks<=15&&depth<=15)type='Flat Base';
-      // Cup-with-Handle: >=7 weeks, depth 12-33%, right-side handle
+      // Cup-with-Handle / Cup
       if(type==='Base'&&wks>=7&&depth>=12&&depth<=33){
         const rightThird=baseWeeks.slice(Math.floor(baseWeeks.length*0.6));
         const rtHigh=Math.max(...rightThird.map(w=>w.high));
@@ -2345,7 +2480,17 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
         weeks:wks,depth,type,pivot,buyZoneLow,buyZoneHigh,baseLow,volDryUp,baseNum:bases.length+1});
       wi=bEnd+2;
     }
-    return bases;
+
+    // ── Merge HTF bases into results, sorted by startWk ──
+    const all=[...bases,...htfBases].sort((a,b)=>a.startWk-b.startWk);
+    // Re-number and add late-stage warnings (change #5)
+    for(let i=0;i<all.length;i++){
+      all[i].baseNum=i+1;
+      if(i+1>=4&&(all[i].type.includes('Ascending')||all[i].type.includes('High Tight Flag'))){
+        all[i].type+=' (late-stage cheat — elevated risk)';
+      }
+    }
+    return all;
   },
   async runTradeTools(){
     const t=$('#tt-ticker').value.trim().toUpperCase();if(!t)return;
@@ -2359,7 +2504,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
         const b=ohlcv[i];if(b.close==null)continue;
         const close=b.close,open=b.open||close,high=b.high||close,low=b.low||close;
         const prevC=i>0?(ohlcv[i-1].close||open):open;
-        bars.push({idx:bars.length,open,high,low,close,volume:b.volume||0,ret:prevC?Math.log(close/prevC):0,isUp:close>=prevC});
+        bars.push({idx:bars.length,date:b.date||b.Date||'',open,high,low,close,volume:b.volume||0,ret:prevC?Math.log(close/prevC):0,isUp:close>=prevC});
       }
     }catch{
       bars=NX._genDailyOHLCV(t);

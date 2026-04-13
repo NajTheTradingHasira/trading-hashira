@@ -108,63 +108,105 @@ def sma(values: list, period: int) -> list:
     return out
 
 
-def slope_direction(values: list, lookback: int = 4, threshold: float = 0.5) -> str:
-    """Classify slope of last `lookback` values."""
-    recent = [v for v in values[-lookback:] if v is not None]
-    if len(recent) < 2:
-        return "Unknown"
-    delta = recent[-1] - recent[0]
-    pct = delta / recent[0] * 100 if recent[0] else 0
-    if pct > threshold:
-        return "Rising"
-    elif pct < -threshold:
-        return "Falling"
-    return "Flat"
+def ema(values: list, span: int) -> list:
+    """Exponential moving average matching nexus-terminal's _ema()."""
+    if not values:
+        return []
+    alpha = 2 / (span + 1)
+    out = [float(values[0])]
+    for v in values[1:]:
+        out.append(alpha * float(v) + (1 - alpha) * out[-1])
+    return out
+
+
+def _sma_30w_rising_3w(closes: list, sma_30w_slope: float) -> bool:
+    """Check if 30W SMA has been rising for 3+ consecutive weeks."""
+    if sma_30w_slope < 0.5:
+        return False
+    n = len(closes)
+    if n < 33:
+        return sma_30w_slope > 0
+    for w in range(3):
+        end = n - w
+        start = max(0, end - 30)
+        prev_end = end - 1
+        prev_start = max(0, prev_end - 30)
+        cur = sum(closes[start:end]) / (end - start)
+        prev = sum(closes[prev_start:prev_end]) / (prev_end - prev_start)
+        if cur <= prev:
+            return False
+    return True
 
 
 # ── Stage Classifier ────────────────────────────────────────────────────
+# Mirrors _weinstein_classify() from nexus-terminal/research_core/router.py
+# One source of truth — any changes here must be synced to nexus-terminal.
 
 def classify_stage(data: dict, benchmark_data: dict | None = None) -> TickerResult:
     """
     Weinstein stage classification from weekly OHLCV data.
-    Returns a populated TickerResult.
+    Uses 10W EMA, 30W SMA, 40W SMA — same logic as nexus-terminal.
     """
     closes = [c for c in data["close"] if c is not None]
     volumes = [v for v in data["volume"] if v is not None]
     highs = [h for h in data["high"] if h is not None]
     lows = [l for l in data["low"] if l is not None]
+    n = len(closes)
 
-    if len(closes) < 35:
-        return TickerResult(ticker="", stage="?", error="Insufficient data")
-
-    # Moving averages
-    sma30 = sma(closes, 30)
-    sma10 = sma(closes, 10)
-    sma50d = sma(closes, 10)   # ~50-day proxy on weekly
-    sma150d = sma(closes, 30)  # ~150-day proxy
-    sma200d = sma(closes, 40)  # ~200-day proxy
+    if n < 42:
+        return TickerResult(ticker="", stage="?", error="Insufficient data (need 42+ weeks)")
 
     price = closes[-1]
-    cur_sma30 = sma30[-1]
-    cur_sma10 = sma10[-1]
 
-    if cur_sma30 is None or cur_sma10 is None:
-        return TickerResult(ticker="", stage="?", error="SMA calc failed")
+    # ── Moving averages (matching nexus-terminal exactly) ──
+    cur_sma30 = sum(closes[-30:]) / 30
+    sma_30w_5ago = sum(closes[-35:-5]) / 30 if n >= 35 else cur_sma30
+    sma_40w = sum(closes[-40:]) / 40 if n >= 40 else cur_sma30
+    ema10_arr = ema(closes, 10)
+    ema_10w = ema10_arr[-1]
+    ema_10w_5ago = ema10_arr[-5] if len(ema10_arr) >= 5 else ema_10w
 
-    # 1. Price vs 30w SMA
+    sma_30w_slope = (cur_sma30 / sma_30w_5ago - 1) * 100 if sma_30w_5ago > 0 else 0
+    ema_10w_slope = (ema_10w / ema_10w_5ago - 1) * 100 if ema_10w_5ago > 0 else 0
+    pv30 = (price / cur_sma30 - 1) * 100 if cur_sma30 > 0 else 0
+    ma_stack = price > ema_10w > cur_sma30 > sma_40w
+    ma_stack_bearish = price < ema_10w < cur_sma30 < sma_40w
+
     above_30w = price > cur_sma30
     price_vs = "Above" if above_30w else "Below"
 
-    # 2. 30w SMA slope (5-week lookback, 0.6% threshold for slow-moving 30w avg)
-    slope_30w = slope_direction(sma30, lookback=5, threshold=0.6)
+    # Stage 2 gates
+    sma_30w_rising = _sma_30w_rising_3w(closes, sma_30w_slope)
+    ema10_above_30w = ema_10w > cur_sma30
 
-    # 3. Volume analysis
+    # Weeks below/above 30W
+    weeks_below = 0
+    weeks_above = 0
+    for i in range(n - 1, max(n - 52, 29), -1):
+        s = sum(closes[max(0, i - 29):i + 1]) / min(30, i + 1)
+        if closes[i] < s:
+            if weeks_above == 0: weeks_below += 1
+            else: break
+        else:
+            if weeks_below == 0: weeks_above += 1
+            else: break
+
+    # Crossovers in last 20 weeks
+    crossovers = 0
+    for i in range(max(30, n - 20), n):
+        s_i = sum(closes[i - 29:i + 1]) / 30
+        s_p = sum(closes[i - 30:i]) / 30
+        if (closes[i] > s_i and closes[i - 1] < s_p) or (closes[i] < s_i and closes[i - 1] > s_p):
+            crossovers += 1
+
+    ma_conv = abs(ema_10w - cur_sma30) / cur_sma30 * 100 if cur_sma30 > 0 else 0
+
+    # Volume analysis
     vol_avg_52 = sum(volumes[-52:]) / min(len(volumes), 52) if volumes else 0
     cur_vol = volumes[-1] if volumes else 0
     vol_ratio = round(cur_vol / vol_avg_52, 2) if vol_avg_52 > 0 else 0
 
-    # Detect churning: high volume + small price change
-    last_range_pct = abs(closes[-1] - closes[-2]) / closes[-2] * 100 if len(closes) >= 2 else 0
+    last_range_pct = abs(closes[-1] - closes[-2]) / closes[-2] * 100 if n >= 2 else 0
     if vol_ratio >= 1.5 and last_range_pct < 2:
         vol_signal = "Churning"
     elif vol_ratio >= 2.0:
@@ -174,129 +216,93 @@ def classify_stage(data: dict, benchmark_data: dict | None = None) -> TickerResu
     else:
         vol_signal = "Normal"
 
-    # 4. Mansfield RS
+    # Mansfield RS
     mrs = None
     rs_dir = None
     if benchmark_data:
         bench_closes = [c for c in benchmark_data["close"] if c is not None]
-        if len(bench_closes) >= 52 and len(closes) >= 52:
+        if len(bench_closes) >= 52 and n >= 52:
+            min_len = min(n, len(bench_closes))
             rs_line = [closes[i] / bench_closes[i] if bench_closes[i] else None
-                       for i in range(min(len(closes), len(bench_closes)))]
+                       for i in range(min_len)]
             rs_sma52 = sma(rs_line, 52)
             if rs_sma52[-1] and rs_sma52[-1] > 0:
                 mrs = round((rs_line[-1] / rs_sma52[-1] - 1) * 100, 2)
-            rs_dir = slope_direction([v for v in rs_sma52 if v is not None])
+            valid_rs = [v for v in rs_sma52 if v is not None]
+            if len(valid_rs) >= 5:
+                rd = (valid_rs[-1] / valid_rs[-5] - 1) * 100
+                rs_dir = "Rising" if rd > 0.5 else ("Falling" if rd < -0.5 else "Flat")
 
-    # 5. CANSLIM MA stack
-    canslim_stack = None
-    if sma50d[-1] and sma150d[-1] and sma200d[-1]:
-        canslim_stack = sma50d[-1] > sma150d[-1] > sma200d[-1]
-
-    # 6. Kell 10/20 EMA stack (approximate with SMA on weekly)
-    sma4 = sma(closes, 4)   # ~20-day proxy
-    sma2 = sma(closes, 2)   # ~10-day proxy
-    kell_stack = None
-    if sma2[-1] and sma4[-1]:
-        kell_stack = sma2[-1] > sma4[-1] > cur_sma10
-
-    # 7. 52-week high/low
+    # 52-week high/low
     high_52 = max(highs[-52:]) if len(highs) >= 52 else max(highs)
     low_52 = min(lows[-52:]) if len(lows) >= 52 else min(lows)
     pct_high = round((price / high_52 - 1) * 100, 1) if high_52 else None
     pct_low = round((price / low_52 - 1) * 100, 1) if low_52 else None
 
-    # ── Stage Decision Tree ──────────────────────────────────────────
-    #
-    # Weinstein / Wyckoff hybrid classification.
-    # Primary axes: price vs 30W SMA, 30W SMA slope direction.
-    # Secondary: Mansfield RS, 10W slope, volume, extension.
-    #
-    stage = "?"
-    qualifier = ""
-    transition = None
-    slope_10w = slope_direction(sma10)
-
-    pct_above_30w = (price - cur_sma30) / cur_sma30 * 100 if cur_sma30 else 0
-
-    # Stage 3A intercept gate values (computed for every ticker for audit)
+    # ── 3A intercept debug (computed for every ticker) ──
     s3_gate = {
-        "slope_10w": slope_10w,
-        "slope_10w_is_falling": slope_10w == "Falling",
+        "ema_10w_slope": round(ema_10w_slope, 3),
+        "ema_10w_falling": ema_10w_slope < 0,
+        "ma_stack": bool(ma_stack),
+        "ma_stack_broken": not ma_stack,
         "pct_from_52w_high": pct_high,
         "off_high_gt_8pct": pct_high is not None and pct_high < -8,
         "vol_ratio": vol_ratio,
         "vol_below_avg": vol_ratio < 1.0,
-        "all_true": (slope_10w == "Falling"
-                     and pct_high is not None and pct_high < -8
-                     and vol_ratio < 1.0),
-        "in_rising_branch": above_30w and slope_30w == "Rising",
         "intercepted": False,
     }
 
-    if above_30w and slope_30w == "Rising":
-        # ── Stage 2 family: confirmed uptrend ──
-        #
-        # Stage 3A intercept: 30W is a lagging indicator — distribution
-        # can begin while 30W still rises.  Detect early topping when:
-        #   1) 10W slope is Falling (shorter MA rolling over)
-        #   2) Price > 8% off 52-week high (failed to recover)
-        #   3) Volume below average on the recovery (weak demand)
-        if (slope_10w == "Falling"
-                and pct_high is not None and pct_high < -8
-                and vol_ratio < 1.0):
-            stage = "3A"
-            s3_gate["intercepted"] = True
-        elif vol_signal == "Breakout":
-            stage = "2A"
-            qualifier = "(+)" if vol_ratio >= 3.0 else ""
-        elif pct_above_30w > 20 and slope_10w != "Rising":
-            stage = "2B"
-        else:
-            stage = "2A"
+    # ── Classification (first match wins — mirrors nexus-terminal) ──
+    stage = "?"
+    qualifier = ""
+    transition = None
 
-    elif above_30w and slope_30w == "Flat":
-        # ── Ambiguous: late base or early distribution ──
-        # 3B = RS negative (distribution)
-        # 3A = RS positive but 10W weakening (late distribution)
-        # 1B = RS positive and structure holding (accumulation)
-        if mrs is not None and mrs <= 0:
+    # STAGE 4 — DECLINING
+    if price < cur_sma30 and sma_30w_slope <= 0 and weeks_below >= 2:
+        if pv30 < -10 or ma_stack_bearish or sma_30w_slope < -1.0:
+            stage = "4B"
+        else:
+            stage = "4A"
+            qualifier = "(-)"
+
+    # STAGE 3 OVERRIDE — MA stack broken + 10W EMA declining = topping
+    elif not ma_stack and ema_10w_slope < 0 and price > cur_sma30:
+        s3_gate["intercepted"] = True
+        if price < ema_10w or ma_conv < 3 or sma_30w_slope < -0.5:
             stage = "3B"
-        elif slope_10w == "Falling":
+        else:
             stage = "3A"
+
+    # STAGE 2 — ADVANCING (with gate enforcement)
+    elif price > cur_sma30 and sma_30w_slope > 0 and weeks_above >= 3:
+        if sma_30w_rising and ema10_above_30w:
+            if ma_stack and weeks_above <= 12:
+                stage = "2A"
+            elif weeks_above > 12:
+                stage = "2B"
+            else:
+                stage = "2A"
         else:
             stage = "1B"
             transition = "1B \u2192 2A"
 
-    elif above_30w and slope_30w == "Falling":
-        # ── Price above a declining 30W: accumulation or distribution ──
-        # 3A = barely above + 10W weakening (distribution)
-        # 1A = price spring above declining 30W (early accumulation)
-        if slope_10w == "Falling" and pct_above_30w < 5:
-            stage = "3A"
-        else:
-            stage = "1A"
-
-    elif not above_30w and slope_30w == "Rising":
-        # ── Pullback within uptrend ──
-        stage = "1B"
-
-    elif not above_30w and slope_30w == "Flat":
-        # ── Base or late topping ──
-        if vol_signal == "Dry-up":
-            stage = "1A"
-        else:
+    # STAGE 3 — TOPPING (flat slope + signals)
+    elif (-0.5 <= sma_30w_slope <= 0.5) and (
+        crossovers >= 3 or
+        (ma_conv < 3 and abs(pv30) < 3) or
+        (price < ema_10w and ema_10w_slope < 0)
+    ):
+        if crossovers >= 4 or (price < ema_10w and price < cur_sma30):
             stage = "3B"
-            transition = "3B \u2192 4A"
-
-    elif not above_30w and slope_30w == "Falling":
-        # ── Stage 4 family: confirmed downtrend ──
-        if slope_10w == "Falling":
-            stage = "4"
-            if vol_signal == "Dry-up":
-                stage = "4B"
         else:
-            stage = "4A"
-            qualifier = "(-)"
+            stage = "3A"
+
+    # STAGE 1 — BASING (default)
+    else:
+        if sma_30w_slope < -0.2:
+            stage = "1A"
+        else:
+            stage = "1B"
 
     label, action = STAGE_META.get(stage, ("Unknown", "Review manually"))
 
@@ -308,15 +314,15 @@ def classify_stage(data: dict, benchmark_data: dict | None = None) -> TickerResu
         action_bias=action,
         price=round(price, 2),
         sma_30w=round(cur_sma30, 2),
-        sma_10w=round(cur_sma10, 2),
-        sma_30w_slope=slope_30w,
+        sma_10w=round(ema_10w, 2),
+        sma_30w_slope="Rising" if sma_30w_slope > 0.5 else ("Falling" if sma_30w_slope < -0.5 else "Flat"),
         price_vs_30w=price_vs,
         mansfield_rs=mrs,
         rs_direction=rs_dir,
         vol_ratio=vol_ratio,
         vol_signal=vol_signal,
-        canslim_ma_stack=canslim_stack,
-        kell_ema_stack=kell_stack,
+        canslim_ma_stack=bool(ma_stack),
+        kell_ema_stack=None,
         pct_from_52w_high=pct_high,
         pct_from_52w_low=pct_low,
         transition_risk=transition,

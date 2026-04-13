@@ -2338,7 +2338,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
           const flagRange=flagHigh-flagLow;
           const poleRange=poleEnd-poleStart;
           if(flagDD>25)continue;
-          if(flagRange>poleRange*0.25)continue;
+          if(flagRange>poleRange*0.35)continue;
           // Valid HTF found
           const flagSlope=flagWeeks.length>=2?(flagWeeks[flagWeeks.length-1].close-flagWeeks[0].close)/flagWeeks[0].close*100:0;
           const poleSlope=poleGain/dur;
@@ -2366,48 +2366,59 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
       const curLow=weekly[wi].low;
       const drawdown=(localHigh-curLow)/localHigh*100;
 
-      // ── Ascending Base check (shallow patterns, depth < 15%) ──
-      // Check BEFORE the 8% gate so ascending structures aren't rejected
-      if(drawdown<15&&wi>=12){
-        const window=weekly.slice(Math.max(0,wi-12),wi+1);
-        const wLen=window.length;
-        // All closes above 10w SMA?
-        const startIdx=Math.max(0,wi-12);
-        let allAboveSMA=true;
-        for(let k=0;k<wLen;k++){
-          const si=startIdx+k;
-          if(sma10[si]!==null&&window[k].close<sma10[si]*0.98){allAboveSMA=false;break}
+      // ── Ascending Base check ──
+      // Scan multiple window sizes (3-12 weeks) to find the best fit.
+      // Check BEFORE the drawdown gate so ascending structures aren't rejected.
+      if(wi>=9){
+        let bestAB=null;
+        for(let wLen=3;wLen<=Math.min(12,wi);wLen++){
+          const startIdx=wi-wLen+1;
+          const win=weekly.slice(startIdx,wi+1);
+          // All closes above 10w SMA (2% tolerance)?
+          let allAbove=true;
+          for(let k=0;k<win.length;k++){
+            const si=startIdx+k;
+            if(sma10[si]!==null&&win[k].close<sma10[si]*0.98){allAbove=false;break}
+          }
+          if(!allAbove)continue;
+          // 10w SMA rising?
+          const s0=sma10[startIdx],s1=sma10[wi];
+          if(!s0||!s1||s1<=s0)continue;
+          // ATR decreasing?
+          const atrS=atr.slice(startIdx,startIdx+Math.min(3,wLen)).reduce((s,v)=>s+v,0)/Math.min(3,wLen);
+          const atrE=atr.slice(Math.max(startIdx,wi-2),wi+1).reduce((s,v)=>s+v,0)/Math.min(3,wLen);
+          const atrDecr=atrE<atrS*0.85;
+          // Higher lows
+          let hLows=0,pL=Infinity;
+          for(let k=1;k<win.length;k++){
+            if(win[k].low<win[k-1].low&&win[k].low>pL){hLows++;pL=win[k].low}
+            else if(win[k].low<pL)pL=win[k].low;
+          }
+          if(!atrDecr&&hLows<2)continue;
+          // Max drawdown < 25% (close-based — ascending bases drift on closes, not intraweek noise)
+          const cH=Math.max(...win.map(w=>w.close));
+          const cL=Math.min(...win.map(w=>w.close));
+          const mDD=(cH-cL)/cH*100;
+          if(mDD>=25)continue;
+          // Also track high/low for baseLow
+          const wH=Math.max(...win.map(w=>w.high));
+          const wL=Math.min(...win.map(w=>w.low));
+          // Volume: softer gate — require < 0.90 when higher lows confirm, < 0.75 otherwise
+          const vR=volDryUpCalc(win)/100;
+          const volOK=hLows>=2?vR<0.90:vR<0.75;
+          if(!volOK)continue;
+          // Best = longest valid window
+          if(!bestAB||wLen>bestAB.wLen)bestAB={startIdx,wLen,wH,wL,mDD,vR};
         }
-        // 10w SMA rising?
-        const smaStart=sma10[startIdx];
-        const smaEnd=sma10[wi];
-        const smaRising=smaStart&&smaEnd&&smaEnd>smaStart;
-        // ATR decreasing?
-        const atrStart=atr.slice(startIdx,startIdx+3).reduce((s,v)=>s+v,0)/3;
-        const atrEnd=atr.slice(wi-2,wi+1).reduce((s,v)=>s+v,0)/3;
-        const atrDecreasing=atrEnd<atrStart*0.85;
-        // Count higher lows (pullbacks)
-        let higherLows=0;let prevLo=Infinity;
-        for(let k=1;k<wLen;k++){
-          if(window[k].low<window[k-1].low&&window[k].low>prevLo){higherLows++;prevLo=window[k].low}
-          else if(window[k].low<prevLo)prevLo=window[k].low;
-        }
-        // Max drawdown from swing high in window
-        const winHigh=Math.max(...window.map(w=>w.high));
-        const winLow=Math.min(...window.map(w=>w.low));
-        const maxDD=(winHigh-winLow)/winHigh*100;
-        // Volume dry-up confirmation for shallow patterns
-        const volRatio=volDryUpCalc(window)/100;
-
-        if(allAboveSMA&&smaRising&&(atrDecreasing||higherLows>=3)&&maxDD<20&&wLen>=3&&volRatio<0.75){
-          const pivot=+Math.max(...window.map(w=>w.close)).toFixed(2);
-          const baseLow=+winLow.toFixed(2);
-          const endWk=wi;const startWk=Math.max(0,wi-wLen+1);
-          bases.push({startWk,endWk,startDay:weekly[startWk].dayStart,endDay:weekly[endWk].dayStart,
-            weeks:wLen,depth:+maxDD.toFixed(1),type:'Ascending Base',
+        if(bestAB){
+          const{startIdx:si,wLen:wl,wH,wL,mDD,vR}=bestAB;
+          const win=weekly.slice(si,wi+1);
+          const pivot=+Math.max(...win.map(w=>w.close)).toFixed(2);
+          bases.push({startWk:si,endWk:wi,startDay:weekly[si].dayStart,endDay:weekly[wi].dayStart,
+            weeks:wl,depth:+mDD.toFixed(1),type:'Ascending Base',
             pivot,buyZoneLow:pivot,buyZoneHigh:+(pivot*1.05).toFixed(2),
-            baseLow,volDryUp:Math.round(volRatio*100),baseNum:bases.length+1});
-          wi=endWk+2;continue;
+            baseLow:+wL.toFixed(2),volDryUp:Math.round(vR*100),baseNum:bases.length+1});
+          wi=wi+2;continue;
         }
       }
 
@@ -2481,8 +2492,23 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
       wi=bEnd+2;
     }
 
-    // ── Merge HTF bases into results, sorted by startWk ──
-    const all=[...bases,...htfBases].sort((a,b)=>a.startWk-b.startWk);
+    // ── Merge and deduplicate (keep longest non-overlapping at each position) ──
+    const raw=[...bases,...htfBases].sort((a,b)=>a.startWk-b.startWk);
+    const all=[];
+    for(const b of raw){
+      const overlap=all.find(x=>b.startWk<=x.endWk&&b.endWk>=x.startWk);
+      if(overlap){
+        // Keep whichever is longer
+        if(b.weeks>overlap.weeks){
+          all.splice(all.indexOf(overlap),1);
+          all.push(b);
+        }
+        // else skip b (overlap is longer)
+      }else{
+        all.push(b);
+      }
+    }
+    all.sort((a,b)=>a.startWk-b.startWk);
     // Re-number and add late-stage warnings (change #5)
     for(let i=0;i<all.length;i++){
       all[i].baseNum=i+1;

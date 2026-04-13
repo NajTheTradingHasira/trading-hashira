@@ -219,9 +219,17 @@ def classify_stage(data: dict, benchmark_data: dict | None = None) -> TickerResu
 
     if above_30w and slope_30w == "Rising":
         # ── Stage 2 family: confirmed uptrend ──
-        # 2B = extended advance (price >20% above 30W SMA)
-        # 2A = default advancing / markup (Point A)
-        if vol_signal == "Breakout":
+        #
+        # Stage 3A intercept: 30W is a lagging indicator — distribution
+        # can begin while 30W still rises.  Detect early topping when:
+        #   1) 10W slope is Falling (shorter MA rolling over)
+        #   2) Price > 8% off 52-week high (failed to recover)
+        #   3) Volume below average on the recovery (weak demand)
+        if (slope_10w == "Falling"
+                and pct_high is not None and pct_high < -8
+                and vol_ratio < 1.0):
+            stage = "3A"
+        elif vol_signal == "Breakout":
             stage = "2A"
             qualifier = "(+)" if vol_ratio >= 3.0 else ""
         elif pct_above_30w > 20 and slope_10w != "Rising":

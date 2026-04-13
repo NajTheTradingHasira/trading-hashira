@@ -44,6 +44,7 @@ class TickerResult(BaseModel):
     pct_from_52w_high: Optional[float] = None
     pct_from_52w_low: Optional[float] = None
     transition_risk: Optional[str] = None  # e.g. "3B → 4A — HIGH"
+    stage_3_intercept_debug: Optional[dict] = None  # gate values for 3A intercept audit
     error: Optional[str] = None
 
 class ScanResponse(BaseModel):
@@ -217,6 +218,21 @@ def classify_stage(data: dict, benchmark_data: dict | None = None) -> TickerResu
 
     pct_above_30w = (price - cur_sma30) / cur_sma30 * 100 if cur_sma30 else 0
 
+    # Stage 3A intercept gate values (computed for every ticker for audit)
+    s3_gate = {
+        "slope_10w": slope_10w,
+        "slope_10w_is_falling": slope_10w == "Falling",
+        "pct_from_52w_high": pct_high,
+        "off_high_gt_8pct": pct_high is not None and pct_high < -8,
+        "vol_ratio": vol_ratio,
+        "vol_below_avg": vol_ratio < 1.0,
+        "all_true": (slope_10w == "Falling"
+                     and pct_high is not None and pct_high < -8
+                     and vol_ratio < 1.0),
+        "in_rising_branch": above_30w and slope_30w == "Rising",
+        "intercepted": False,
+    }
+
     if above_30w and slope_30w == "Rising":
         # ── Stage 2 family: confirmed uptrend ──
         #
@@ -229,6 +245,7 @@ def classify_stage(data: dict, benchmark_data: dict | None = None) -> TickerResu
                 and pct_high is not None and pct_high < -8
                 and vol_ratio < 1.0):
             stage = "3A"
+            s3_gate["intercepted"] = True
         elif vol_signal == "Breakout":
             stage = "2A"
             qualifier = "(+)" if vol_ratio >= 3.0 else ""
@@ -303,6 +320,7 @@ def classify_stage(data: dict, benchmark_data: dict | None = None) -> TickerResu
         pct_from_52w_high=pct_high,
         pct_from_52w_low=pct_low,
         transition_risk=transition,
+        stage_3_intercept_debug=s3_gate,
     )
 
 

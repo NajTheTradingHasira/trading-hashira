@@ -59,18 +59,18 @@ class ScanResponse(BaseModel):
 # ── Stage Labels ────────────────────────────────────────────────────────
 
 STAGE_META = {
-    "1A": ("Start of Base",       "Watch only"),
-    "1":  ("Basing",              "Watchlist / early research"),
-    "1B": ("Late Base",           "Prepare buy list"),
-    "2A": ("Early Uptrend",       "Primary buy zone"),
-    "2":  ("Advancing",           "Hold; add on 10w pullbacks"),
-    "2B": ("Late Uptrend",        "Tighten stops; no new adds"),
-    "3A": ("Top Forming",         "Defensive; raise stops"),
-    "3":  ("Top Area",            "Sell into strength"),
-    "3B": ("Increasingly Toppy",  "Exit remaining longs"),
-    "4A": ("Entered Downtrend",   "Full exit / short"),
-    "4":  ("Declining",           "Short bias or flat"),
-    "4B": ("Late Downtrend",      "Patience; watch for base"),
+    "1A": ("Basing / Accumulation",    "Watch only \u2014 too early, never buy Stage 1"),
+    "1":  ("Basing / Accumulation",    "Early base forming \u2014 add to research watchlist"),
+    "1B": ("Basing / Accumulation",    "Watch closely \u2014 maintain watchlist, wait for Stage 2 breakout"),
+    "2A": ("Advancing / Markup",       "Buy \u2014 initial breakout (Point A)"),
+    "2":  ("Advancing / Markup",       "Hold and trail stops \u2014 add on pullbacks to 10W EMA"),
+    "2B": ("Advancing / Markup",       "Buy \u2014 consolidation entry (Point B) or add to position"),
+    "3A": ("Topping / Distribution",   "Reduce exposure \u2014 sell 1/3 on first undercut of 10W EMA"),
+    "3":  ("Topping / Distribution",   "Sell into strength \u2014 reduce on any volume climax"),
+    "3B": ("Topping / Distribution",   "Sell remaining \u2014 exit on any rally into MAs from below"),
+    "4A": ("Declining / Markdown",     "Full exit \u2014 breakdown confirmed, no longs"),
+    "4":  ("Declining / Markdown",     "Short bias or flat \u2014 avoid bottom-fishing"),
+    "4B": ("Declining / Markdown",     "Full exit / short \u2014 accelerating decline"),
 }
 
 # ── Yahoo Finance Data Fetcher ──────────────────────────────────────────
@@ -107,16 +107,16 @@ def sma(values: list, period: int) -> list:
     return out
 
 
-def slope_direction(values: list, lookback: int = 4) -> str:
+def slope_direction(values: list, lookback: int = 4, threshold: float = 0.5) -> str:
     """Classify slope of last `lookback` values."""
     recent = [v for v in values[-lookback:] if v is not None]
     if len(recent) < 2:
         return "Unknown"
     delta = recent[-1] - recent[0]
     pct = delta / recent[0] * 100 if recent[0] else 0
-    if pct > 0.5:
+    if pct > threshold:
         return "Rising"
-    elif pct < -0.5:
+    elif pct < -threshold:
         return "Falling"
     return "Flat"
 
@@ -154,8 +154,8 @@ def classify_stage(data: dict, benchmark_data: dict | None = None) -> TickerResu
     above_30w = price > cur_sma30
     price_vs = "Above" if above_30w else "Below"
 
-    # 2. 30w SMA slope
-    slope_30w = slope_direction(sma30)
+    # 2. 30w SMA slope (5-week lookback, 0.6% threshold for slow-moving 30w avg)
+    slope_30w = slope_direction(sma30, lookback=5, threshold=0.6)
 
     # 3. Volume analysis
     vol_avg_52 = sum(volumes[-52:]) / min(len(volumes), 52) if volumes else 0
@@ -205,55 +205,73 @@ def classify_stage(data: dict, benchmark_data: dict | None = None) -> TickerResu
     pct_low = round((price / low_52 - 1) * 100, 1) if low_52 else None
 
     # ── Stage Decision Tree ──────────────────────────────────────────
+    #
+    # Weinstein / Wyckoff hybrid classification.
+    # Primary axes: price vs 30W SMA, 30W SMA slope direction.
+    # Secondary: Mansfield RS, 10W slope, volume, extension.
+    #
     stage = "?"
     qualifier = ""
     transition = None
+    slope_10w = slope_direction(sma10)
+
+    pct_above_30w = (price - cur_sma30) / cur_sma30 * 100 if cur_sma30 else 0
 
     if above_30w and slope_30w == "Rising":
-        # Stage 2 family
-        if vol_signal == "Breakout" and (mrs is None or mrs > 0):
+        # ── Stage 2 family: confirmed uptrend ──
+        # 2B = extended advance (price >20% above 30W SMA)
+        # 2A = default advancing / markup (Point A)
+        if vol_signal == "Breakout":
             stage = "2A"
             qualifier = "(+)" if vol_ratio >= 3.0 else ""
-        elif slope_direction(sma10) == "Rising" and price > cur_sma10:
-            stage = "2"
-            if pct_high is not None and pct_high > -5:
-                qualifier = "(+)"
-        else:
+        elif pct_above_30w > 20 and slope_10w != "Rising":
             stage = "2B"
-            transition = "2B → 3A — MODERATE"
+        else:
+            stage = "2A"
 
     elif above_30w and slope_30w == "Flat":
-        # Ambiguous: late Stage 1 or early Stage 3
-        if mrs is not None and mrs > 0:
-            stage = "1B"
-            transition = "1B → 2A — watch for breakout"
-        else:
+        # ── Ambiguous: late base or early distribution ──
+        # 3B = RS negative (distribution)
+        # 3A = RS positive but 10W weakening (late distribution)
+        # 1B = RS positive and structure holding (accumulation)
+        if mrs is not None and mrs <= 0:
+            stage = "3B"
+        elif slope_10w == "Falling":
             stage = "3A"
-            transition = "3A → 3B — ELEVATED"
+        else:
+            stage = "1B"
+            transition = "1B \u2192 2A"
+
+    elif above_30w and slope_30w == "Falling":
+        # ── Price above a declining 30W: accumulation or distribution ──
+        # 3A = barely above + 10W weakening (distribution)
+        # 1A = price spring above declining 30W (early accumulation)
+        if slope_10w == "Falling" and pct_above_30w < 5:
+            stage = "3A"
+        else:
+            stage = "1A"
+
+    elif not above_30w and slope_30w == "Rising":
+        # ── Pullback within uptrend ──
+        stage = "1B"
 
     elif not above_30w and slope_30w == "Flat":
+        # ── Base or late topping ──
         if vol_signal == "Dry-up":
             stage = "1A"
         else:
             stage = "3B"
-            transition = "3B → 4A — HIGH"
+            transition = "3B \u2192 4A"
 
     elif not above_30w and slope_30w == "Falling":
-        # Stage 4 family
-        if slope_direction(sma10) == "Falling":
+        # ── Stage 4 family: confirmed downtrend ──
+        if slope_10w == "Falling":
             stage = "4"
             if vol_signal == "Dry-up":
                 stage = "4B"
-                transition = "4B → 1A — watch for base"
         else:
             stage = "4A"
             qualifier = "(-)"
-            transition = "4A confirmed — full exit"
-
-    elif not above_30w and slope_30w == "Rising":
-        # Pullback within uptrend or early base
-        stage = "1"
-        transition = "Possible 1 → 1B"
 
     label, action = STAGE_META.get(stage, ("Unknown", "Review manually"))
 

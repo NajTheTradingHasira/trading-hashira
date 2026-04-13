@@ -240,15 +240,18 @@ def classify_stage(data: dict, benchmark_data: dict | None = None) -> TickerResu
     pct_low = round((price / low_52 - 1) * 100, 1) if low_52 else None
 
     # ── 3A intercept debug (computed for every ticker) ──
+    _g1 = ema_10w_slope < 0
+    _g2 = pct_high is not None and pct_high < -8
+    _g3 = vol_ratio < 1.0
     s3_gate = {
         "ema_10w_slope": round(ema_10w_slope, 3),
-        "ema_10w_falling": ema_10w_slope < 0,
-        "ma_stack": bool(ma_stack),
-        "ma_stack_broken": not ma_stack,
+        "ema_10w_falling": _g1,
         "pct_from_52w_high": pct_high,
-        "off_high_gt_8pct": pct_high is not None and pct_high < -8,
+        "off_high_gt_8pct": _g2,
         "vol_ratio": vol_ratio,
-        "vol_below_avg": vol_ratio < 1.0,
+        "vol_below_avg": _g3,
+        "ma_stack": bool(ma_stack),
+        "all_gates_true": _g1 and _g2 and _g3 and price > cur_sma30,
         "intercepted": False,
     }
 
@@ -265,10 +268,11 @@ def classify_stage(data: dict, benchmark_data: dict | None = None) -> TickerResu
             stage = "4A"
             qualifier = "(-)"
 
-    # STAGE 3 OVERRIDE — MA stack broken + 10W EMA declining = topping
-    elif not ma_stack and ema_10w_slope < 0 and price > cur_sma30:
+    # STAGE 3 INTERCEPT — catch early distribution even with intact MA stack
+    # Three gates: 10W declining + >8% off high + below-avg volume
+    elif _g1 and _g2 and _g3 and price > cur_sma30:
         s3_gate["intercepted"] = True
-        if price < ema_10w or ma_conv < 3 or sma_30w_slope < -0.5:
+        if (not ma_stack and ma_conv < 3) or price < ema_10w or sma_30w_slope < -0.5:
             stage = "3B"
         else:
             stage = "3A"

@@ -603,6 +603,17 @@ tr:hover{background:var(--bg2)}
   </div>
 </div>
 </div>
+<!-- Watchlist Edit Modal -->
+<div id="wl-edit-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:300" onclick="NX._wlEditCancel()"></div>
+<div id="wl-edit-modal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:301;background:var(--card-bg);border:1px solid var(--cyan);border-radius:8px;padding:20px 24px;min-width:340px;max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,.6)">
+  <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:var(--cyan);margin-bottom:12px">EDIT SETUP / NOTES</div>
+  <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">TICKER: <span id="wl-edit-ticker" style="color:var(--text)"></span></div>
+  <input id="wl-edit-input" type="text" style="width:100%;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:inherit;font-size:12px;outline:none;box-sizing:border-box" placeholder="e.g. Breakout, Consolidation, RS New High…" />
+  <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end">
+    <button class="btn btn-sm" onclick="NX._wlEditCancel()" style="font-size:10px;padding:6px 16px;color:var(--text-dim)">Cancel</button>
+    <button class="btn btn-sm" onclick="NX._wlEditSave()" style="font-size:10px;padding:6px 16px;background:var(--cyan);color:var(--bg);font-weight:700">Save</button>
+  </div>
+</div>
 <!-- Perplexity Panel -->
 <div id="pplx-overlay" onclick="NX.closePplx()"></div>
 <div id="pplx-panel">
@@ -709,6 +720,8 @@ function goTo(id){
 
 // Keyboard shortcuts
 document.addEventListener('keydown',e=>{
+  // Watchlist edit modal keyboard
+  if(NX._wlEditCtx){if(e.key==='Enter')NX._wlEditSave();if(e.key==='Escape')NX._wlEditCancel();return}
   if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT')return;
   const pg=PAGES.find(p=>p.key.toLowerCase()===e.key.toLowerCase());
   if(pg)goTo(pg.id);
@@ -1007,8 +1020,24 @@ const NX={
   removeWLItem(catId,idx){const data=NX._wlGetData();if(data[catId])data[catId].splice(idx,1);NX._wlSaveData(data);NX.renderWatchlist()},
   editWLItem(catId,idx){
     const data=NX._wlGetData();const item=data[catId]?.[idx];if(!item)return;
-    const newNotes=prompt('Setup / Notes:',item.setup||item.notes||'');
-    if(newNotes!==null){item.setup=newNotes;NX._wlSaveData(data);NX.renderWatchlist()}
+    NX._wlEditCtx={catId,idx};
+    const ov=$('#wl-edit-overlay'),md=$('#wl-edit-modal'),inp=$('#wl-edit-input'),tk=$('#wl-edit-ticker');
+    if(tk)tk.textContent=item.ticker||'';
+    if(inp)inp.value=item.setup||item.notes||'';
+    if(ov)ov.style.display='block';if(md)md.style.display='block';
+    setTimeout(()=>{if(inp){inp.focus();inp.select()}},50);
+  },
+  _wlEditCtx:null,
+  _wlEditSave(){
+    const ctx=NX._wlEditCtx;if(!ctx)return;
+    const data=NX._wlGetData();const item=data[ctx.catId]?.[ctx.idx];
+    if(item){const v=$('#wl-edit-input');item.setup=v?.value||'';NX._wlSaveData(data);NX.renderWatchlist()}
+    NX._wlEditCancel();
+  },
+  _wlEditCancel(){
+    NX._wlEditCtx=null;
+    const ov=$('#wl-edit-overlay'),md=$('#wl-edit-modal');
+    if(ov)ov.style.display='none';if(md)md.style.display='none';
   },
   _wlPriceCache:{},_wlFetching:false,
   async loadWatchlist(){

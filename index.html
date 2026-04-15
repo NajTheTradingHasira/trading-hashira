@@ -1050,13 +1050,35 @@ const NX={
         body:JSON.stringify({watchlist:d})}).catch(e=>console.warn('Watchlist sync failed:',e));
     },500);
   },
+  _wlNormalize(data){
+    // Normalize field names between APEX format (.sym, .weeklySetup) and Hashira format (.ticker, .setup)
+    if(!data||typeof data!=='object')return data;
+    const stageMap={'s1':'Stage 1','s2':'Stage 2','s3':'Stage 3','s4':'Stage 4'};
+    Object.entries(data).forEach(([cat,items])=>{
+      if(!Array.isArray(items))return;
+      items.forEach(item=>{
+        if(!item.ticker&&item.sym)item.ticker=item.sym;
+        if(!item.setup&&item.weeklySetup)item.setup=item.weeklySetup;
+        if(!item.setup&&item.notes)item.setup=item.notes;
+        if(typeof item.stage==='string'&&stageMap[item.stage])item.stage=stageMap[item.stage];
+        if(typeof item.rs==='string')item.rs=parseInt(item.rs)||0;
+        if(typeof item.price==='string')item.price=parseFloat(item.price)||0;
+        if(!item.dayPct&&item.day)item.dayPct=parseFloat(item.day)||0;
+        if(!item.weekPct&&item.week)item.weekPct=parseFloat(item.week)||0;
+        if(!item.monthPct&&item.month)item.monthPct=parseFloat(item.month)||0;
+        if(!item.addedAt)item.addedAt=Date.now();
+      });
+    });
+    return data;
+  },
   async _wlLoadFromAPI(){
     try{
       const r=await fetch(NX.getBase()+'/api/watchlist');
       const d=await r.json();
       if(d.watchlist&&typeof d.watchlist==='object'&&Object.keys(d.watchlist).length>0){
-        localStorage.setItem('hashira_watchlist',JSON.stringify(d.watchlist));
-        return d.watchlist;
+        const normalized=NX._wlNormalize(d.watchlist);
+        localStorage.setItem('hashira_watchlist',JSON.stringify(normalized));
+        return normalized;
       }
     }catch(e){console.warn('Watchlist API load failed, using localStorage:',e)}
     return null;

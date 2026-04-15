@@ -1037,7 +1037,30 @@ const NX={
   _wlStages:['Stage 1','Stage 1A','Stage 1B','Stage 2','Stage 2A','Stage 2B','Stage 3','Stage 3A','Stage 3B','Stage 4','Stage 4A','Stage 4B'],
   _wlSetups:['Breakout','Consolidation','Basing','Distribution','RS New High','Wedge Pop','Pullback','Base Break','Follow-Through','Pocket Pivot'],
   _wlGetData(){try{return JSON.parse(localStorage.getItem('hashira_watchlist')||'{}')}catch{return{}}},
-  _wlSaveData(d){localStorage.setItem('hashira_watchlist',JSON.stringify(d))},
+  _wlSaveData(d){
+    localStorage.setItem('hashira_watchlist',JSON.stringify(d));
+    // Async sync to Postgres via /api/watchlist (fire-and-forget)
+    NX._wlSyncToAPI(d);
+  },
+  _wlSyncDebounce:null,
+  _wlSyncToAPI(d){
+    clearTimeout(NX._wlSyncDebounce);
+    NX._wlSyncDebounce=setTimeout(()=>{
+      fetch(NX.getBase()+'/api/watchlist',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({watchlist:d})}).catch(e=>console.warn('Watchlist sync failed:',e));
+    },500);
+  },
+  async _wlLoadFromAPI(){
+    try{
+      const r=await fetch(NX.getBase()+'/api/watchlist');
+      const d=await r.json();
+      if(d.watchlist&&typeof d.watchlist==='object'&&Object.keys(d.watchlist).length>0){
+        localStorage.setItem('hashira_watchlist',JSON.stringify(d.watchlist));
+        return d.watchlist;
+      }
+    }catch(e){console.warn('Watchlist API load failed, using localStorage:',e)}
+    return null;
+  },
   _wlActiveTab:'topdawg',
   switchWLTab(catId){NX._wlActiveTab=catId;NX.renderWatchlist()},
   addWLItem(catId){
@@ -1080,6 +1103,22 @@ const NX={
   },
   _wlPriceCache:{},_wlFetching:false,
   async loadWatchlist(){
+    // Pull from Postgres first (cross-device sync), fall back to localStorage
+    const apiData=await NX._wlLoadFromAPI();
+    if(apiData){
+      // Merge: API is authoritative for items, but keep local price cache
+      const local=NX._wlGetData();
+      Object.entries(apiData).forEach(([cat,items])=>{
+        if(!Array.isArray(items))return;
+        const localCat=local[cat]||[];
+        items.forEach(item=>{
+          const cached=localCat.find(l=>l.ticker===item.ticker);
+          if(cached){item.price=cached.price||item.price;item.dayPct=cached.dayPct||item.dayPct;
+            item.weekPct=cached.weekPct||item.weekPct;item.monthPct=cached.monthPct||item.monthPct}
+        });
+      });
+      localStorage.setItem('hashira_watchlist',JSON.stringify(apiData));
+    }
     NX.renderWatchlist();
     // Batch fetch live prices for all watchlist tickers
     const data=NX._wlGetData();
@@ -3923,8 +3962,8 @@ function renderStageScanner() {
 let _scanResults=[],_scanCurrentFilter='ALL',_scanCurrentSort='stage';
 
 function scannerLoadWatchlist(){
-  const wl=JSON.parse(localStorage.getItem('watchlist')||'[]');
-  const tickers=wl.map(w=>typeof w==='string'?w:w.ticker||w.symbol).filter(Boolean);
+  const data=NX._wlGetData();
+  const tickers=[...new Set(Object.values(data).flat().map(w=>w.ticker||w.symbol).filter(Boolean))];
   if(!tickers.length){document.getElementById('scanner-status').textContent='⚠ Watchlist empty — type tickers manually';return}
   document.getElementById('scanner-input').value=tickers.join(', ');
 }

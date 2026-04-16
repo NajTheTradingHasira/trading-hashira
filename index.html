@@ -735,6 +735,32 @@ tr:hover{background:var(--bg2)}
           </div>
         </div>
       </div>
+      <!-- AI Tape Reading -->
+      <div style="margin-top:12px">
+        <div class="card" style="padding:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+            <div style="font-weight:700;font-size:14px">AI Tape Reading</div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <button class="btn" id="spy-ai-ppx-btn" onclick="NX.loadSPYAnalysis('perplexity')" style="font-size:11px;background:rgba(0,255,255,0.1);border:1px solid rgba(0,255,255,0.3);color:var(--cyan)">⚡ PERPLEXITY</button>
+              <button class="btn" id="spy-ai-claude-btn" onclick="NX.loadSPYAnalysis('claude')" style="font-size:11px;background:rgba(187,134,252,0.1);border:1px solid rgba(187,134,252,0.3);color:var(--purple)">⚡ CLAUDE</button>
+              <button class="btn" onclick="NX.loadSPYAnalysis('perplexity');NX.loadSPYAnalysis('claude')" style="font-size:11px">⚡ BOTH</button>
+            </div>
+          </div>
+          <!-- Provider tabs -->
+          <div style="display:flex;gap:0;margin-bottom:12px;border-bottom:1px solid var(--border)">
+            <button class="tab-btn active" id="spy-ai-tab-ppx" onclick="NX.switchSPYAITab('perplexity')" style="padding:6px 14px;font-size:11px;border-bottom:2px solid var(--cyan);color:var(--cyan);background:transparent;border-radius:0">Perplexity</button>
+            <button class="tab-btn" id="spy-ai-tab-claude" onclick="NX.switchSPYAITab('claude')" style="padding:6px 14px;font-size:11px;border-bottom:2px solid transparent;color:var(--text-muted);background:transparent;border-radius:0">Claude</button>
+          </div>
+          <!-- Perplexity output -->
+          <div id="spy-ai-ppx" style="display:block">
+            <div class="empty-state" style="padding:30px"><div class="icon" style="color:var(--cyan)">⊘</div>Click PERPLEXITY for web-search-powered tape reading<br/><span style="font-size:10px;color:var(--text-dim);margin-top:6px;display:block">sonar-pro · web search enabled · 5-min cache</span></div>
+          </div>
+          <!-- Claude output -->
+          <div id="spy-ai-claude" style="display:none">
+            <div class="empty-state" style="padding:30px"><div class="icon" style="color:var(--purple)">⊘</div>Click CLAUDE for reasoning-powered tape reading<br/><span style="font-size:10px;color:var(--text-dim);margin-top:6px;display:block">claude-sonnet-4 · deep reasoning · 5-min cache</span></div>
+          </div>
+        </div>
+      </div>
     </div>
     <!-- Deep Dive Research -->
     <div class="page" id="pg-deepdive">
@@ -938,7 +964,7 @@ function goTo(id){
     earnings:()=>{const reg=getRegistry();const presets=reg.core.length?reg.core.slice(0,10):['NVDA','META','CRM','AAPL','GOOGL','AMZN','TSLA','AMD','PLTR','CRWD'];$('#earn-presets').innerHTML=presets.map(t=>`<button class="btn btn-sm" onclick="$('#earn-ticker').value='${t}';NX.loadEarnings()">${t}</button>`).join('')},
     settings:()=>{NX.loadHeatmap();NX.loadAlerts()},
     'stage-scanner':()=>renderStageScanner(),
-    spylogic:()=>{NX.runSPYLogic()},
+    spylogic:()=>{NX.loadSPYLogic()},
   };
   if(loaders[id])loaders[id]();
 }
@@ -2310,6 +2336,104 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     if(stanceEl)stanceEl.textContent=text;
     if(titleEl)titleEl.textContent=title;
     if(textEl)textEl.textContent=text;
+  },
+  async loadSPYLogic(){
+    // Auto-fetch live SPY data to populate the bias engine
+    try{
+      const d=await NX.apiFetch('/api/spy-logic');
+      if(d&&!d.error){
+        const stance=$('#spy-stance-text');
+        if(stance){
+          const above=d.above_vwap;const pct=d.day_change_pct||0;
+          stance.textContent=`SPY $${d.price} (${pct>=0?'+':''}${pct}%) · VWAP $${d.vwap} (${above?'holding above':'below'}) · ${d.sector_breadth||''}`;
+        }
+        // Auto-set dropdowns based on live data
+        const openSel=$('#spy-opening');const vwapSel=$('#spy-vwap');
+        if(openSel){
+          if(d.price>d.recent_5d_high)openSel.value='above';
+          else if(d.price<d.recent_5d_low)openSel.value='gapdown';
+          else openSel.value='below';
+        }
+        if(vwapSel){
+          if(d.above_vwap&&d.vwap_distance>1)vwapSel.value='holding';
+          else if(!d.above_vwap&&d.vwap_distance>1)vwapSel.value='lost';
+          else vwapSel.value='chop';
+        }
+        NX.runSPYLogic();
+      }
+    }catch(e){console.warn('SPY Logic auto-fetch failed:',e);NX.runSPYLogic()}
+  },
+  loadSPYAnalysis(provider){
+    provider=provider||'perplexity';
+    const panelId=provider==='perplexity'?'spy-ai-ppx':'spy-ai-claude';
+    const btnId=provider==='perplexity'?'spy-ai-ppx-btn':'spy-ai-claude-btn';
+    const el=document.getElementById(panelId);
+    const btn=document.getElementById(btnId);
+    if(!el)return;
+    NX.switchSPYAITab(provider);
+    el.innerHTML='<div style="padding:30px;text-align:center;color:var(--text-muted)"><div style="font-size:16px;margin-bottom:8px">⏳</div>Generating '+provider+' tape reading...<br/><span style="font-size:10px;color:var(--text-dim)">Fetching live data → AI analysis → ~15 seconds</span></div>';
+    if(btn){btn.disabled=true;btn.style.opacity='0.5'}
+    const base=NX.getBase();
+    fetch(base+'/api/spy-logic/analysis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:provider})})
+      .then(r=>r.json())
+      .then(d=>{
+        if(btn){btn.disabled=false;btn.style.opacity='1'}
+        if(d.error||!d.analysis){el.innerHTML='<div style="padding:20px;color:var(--red)">⚠ '+(d.error||'No analysis returned')+'</div>';return}
+        const ts=d.timestamp?new Date(d.timestamp).toLocaleTimeString():'';
+        const priceStr=d.market_data?.price?'$'+d.market_data.price:'';
+        const vwapStr=d.market_data?.vwap?'$'+d.market_data.vwap:'';
+        const color=provider==='perplexity'?'var(--cyan)':'var(--purple)';
+        const header='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:6px">'
+          +'<div style="display:flex;align-items:center;gap:8px">'
+          +'<span style="padding:2px 8px;border-radius:20px;font-size:9px;font-weight:700;background:'+(provider==='perplexity'?'rgba(0,255,255,0.1)':'rgba(187,134,252,0.1)')+';color:'+color+'">'+provider.toUpperCase()+'</span>'
+          +'<span style="font-size:11px;color:var(--text-muted)">SPY '+priceStr+' · VWAP '+vwapStr+'</span>'
+          +'</div>'
+          +'<span style="font-size:10px;color:var(--text-dim)">'+ts+'</span>'
+          +'</div>';
+        el.innerHTML=header+NX._renderSPYMarkdown(d.analysis);
+      })
+      .catch(e=>{
+        if(btn){btn.disabled=false;btn.style.opacity='1'}
+        el.innerHTML='<div style="padding:20px;color:var(--red)">⚠ '+provider+' request failed: '+e.message+'</div>';
+      });
+  },
+  switchSPYAITab(provider){
+    const ppx=$('#spy-ai-ppx'),cl=$('#spy-ai-claude');
+    const tPpx=$('#spy-ai-tab-ppx'),tCl=$('#spy-ai-tab-claude');
+    if(!ppx||!cl)return;
+    if(provider==='perplexity'){
+      ppx.style.display='block';cl.style.display='none';
+      if(tPpx){tPpx.style.borderBottomColor='var(--cyan)';tPpx.style.color='var(--cyan)'}
+      if(tCl){tCl.style.borderBottomColor='transparent';tCl.style.color='var(--text-muted)'}
+    }else{
+      ppx.style.display='none';cl.style.display='block';
+      if(tCl){tCl.style.borderBottomColor='var(--purple)';tCl.style.color='var(--purple)'}
+      if(tPpx){tPpx.style.borderBottomColor='transparent';tPpx.style.color='var(--text-muted)'}
+    }
+  },
+  _renderSPYMarkdown(md){
+    let html=md;
+    html=html.replace(/\|(.+)\|\n\|[-| :]+\|\n((?:\|.+\|\n?)*)/g,function(match,header,body){
+      const headers=header.split('|').map(h=>h.trim()).filter(Boolean);
+      let table='<div style="overflow-x:auto;margin:12px 0"><table style="width:100%;border-collapse:collapse;font-size:12px">';
+      table+='<thead><tr>'+headers.map(h=>'<th style="text-align:left;padding:8px 10px;border-bottom:2px solid var(--cyan);color:var(--cyan);font-size:10px;text-transform:uppercase;letter-spacing:0.05em">'+h+'</th>').join('')+'</tr></thead>';
+      table+='<tbody>';
+      body.trim().split('\n').forEach((row,i)=>{
+        const cells=row.split('|').map(c=>c.trim()).filter(Boolean);
+        const bg=i%2===0?'rgba(255,255,255,0.02)':'transparent';
+        table+='<tr style="background:'+bg+'">'+cells.map(c=>'<td style="padding:8px 10px;border-bottom:1px solid rgba(255,255,255,0.06)">'+c+'</td>').join('')+'</tr>';
+      });
+      table+='</tbody></table></div>';return table;
+    });
+    html=html.replace(/^## (.+)$/gm,'<div style="font-weight:700;font-size:14px;color:var(--cyan);margin:20px 0 10px;padding-bottom:6px;border-bottom:1px solid rgba(0,255,255,0.15)">$1</div>');
+    html=html.replace(/^### (.+)$/gm,'<div style="font-weight:700;font-size:13px;margin:14px 0 8px;color:var(--text)">$1</div>');
+    html=html.replace(/\*\*(.+?)\*\*/g,'<strong style="color:var(--text)">$1</strong>');
+    html=html.replace(/^([A-C])\.\s+(.+)$/gm,'<div style="font-weight:700;font-size:13px;margin:14px 0 4px;color:var(--cyan)">$1. $2</div>');
+    html=html.replace(/^\s{2,}[-•]\s+(.+)$/gm,'<div style="display:flex;gap:8px;padding:2px 0 2px 20px;font-size:11px"><span style="color:var(--text-dim);flex-shrink:0">·</span><span style="color:var(--text-muted)">$1</span></div>');
+    html=html.replace(/^[-•]\s+(.+)$/gm,'<div style="display:flex;gap:8px;padding:3px 0;font-size:12px"><span style="color:var(--cyan);flex-shrink:0">›</span><span style="color:var(--text-muted)">$1</span></div>');
+    html=html.replace(/^(?!<)(.+)$/gm,'<p style="font-size:12px;color:var(--text-muted);margin:4px 0;line-height:1.6">$1</p>');
+    html=html.replace(/<p[^>]*>\s*<\/p>/g,'');
+    return'<div style="padding:4px 0">'+html+'</div>';
   },
 
   // ═══ DEEP DIVE — 4-Agent Research Pipeline ═══

@@ -532,7 +532,7 @@ tr:hover{background:var(--bg2)}
           <div style="font-size:22px;font-weight:700;line-height:1.1;margin-bottom:10px;max-width:18ch">Decide whether today favors buying pullbacks or fading rallies.</div>
           <div style="color:var(--text-muted);font-size:12px;margin-bottom:16px">Feed it opening context, VWAP state, internals, and location vs supply. Returns directional bias, entry style, and invalidation.</div>
           <div style="display:flex;gap:8px;margin-bottom:16px">
-            <button class="btn" onclick="NX.runSPYLogic()" style="background:var(--cyan);color:#000;font-weight:700">▶ RUN TRADE LOGIC</button>
+            <button class="btn" onclick="NX.runFullSPYAnalysis()" style="background:var(--cyan);color:#000;font-weight:700">▶ RUN TRADE LOGIC</button>
             <button class="btn" onclick="document.getElementById('spy-levels').scrollIntoView({behavior:'smooth'})">⬇ SUPPLY MAP</button>
           </div>
           <div id="spy-stance" class="card" style="padding:14px;background:linear-gradient(135deg,rgba(0,255,255,0.06),var(--card-bg));border:1px solid rgba(0,255,255,0.2)">
@@ -2336,6 +2336,11 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     if(stanceEl)stanceEl.textContent=text;
     if(titleEl)titleEl.textContent=title;
     if(textEl)textEl.textContent=text;
+  },
+  runFullSPYAnalysis(){
+    NX.loadSPYLogic();
+    NX.loadSPYAnalysis('perplexity');
+    NX.loadSPYAnalysis('claude');
   },
   async loadSPYLogic(){
     // Auto-fetch live SPY data to populate the bias engine

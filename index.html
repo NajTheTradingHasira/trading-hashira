@@ -1480,7 +1480,7 @@ const NX={
           <td style="color:var(--text-dim);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${w.setup||'—'}</td>
           <td style="white-space:nowrap"><button class="btn btn-sm" style="font-size:9px" onclick="NX.editWLItem('${tab}',${i})">✎ Edit</button> <button class="btn btn-sm" style="font-size:9px;color:var(--red)" onclick="NX.removeWLItem('${tab}',${i})">✕</button></td>
         </tr>`;
-      }).join('')}</tbody></table></div></div>`:'<div class="empty-state"><div class="icon">${cat.dot}</div>No items in ${cat.label}. Add tickers above.</div>'}`;
+      }).join('')}</tbody></table></div></div>`:`<div class="empty-state"><div class="icon">${cat.dot}</div>No items in ${cat.label}. Add tickers above.</div>`}`;
   },
 
   // ═══ STOCK CHART ═══

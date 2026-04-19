@@ -156,6 +156,16 @@ body::after{
 .b-accent{background:var(--accent-bg);color:var(--accent);border:1px solid var(--accent-dim)}
 .b-purple{background:var(--purple-bg);color:var(--purple);border:1px solid var(--purple-dim)}
 
+/* ANTS column — Advance with No Trouble Signs */
+.cell-ants{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-mono);font-weight:700;font-size:11px;cursor:help}
+.ants-score{padding:2px 6px;border-radius:3px;letter-spacing:.3px;min-width:22px;text-align:center;display:inline-block}
+.ants-s-hi{background:rgba(34,197,94,.15);color:var(--green);border:1px solid rgba(34,197,94,.30)}
+.ants-s-md{background:rgba(245,158,11,.12);color:var(--amber);border:1px solid rgba(245,158,11,.28)}
+.ants-s-lo{background:rgba(148,163,184,.10);color:var(--text-muted);border:1px solid rgba(148,163,184,.22)}
+.cell-ants-pending{color:var(--text-dim);font-family:var(--font-mono);font-size:11px}
+.cell-ants-na{color:var(--text-dim);font-family:var(--font-mono);font-size:11px}
+.ants-flag{font-size:12px;line-height:1;filter:drop-shadow(0 0 4px rgba(34,197,94,.6))}
+
 /* Tables */
 table{width:100%;border-collapse:collapse;font-size:12px}
 th{text-align:left;font-size:9px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;padding:8px 10px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg1);z-index:1}
@@ -1331,6 +1341,8 @@ const NX={
     const data=NX._wlGetData();if(!data[catId])data[catId]=[];
     data[catId].push({ticker,stage:si?.value||'Stage 2',rs:parseInt(ri?.value)||50,setup:se?.value||'',notes:'',price:0,dayPct:0,weekPct:0,monthPct:0,addedAt:Date.now()});
     NX._wlSaveData(data);if(ti)ti.value='';NX.renderWatchlist();
+    // Trigger ANTS fetch for the new ticker (cache dedupes existing ones)
+    NX.fetchAllANTS().catch(e=>console.warn('[HASHIRA] ANTS add skipped:',e.message));
   },
   removeWLItem(catId,idx){const data=NX._wlGetData();if(data[catId])data[catId].splice(idx,1);NX._wlSaveData(data);NX.renderWatchlist()},
   editWLItem(catId,idx){
@@ -1429,6 +1441,9 @@ const NX={
     }
     NX._wlFetching=false;
     if(status)status.innerHTML=fetched?`<span style="color:var(--green)">● Live · ${fetched} tickers</span>`:`<span style="color:var(--text-dim)">○ Offline</span>`;
+    // Fetch ANTS scores (server-side via nexus-backend /api/ants/batch).
+    // Fire-and-forget — cells render "…" then update when the batch resolves.
+    NX.fetchAllANTS().catch(e=>console.warn('[HASHIRA] ANTS init skipped:',e.message));
   },
   renderWatchlist(){
     const el=$('#wl-content');const data=NX._wlGetData();const tab=NX._wlActiveTab;
@@ -1466,10 +1481,10 @@ const NX={
       </div>
     </div>
     ${items.length?`<div class="card" style="padding:0"><div style="overflow-x:auto"><table>
-      <thead><tr><th>TICKER</th><th>PRICE</th><th>DAY %</th><th>WEEK %</th><th>MONTH %</th><th>STAGE</th><th>RS</th><th>SETUP / NOTES</th><th></th></tr></thead>
+      <thead><tr><th>TICKER</th><th>PRICE</th><th>DAY %</th><th>WEEK %</th><th>MONTH %</th><th>STAGE</th><th>RS</th><th>ANTS</th><th>SETUP / NOTES</th><th></th></tr></thead>
       <tbody>${items.map((w,i)=>{
         const sc=stgBadgeClr(w.stage);
-        return `<tr>
+        return `<tr data-sym="${w.ticker}">
           <td style="font-weight:700;font-size:13px">${w.ticker}</td>
           <td>$${fmt(w.price||0)}</td>
           <td class="${pc(w.dayPct||0)}">${w.dayPct?((w.dayPct>0?'▲ ':'▼ ')+Math.abs(w.dayPct).toFixed(2)+'%'):'—'}</td>
@@ -1477,10 +1492,95 @@ const NX={
           <td class="${pc(w.monthPct||0)}">${w.monthPct?((w.monthPct>0?'▲ ':'▼ ')+Math.abs(w.monthPct).toFixed(2)+'%'):'—'}</td>
           <td><span class="badge" style="background:${sc}18;color:${sc};border:1px solid ${sc}40;font-size:10px;letter-spacing:.5px">${(w.stage||'—').toUpperCase()}</span></td>
           <td style="font-weight:600;color:${(w.rs||0)>=80?'var(--green)':(w.rs||0)>=60?'var(--accent)':'var(--text-muted)'}">${w.rs||'—'}</td>
+          <td class="ants-cell">${NX.antsCell(w.ticker)}</td>
           <td style="color:var(--text-dim);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${w.setup||'—'}</td>
           <td style="white-space:nowrap"><button class="btn btn-sm" style="font-size:9px" onclick="NX.editWLItem('${tab}',${i})">✎ Edit</button> <button class="btn btn-sm" style="font-size:9px;color:var(--red)" onclick="NX.removeWLItem('${tab}',${i})">✕</button></td>
         </tr>`;
       }).join('')}</tbody></table></div></div>`:`<div class="empty-state"><div class="icon">${cat.dot}</div>No items in ${cat.label}. Add tickers above.</div>`}`;
+    // After render, repaint ANTS cells for visible rows from cache (no network)
+    NX.updateAntsCells();
+  },
+
+  // ═══ ANTS — Advance with No Trouble Signs (15-day institutional accumulation) ═══
+  // Score/flag computed server-side on nexus-backend (/api/ants/batch). The
+  // Polygon key lives there as a Railway env var — browser never sees it.
+  // Contract: GET ${NEXUS_API}/api/ants/batch?symbols=CSV[&force=bool]
+  //  -> { ants: { TKR: { flag, score, sufficient, components:{upDays,gainPct,volRatio,cirUp,r2}, stale } } }
+  _antsCache:{},          // ticker -> {ts, flag, score, components, sufficient, stale}
+  _antsInflight:null,     // Promise guard against concurrent batch calls
+  _antsTTL:6*60*60*1000,  // 6h client-side cache on top of backend cache
+
+  antsCell(ticker){
+    const a=NX._antsCache[ticker];
+    if(!a)return '<span class="cell-ants-pending" title="Loading from nexus-backend…">…</span>';
+    if(!a.sufficient||a.score==null){
+      const msg=a.stale?'ANTS backend unavailable':'Insufficient history or data unavailable';
+      return `<span class="cell-ants-na" title="${msg}">—</span>`;
+    }
+    const c=a.components||{};
+    const cls=a.score>=70?'ants-s-hi':a.score>=50?'ants-s-md':'ants-s-lo';
+    const tip=`ANTS — 15-day institutional accumulation filter
+Score: ${a.score}/100${a.flag?' · STRICT FLAG ✓':''}
+• Up days: ${c.upDays}/15 (need ≥12)
+• Gain: ${c.gainPct>=0?'+':''}${c.gainPct}% (need ≥20%)
+• Vol ratio (up/total): ${c.volRatio} (need ≥0.55)
+• CIR on up days: ${c.cirUp} (need ≥0.60)
+• Trend R²: ${c.r2}`;
+    const flag=a.flag?'<span class="ants-flag">🐜</span>':'';
+    return `<span class="cell-ants" title="${tip.replace(/"/g,'&quot;')}"><span class="ants-score ${cls}">${a.score}</span>${flag}</span>`;
+  },
+
+  updateAntsCells(){
+    // In-place repaint of ANTS cells for the currently rendered rows (visible tab)
+    document.querySelectorAll('#wl-content tr[data-sym]').forEach(tr=>{
+      const cell=tr.querySelector('.ants-cell');
+      if(cell)cell.innerHTML=NX.antsCell(tr.dataset.sym);
+    });
+  },
+
+  async fetchAllANTS(opts={}){
+    // Gather every ticker across all 6 categories (not just the visible tab)
+    // so switching tabs shows data instantly from cache.
+    const data=NX._wlGetData();
+    const tickers=[...new Set(Object.values(data).flat().map(i=>i&&i.ticker).filter(Boolean))];
+    if(!tickers.length)return;
+    const now=Date.now();
+    const stale=tickers.filter(t=>{
+      const c=NX._antsCache[t];
+      return !c||(now-c.ts)>=NX._antsTTL;
+    });
+    const toFetch=opts.force?tickers:stale;
+    if(!toFetch.length){NX.updateAntsCells();return}
+    // Single-flight: coalesce overlapping calls
+    if(NX._antsInflight)return NX._antsInflight;
+    NX._antsInflight=(async()=>{
+      try{
+        const url=`${NX.getBase()}/api/ants/batch?symbols=${encodeURIComponent(toFetch.join(','))}${opts.force?'&force=true':''}`;
+        const r=await fetch(url,{cache:'no-store'});
+        if(!r.ok){
+          console.warn(`[HASHIRA] ANTS endpoint returned ${r.status}`);
+          // Mark everything stale so cells show "—" with backend-unavailable tooltip
+          toFetch.forEach(t=>{NX._antsCache[t]={ts:now,flag:false,score:null,components:null,sufficient:false,stale:true}});
+          NX.updateAntsCells();
+          return;
+        }
+        const d=await r.json();
+        const results=d.ants||{};
+        Object.entries(results).forEach(([t,v])=>{
+          NX._antsCache[t]={ts:now,flag:!!v.flag,score:v.score,components:v.components,sufficient:!!v.sufficient,stale:!!v.stale};
+        });
+        // Any ticker the backend didn't return → mark insufficient so we show "—"
+        toFetch.forEach(t=>{if(!results[t])NX._antsCache[t]={ts:now,flag:false,score:null,components:null,sufficient:false,stale:false}});
+        NX.updateAntsCells();
+      }catch(e){
+        console.warn('[HASHIRA] ANTS batch failed:',e.message);
+        toFetch.forEach(t=>{NX._antsCache[t]={ts:now,flag:false,score:null,components:null,sufficient:false,stale:true}});
+        NX.updateAntsCells();
+      }finally{
+        NX._antsInflight=null;
+      }
+    })();
+    return NX._antsInflight;
   },
 
   // ═══ STOCK CHART ═══

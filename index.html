@@ -1615,13 +1615,22 @@ Score: ${a.score}/100${a.flag?' · STRICT FLAG ✓':''}
     const t=$('#opt-ticker').value.trim().toUpperCase();if(!t)return;
     const el=$('#opt-content');el.innerHTML='<div class="loading">Loading options chain…</div>';
     try{
-      const[chain,vol]=await Promise.allSettled([NX.apiFetch('/api/options/'+t),NX.apiFetch('/api/volatility/'+t)]);
+      const[chain,vol]=await Promise.allSettled([NX.apiFetch('/api/options/'+t),NX.apiFetch('/api/uw/iv/'+t)]);
       const c=chain.status==='fulfilled'?(chain.value.options||chain.value):{};
-      const v=vol.status==='fulfilled'?(vol.value.volatility||vol.value):{};
+      // UW /iv/{ticker} returns {data:[...], ticker}. Most recent point is last item.
+      let vRaw={};
+      if(vol.status==='fulfilled'){
+        const vd=vol.value?.data;
+        vRaw = Array.isArray(vd) ? (vd[vd.length-1]||{}) : (vd||vol.value||{});
+      }
+      const v=vRaw;
       const calls=c.calls||[];const puts=c.puts||[];
-      const ivPct=v.iv_percentile||v.iv_rank||0;
-      const curIv=v.current_iv||v.iv||0;
-      const hv20=v.hv_20||v.historical_vol||0;
+      // UW field names: iv_percentile | iv_rank; iv30 (current 30-day IV, decimal); hv30/hv_realized (decimal)
+      // Multiply decimal IVs by 100 only when the value looks like a decimal (<3).
+      const _scale=x=>{const n=Number(x)||0;return n>0&&n<3?n*100:n;};
+      const ivPct=Number(v.iv_percentile ?? v.iv_rank ?? 0);
+      const curIv=_scale(v.iv30 ?? v.current_iv ?? v.iv ?? 0);
+      const hv20=_scale(v.hv30 ?? v.hv_20 ?? v.hv_realized ?? v.historical_vol ?? 0);
       const hvIvRatio=curIv?hv20/curIv:0;
       el.innerHTML=`
 <div class="metrics-row g4">

@@ -2004,8 +2004,8 @@ Score: ${a.score}/100${a.flag?' · STRICT FLAG ✓':''}
     const rsLeadership = (rsPct, pricePct) => {
       if (rsPct == null || pricePct == null) return { leading: false, magnitude: 0, label: '—', tone: 'neutral' };
       const mag = rsPct - pricePct;
-      if (rsPct >= 95 && pricePct <= 75) return { leading: true,  magnitude: mag, label: `LEADING +${Math.round(mag)}`,         tone: 'bull' };
-      if (pricePct >= 95 && rsPct <= 75) return { leading: false, magnitude: mag, label: `PRICE LEADING ${Math.round(mag)}`,   tone: 'bear' };
+      if (rsPct >= 95 && pricePct <= 80) return { leading: true,  magnitude: mag, label: `LEADING +${Math.round(mag)}`,         tone: 'bull' };
+      if (pricePct >= 95 && rsPct <= 80) return { leading: false, magnitude: mag, label: `PRICE LEADING ${Math.round(mag)}`,   tone: 'bear' };
       return { leading: false, magnitude: mag, label: 'NEUTRAL', tone: 'neutral' };
     };
     const pctileBarColor = p => (p == null ? 'var(--text-dim)' : p >= 80 ? 'var(--green)' : p <= 20 ? 'var(--red)' : 'var(--amber)');

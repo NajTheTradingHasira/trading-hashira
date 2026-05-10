@@ -1991,6 +1991,27 @@ Score: ${a.score}/100${a.flag?' · STRICT FLAG ✓':''}
     const coerceRs=(raw,getAttr)=>{const r=raw||{};const det=(getAttr('mansfield_rs').detail)||'';const compMrs=((r.rs_verification||{}).computed||{}).mansfield_rs;const parsed=det.match(/([-+]?\d+\.?\d+)/);const m=Number.isFinite(compMrs)?compMrs:parsed?parseFloat(parsed[1]):0;let v=r.rs_verified;if(typeof v==='string')v=/^(y|t|1|true|yes)$/i.test(v);v=Boolean(v);const wRaw=Number.isFinite((r.wanda||{}).composite)?r.wanda.composite:Number.isFinite(r.wanda)?r.wanda:50+m*0.5;const w=Math.max(0,Math.min(99,Math.round(wRaw)));const lblMatch=det.match(/—\s*(.+)$/);const lbl=lblMatch?lblMatch[1].trim():(m>5?'outperforming':m<-5?'lagging':'in-line');return{wanda:w,mansfield:m,label:lbl,verified:v,verifiedRule:'RS line at (or within 1% of) its trailing 52-week high — Weinstein strict definition.\nA positive Mansfield reading is necessary but not sufficient.'};};
     const rsTier=w=>w>=90?{color:'var(--green)',label:'Elite Leader'}:w>=80?{color:'var(--green)',label:'Strong'}:w>=60?{color:'var(--accent)',label:'Above Avg'}:w>=40?{color:'var(--amber)',label:'Avg'}:{color:'var(--red)',label:'Laggard'};
 
+    // RS Leadership helpers — added for Strength Profile extension
+    const rangePctile = (vals) => {
+      const v = (vals||[]).filter(Number.isFinite);
+      if (v.length < 8) return null;
+      const cur = v[v.length-1], lo = Math.min(...v), hi = Math.max(...v);
+      if (hi === lo) return 50;
+      return Math.round(((cur - lo) / (hi - lo)) * 100);
+    };
+    const mansfieldPctile = (mrs) => rangePctile((mrs||[]).slice(-52).map(m => m.value));
+    const pricePctile = (ws) => rangePctile((ws||[]).slice(-52).map(w => w.close));
+    const rsLeadership = (rsPct, pricePct) => {
+      if (rsPct == null || pricePct == null) return { leading: false, magnitude: 0, label: '—', tone: 'neutral' };
+      const mag = rsPct - pricePct;
+      if (rsPct >= 95 && pricePct <= 75) return { leading: true,  magnitude: mag, label: `LEADING +${Math.round(mag)}`,         tone: 'bull' };
+      if (pricePct >= 95 && rsPct <= 75) return { leading: false, magnitude: mag, label: `PRICE LEADING ${Math.round(mag)}`,   tone: 'bear' };
+      return { leading: false, magnitude: mag, label: 'NEUTRAL', tone: 'neutral' };
+    };
+    const pctileBarColor = p => (p == null ? 'var(--text-dim)' : p >= 80 ? 'var(--green)' : p <= 20 ? 'var(--red)' : 'var(--amber)');
+    const pctileLabelPrice = p => p == null ? '—' : p >= 95 ? 'at new high' : p >= 80 ? 'high range' : p <= 20 ? 'breakdown' : 'basing';
+    const pctileLabelRs    = p => p == null ? '—' : p >= 95 ? 'at new high' : p >= 80 ? 'high range' : p <= 20 ? 'depressed' : 'mid range';
+
     if(tab==='OVERVIEW'){
       const rsAttr=aByName('mansfield_rs');const rsSig=rsAttr.stage_signal||0;const rsConf=rsAttr.confidence||0;const rsDetail=rsAttr.detail||'—';
       const sn=parseInt(d.stage);
@@ -2002,7 +2023,31 @@ Score: ${a.score}/100${a.flag?' · STRICT FLAG ✓':''}
       const actionMap={'1':'Accumulate','1A':'Accumulate','1B':'Accumulate','2':'Buy breakouts','2A':'Buy breakouts','2B':'Trail stops','3':'Sell strength','3A':'Sell strength','3B':'Reduce','4':'Avoid/short','4A':'Avoid/short','4B':'Avoid/short'};
       const actionText=actionMap[d.sub_stage]||actionMap[String(d.stage)]||'—';
       const rs=coerceRs(d,aByName);const tier=rsTier(rs.wanda);
-      el.innerHTML=`<div class="grid g2"><div class="card"><div class="card-header">STAGE ATTRIBUTES (${attrs.length})</div>${attrHTML||'<div class="empty-state">No data</div>'}</div><div class="card"><div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span>STRENGTH PROFILE</span><span title="${rs.verifiedRule}" style="font-size:9px;letter-spacing:.08em;padding:2px 8px;border-radius:999px;border:1px solid ${rs.verified?'var(--green)':'var(--text-dim)'};color:${rs.verified?'var(--green)':'var(--text-dim)'};cursor:help;user-select:none">${rs.verified?'RS VERIFIED ✓':'RS VERIFIED ✗'}</span></div><div style="display:flex;align-items:baseline;gap:8px;margin-top:4px;margin-bottom:6px"><span title="${tier.label}" style="font-size:42px;line-height:1;font-weight:800;color:${tier.color};font-variant-numeric:tabular-nums;cursor:help">${rs.wanda}</span><span style="font-size:14px;color:var(--text-dim);font-weight:500">/ 99</span><span style="font-size:9px;letter-spacing:.12em;color:var(--text-dim);text-transform:uppercase;margin-left:4px">Wanda Composite Score</span></div><div style="font-size:12px;color:var(--text);margin-top:10px">Mansfield RS <span style="color:${rs.mansfield>=0?'var(--green)':'var(--red)'};font-weight:700">${rs.mansfield>=0?'+':''}${rs.mansfield.toFixed(2)}</span> <span style="color:var(--text-dim)">— ${rs.label}</span></div><div class="attr-bar" style="margin-top:8px"><div class="attr-fill" style="width:${Math.max(0,Math.min(100,Math.abs(rs.mansfield)))}%;background:${rs.mansfield>=0?'var(--green)':'var(--red)'}"></div></div></div></div>
+      el.innerHTML=`<div class="grid g2"><div class="card"><div class="card-header">STAGE ATTRIBUTES (${attrs.length})</div>${attrHTML||'<div class="empty-state">No data</div>'}</div><div class="card"><div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span>STRENGTH PROFILE</span><span title="${rs.verifiedRule}" style="font-size:9px;letter-spacing:.08em;padding:2px 8px;border-radius:999px;border:1px solid ${rs.verified?'var(--green)':'var(--text-dim)'};color:${rs.verified?'var(--green)':'var(--text-dim)'};cursor:help;user-select:none">${rs.verified?'RS VERIFIED ✓':'RS VERIFIED ✗'}</span></div><div style="display:flex;align-items:baseline;gap:8px;margin-top:4px;margin-bottom:6px"><span title="${tier.label}" style="font-size:42px;line-height:1;font-weight:800;color:${tier.color};font-variant-numeric:tabular-nums;cursor:help">${rs.wanda}</span><span style="font-size:14px;color:var(--text-dim);font-weight:500">/ 99</span><span style="font-size:9px;letter-spacing:.12em;color:var(--text-dim);text-transform:uppercase;margin-left:4px">Wanda Composite Score</span></div><div style="font-size:12px;color:var(--text);margin-top:10px">Mansfield RS <span style="color:${rs.mansfield>=0?'var(--green)':'var(--red)'};font-weight:700">${rs.mansfield>=0?'+':''}${rs.mansfield.toFixed(2)}</span> <span style="color:var(--text-dim)">— ${rs.label}</span></div><div class="attr-bar" style="margin-top:8px"><div class="attr-fill" style="width:${Math.max(0,Math.min(100,Math.abs(rs.mansfield)))}%;background:${rs.mansfield>=0?'var(--green)':'var(--red)'}"></div></div>
+${(() => {
+  const rsPct = mansfieldPctile(d.mansfield_series);
+  const pPct  = pricePctile(d.weekly_series);
+  const ldr   = rsLeadership(rsPct, pPct);
+  const ldrColor = ldr.tone === 'bull' ? 'var(--green)' : ldr.tone === 'bear' ? 'var(--red)' : 'var(--text-dim)';
+  return `
+<div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border)">
+  <div style="font-size:9px;letter-spacing:.12em;color:var(--text-dim);text-transform:uppercase;margin-bottom:8px">RS LINE STRUCTURE — 52W</div>
+
+  <div style="font-size:12px;color:var(--text);margin-top:6px">Raw RS Pctl <span style="color:${pctileBarColor(rsPct)};font-weight:700">${rsPct ?? '—'}</span> <span style="color:var(--text-dim)">— ${pctileLabelRs(rsPct)}</span></div>
+  <div class="attr-bar" style="margin-top:6px"><div class="attr-fill" style="width:${rsPct ?? 0}%;background:${pctileBarColor(rsPct)}"></div></div>
+
+  <div style="font-size:12px;color:var(--text);margin-top:10px">Price Pctl <span style="color:${pctileBarColor(pPct)};font-weight:700">${pPct ?? '—'}</span> <span style="color:var(--text-dim)">— ${pctileLabelPrice(pPct)}</span></div>
+  <div class="attr-bar" style="margin-top:6px"><div class="attr-fill" style="width:${pPct ?? 0}%;background:${pctileBarColor(pPct)}"></div></div>
+
+  <div style="display:flex;align-items:center;gap:8px;margin-top:14px">
+    <span style="font-size:12px;color:var(--text)">RS Leadership</span>
+    <span class="badge" style="background:${ldrColor}18;color:${ldrColor};border:1px solid ${ldrColor}40;font-size:10px;padding:2px 8px;font-weight:700">${ldr.label}</span>
+  </div>
+  ${ldr.leading ? `<div style="font-size:10px;color:var(--text-muted);margin-top:4px;font-style:italic">RS at new high while price still basing — early leadership signal (Stage 1→2 tell)</div>` : ''}
+</div>
+`;
+})()}
+</div></div>
 <div class="card"><div class="card-header">TREND QUALITY CHECKLIST</div>${checks.map(c=>chk(c.p,c.l,c.d)).join('')}<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;justify-content:space-between"><span style="font-size:13px;font-weight:700;color:${tqClr}">Score: ${tqScore}/7</span><span style="font-size:12px;color:${tqClr};font-weight:600">${tqLabel}</span></div></div>
 ${conflicts.length?`<div class="card" style="border-left:3px solid var(--amber)"><div class="card-header" style="color:var(--amber)">⚠ CONFLICTS (${conflicts.length})</div>${conflicts.map(c=>`<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;padding-left:8px;border-left:2px solid var(--amber)">${c.replace(/CONFLICT:\s*/,'')}</div>`).join('')}</div>`:''}
 ${d.blocked?`<div class="card" style="border-left:3px solid var(--red)"><div class="card-header" style="color:var(--red)">🚫 BLOCKED</div><div style="font-size:12px;color:var(--text-muted)">${d.block_reason||'Stage transition blocked'}</div></div>`:''}

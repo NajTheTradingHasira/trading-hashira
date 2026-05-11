@@ -2025,9 +2025,18 @@ Score: ${a.score}/100${a.flag?' · STRICT FLAG ✓':''}
       const rs=coerceRs(d,aByName);const tier=rsTier(rs.wanda);
       el.innerHTML=`<div class="grid g2"><div class="card"><div class="card-header">STAGE ATTRIBUTES (${attrs.length})</div>${attrHTML||'<div class="empty-state">No data</div>'}</div><div class="card"><div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span>STRENGTH PROFILE</span><span title="${rs.verifiedRule}" style="font-size:9px;letter-spacing:.08em;padding:2px 8px;border-radius:999px;border:1px solid ${rs.verified?'var(--green)':'var(--text-dim)'};color:${rs.verified?'var(--green)':'var(--text-dim)'};cursor:help;user-select:none">${rs.verified?'RS VERIFIED ✓':'RS VERIFIED ✗'}</span></div><div style="display:flex;align-items:baseline;gap:8px;margin-top:4px;margin-bottom:6px"><span title="${tier.label}" style="font-size:42px;line-height:1;font-weight:800;color:${tier.color};font-variant-numeric:tabular-nums;cursor:help">${rs.wanda}</span><span style="font-size:14px;color:var(--text-dim);font-weight:500">/ 99</span><span style="font-size:9px;letter-spacing:.12em;color:var(--text-dim);text-transform:uppercase;margin-left:4px">Wanda Composite Score</span></div><div style="font-size:12px;color:var(--text);margin-top:10px">Mansfield RS <span style="color:${rs.mansfield>=0?'var(--green)':'var(--red)'};font-weight:700">${rs.mansfield>=0?'+':''}${rs.mansfield.toFixed(2)}</span> <span style="color:var(--text-dim)">— ${rs.label}</span></div><div class="attr-bar" style="margin-top:8px"><div class="attr-fill" style="width:${Math.max(0,Math.min(100,Math.abs(rs.mansfield)))}%;background:${rs.mansfield>=0?'var(--green)':'var(--red)'}"></div></div>
 ${(() => {
-  const rsPct = mansfieldPctile(d.mansfield_series);
-  const pPct  = pricePctile(d.weekly_series);
-  const ldr   = rsLeadership(rsPct, pPct);
+  // Backend-first reads (Phase 4.5: nexus-backend rs_compare.compute_rs_leadership);
+  // graceful fallback to client-side Mansfield-series proxy when backend omits the field.
+  const rsPct = d.rs_line_pctile_52w ?? mansfieldPctile(d.mansfield_series);
+  const pPct  = d.price_pctile_52w   ?? pricePctile(d.weekly_series);
+  const ldr = (() => {
+    const b = d.rs_leadership;
+    if (b && b.label && b.label !== '-') {
+      const tone = b.is_leading ? 'bull' : (b.label.indexOf('PRICE LEADING') === 0 ? 'bear' : 'neutral');
+      return { leading: b.is_leading, magnitude: b.magnitude, label: b.label, tone, weeksLeading: b.weeks_leading };
+    }
+    return rsLeadership(rsPct, pPct);
+  })();
   const ldrColor = ldr.tone === 'bull' ? 'var(--green)' : ldr.tone === 'bear' ? 'var(--red)' : 'var(--text-dim)';
   return `
 <div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border)">
@@ -2044,6 +2053,7 @@ ${(() => {
     <span class="badge" style="background:${ldrColor}18;color:${ldrColor};border:1px solid ${ldrColor}40;font-size:10px;padding:2px 8px;font-weight:700">${ldr.label}</span>
   </div>
   ${ldr.leading ? `<div style="font-size:10px;color:var(--text-muted);margin-top:4px;font-style:italic">RS at new high while price still basing — early leadership signal (Stage 1→2 tell)</div>` : ''}
+  ${ldr.leading && ldr.weeksLeading ? `<div style="font-size:10px;color:var(--text-dim);margin-top:2px">Active ${ldr.weeksLeading} ${ldr.weeksLeading === 1 ? 'week' : 'weeks'}</div>` : ''}
 </div>
 `;
 })()}

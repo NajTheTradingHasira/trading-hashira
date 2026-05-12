@@ -1488,7 +1488,7 @@ const NX={
           ${NX._wlSetups.map(s=>`<option value="${s}"${s===cat.defaultSetup?' selected':''}>${s}</option>`).join('')}
         </select>
         <button class="btn" style="padding:6px 14px" onclick="NX.addWLItem('${tab}')">+ Add</button>
-        <button class="btn btn-sm" style="color:var(--accent);border-color:var(--accent-dim)" onclick="NX.loadWatchlist()">↻ Refresh</button>
+        <button class="btn btn-sm" style="color:var(--accent);border-color:var(--accent-dim)" onclick="NX.loadWatchlist();NX.fetchAllWanda({force:true})">↻ Refresh</button>
       </div>
     </div>
     ${items.length?`<div class="card" style="padding:0"><div style="overflow-x:auto"><table>

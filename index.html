@@ -746,6 +746,40 @@ tr:hover{background:var(--bg2)}
                 </select>
               </div>
             </div>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:8px">
+              <div>
+                <label style="display:block;margin-bottom:4px;font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-dim)">EMA Ribbon (5/10/20)</label>
+                <select id="spy-ribbon" class="nx-input" style="width:100%" onchange="NX.runSPYLogic()">
+                  <option value="fannedup">Fanned up (5&gt;10&gt;20)</option>
+                  <option value="fanneddown">Fanned down (5&lt;10&lt;20)</option>
+                  <option value="pinched">Pinched / flat (~1pt)</option>
+                </select>
+              </div>
+              <div>
+                <label style="display:block;margin-bottom:4px;font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-dim)">IV Percentile</label>
+                <input id="spy-ivp" type="number" min="0" max="100" value="50" class="nx-input" style="width:100%" oninput="NX.runSPYLogic()"/>
+              </div>
+              <div>
+                <label style="display:block;margin-bottom:4px;font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-dim)">HV vs IV</label>
+                <select id="spy-hviv" class="nx-input" style="width:100%" onchange="NX.runSPYLogic()">
+                  <option value="inline">In line</option>
+                  <option value="hvgtiv">HV &gt; IV (realized hot)</option>
+                  <option value="ivgthv">IV &gt; HV (implied hot)</option>
+                </select>
+              </div>
+              <div>
+                <label style="display:block;margin-bottom:4px;font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-dim)">Time Window</label>
+                <select id="spy-window" class="nx-input" style="width:100%" onchange="NX.runSPYLogic()">
+                  <option value="auto">Auto (clock)</option>
+                  <option value="open">9:30&ndash;9:45 Open</option>
+                  <option value="amprime">9:45&ndash;11:00 AM Prime</option>
+                  <option value="lunch">11:00&ndash;13:30 Lunch</option>
+                  <option value="pmprime">13:30&ndash;15:00 PM Prime</option>
+                  <option value="power">15:00&ndash;15:45 Power Hr</option>
+                  <option value="close">15:45&ndash;16:00 Close</option>
+                </select>
+              </div>
+            </div>
             <div id="spy-engine-output" class="card" style="margin-top:12px;padding:14px;background:linear-gradient(135deg,rgba(0,255,255,0.06),var(--card-bg));border:1px solid rgba(0,255,255,0.2)">
               <div style="font-weight:700;margin-bottom:4px;font-size:12px" id="spy-engine-title">BIAS OUTPUT</div>
               <div style="color:var(--text-muted);font-size:12px" id="spy-engine-text">Select market conditions above. Auto-evaluates on change.</div>
@@ -2564,33 +2598,98 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
 
   // ═══ BACKTESTER ═══
   runSPYLogic(){
-    const opening=document.getElementById('spy-opening')?.value||'below';
-    const vwap=document.getElementById('spy-vwap')?.value||'lost';
-    const internals=document.getElementById('spy-internals')?.value||'weak';
-    const retest=document.getElementById('spy-retest')?.value||'lowerhigh';
-    let title='BIAS OUTPUT';
-    let text='Stand aside until the auction becomes clearer.';
-    if((opening==='below'||opening==='inside')&&vwap==='lost'&&internals==='weak'&&retest==='lowerhigh'){
-      title='🔴 SHORT RALLIES';text='Opening impulse is failing under supply. Preferred trade: 0DTE puts on a lower-high retest into resistance. Invalidation: reclaim of VWAP + acceptance above the failed level.';
-    }else if((opening==='above'||opening==='gapdown')&&vwap==='holding'&&internals==='strong'&&retest==='higherlow'){
-      title='🟢 BUY PULLBACKS';text='Price holding above value with confirming internals. Preferred trade: buy first orderly pullback into reclaimed level or VWAP. Invalidation: loss of VWAP with no responsive bid.';
-    }else if(vwap==='chop'||internals==='mixed'||retest==='none'){
-      title='🟡 REDUCE SIZE / WAIT';text='Conditions not aligned. Expect noise, poor follow-through, rapid premium decay. Wait for cleaner retest or break from the opening range.';
-    }else if(opening==='gapdown'&&vwap==='lost'&&internals==='weak'){
-      title='🔴 TREND-DOWN WATCH';text='Do not force a bounce. If gap-down demand fails and VWAP stays overhead, rallies are liquidity events to fade rather than pullbacks to buy.';
-    }else if(opening==='above'&&vwap==='holding'&&internals==='strong'){
-      title='🟢 BULLISH LEAN';text='Price accepted above supply with confirming breadth. Look for pullback entries; avoid chasing. Invalidation: loss of VWAP + failed retest of breakout zone.';
-    }else if(opening==='below'&&vwap==='holding'&&internals==='strong'){
-      title='🟡 POTENTIAL REVERSAL';text='Below supply but holding VWAP with strong internals — watch for reclaim attempt. Need acceptance above supply to flip long. Do not front-run.';
-    }else if((opening==='above'||opening==='inside')&&vwap==='lost'&&internals==='weak'){
-      title='🔴 FAILED BREAKOUT';text='Was above or inside supply but lost VWAP with weak internals. Classic failed breakout — short the lower-high retest if it develops.';
+    const g=id=>document.getElementById(id);
+    const s={
+      opening:g('spy-opening')?.value||'below',
+      vwap:g('spy-vwap')?.value||'lost',
+      internals:g('spy-internals')?.value||'weak',
+      retest:g('spy-retest')?.value||'lowerhigh',
+      ribbon:g('spy-ribbon')?.value||'fannedup',
+      ivp:g('spy-ivp')?.value,
+      hviv:g('spy-hviv')?.value||'inline',
+      window:g('spy-window')?.value||'auto'
+    };
+    const r=NX.evaluateSetup(s);
+    const GC={'GO':'var(--green)','CAUTION':'var(--yellow)','NO-GO':'var(--red)'};
+    const GB={'GO':'rgba(0,255,136,0.15)','CAUTION':'rgba(255,200,0,0.15)','NO-GO':'rgba(255,77,77,0.15)'};
+    const bc=r.bias.dir==='LONG'?'var(--green)':r.bias.dir==='SHORT'?'var(--red)':'var(--yellow)';
+    const out=g('spy-engine-output');
+    if(out){
+      out.innerHTML=
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'
+        +'<span style="padding:4px 12px;border-radius:20px;font-size:13px;font-weight:800;letter-spacing:0.04em;background:'+GB[r.gate]+';color:'+GC[r.gate]+'">'+r.gate+'</span>'
+        +'<span style="font-size:11px;color:var(--text-dim)">'+r.windowLabel+'</span>'
+        +'</div>'
+        +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">'
+        +'<div><div style="font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-dim)">Directional Read</div><div style="font-weight:700;font-size:12px;color:'+bc+'">'+r.bias.label+'</div></div>'
+        +'<div><div style="font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-dim)">Structure</div><div style="font-weight:700;font-size:12px">'+r.structure+'</div></div>'
+        +'<div><div style="font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-dim)">Stops</div><div style="font-weight:700;font-size:12px;font-variant-numeric:tabular-nums">'+r.stops.price+' &middot; '+r.stops.time+'</div></div>'
+        +'</div>'
+        +'<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">'+r.bias.note+'</div>'
+        +'<div style="display:grid;gap:4px">'
+        +r.reasons.map(x=>'<div style="display:flex;gap:8px;font-size:11px"><span style="color:'+GC[r.gate]+';flex-shrink:0">&rsaquo;</span><span style="color:var(--text-muted)">'+x+'</span></div>').join('')
+        +'</div>'
+        +'<div style="margin-top:8px;font-size:10px;color:var(--text-dim)">Target: '+r.stops.target+'</div>';
     }
-    const stanceEl=document.getElementById('spy-stance-text');
-    const titleEl=document.getElementById('spy-engine-title');
-    const textEl=document.getElementById('spy-engine-text');
-    if(stanceEl)stanceEl.textContent=text;
-    if(titleEl)titleEl.textContent=title;
-    if(textEl)textEl.textContent=text;
+    const stance=g('spy-stance-text');
+    if(stance)stance.textContent=r.gate+' — '+r.bias.label+'. '+r.reasons[0];
+  },
+  spyTimeWindow(d){
+    const fmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',hour12:false,weekday:'short'});
+    const p=Object.fromEntries(fmt.formatToParts(d).map(x=>[x.type,x.value]));
+    if(p.weekday==='Sat'||p.weekday==='Sun')return 'closed';
+    const m=(+p.hour)*60+(+p.minute),o=570;
+    if(m<o)return 'pre';
+    if(m<o+15)return 'open';
+    if(m<660)return 'amprime';
+    if(m<810)return 'lunch';
+    if(m<900)return 'pmprime';
+    if(m<945)return 'power';
+    if(m<960)return 'close';
+    return 'after';
+  },
+  spyDirectionalBias(s){
+    const opening=s.opening,vwap=s.vwap,internals=s.internals,retest=s.retest;
+    if((opening==='below'||opening==='inside')&&vwap==='lost'&&internals==='weak'&&retest==='lowerhigh')
+      return {dir:'SHORT',label:'SHORT RALLIES',note:'Opening impulse failing under supply. Puts on a lower-high retest into resistance.'};
+    if((opening==='above'||opening==='gapdown')&&vwap==='holding'&&internals==='strong'&&retest==='higherlow')
+      return {dir:'LONG',label:'BUY PULLBACKS',note:'Holding above value with confirming internals. Buy first orderly pullback into reclaimed level/VWAP.'};
+    if(opening==='gapdown'&&vwap==='lost'&&internals==='weak')
+      return {dir:'SHORT',label:'TREND-DOWN WATCH',note:'Gap-down demand failing with VWAP overhead. Rallies are liquidity events to fade.'};
+    if(opening==='above'&&vwap==='holding'&&internals==='strong')
+      return {dir:'LONG',label:'BULLISH LEAN',note:'Accepted above supply with confirming breadth. Pullback entries; avoid chasing.'};
+    if(opening==='below'&&vwap==='holding'&&internals==='strong')
+      return {dir:'NEUTRAL',label:'POTENTIAL REVERSAL',note:'Below supply but holding VWAP with strong internals. Need acceptance above supply to flip long.'};
+    if((opening==='above'||opening==='inside')&&vwap==='lost'&&internals==='weak')
+      return {dir:'SHORT',label:'FAILED BREAKOUT',note:'Lost VWAP with weak internals after being above/inside supply. Short the lower-high retest.'};
+    if(vwap==='chop'||internals==='mixed'||retest==='none')
+      return {dir:'NEUTRAL',label:'REDUCE SIZE / WAIT',note:'Conditions unaligned. Noise, poor follow-through, rapid premium decay.'};
+    return {dir:'NEUTRAL',label:'STAND ASIDE',note:'Auction not yet clear.'};
+  },
+  evaluateSetup(s){
+    const LABEL={pre:'Pre-market',open:'9:30-9:45 OPEN',amprime:'9:45-11:00 AM PRIME',lunch:'11:00-13:30 LUNCH',pmprime:'13:30-15:00 PM PRIME',power:'15:00-15:45 POWER HOUR',close:'15:45-16:00 CLOSE',after:'After hours',closed:'Market closed'};
+    const reasons=[];let gate='GO';const rank={GO:0,CAUTION:1,'NO-GO':2};const worsen=x=>{if(rank[x]>rank[gate])gate=x;};
+    const w=(!s.window||s.window==='auto')?NX.spyTimeWindow(new Date()):s.window;
+    if(w==='open'){worsen('NO-GO');reasons.push('NO-TRADE window 9:30-9:45 — opening auction + gap IV pop. Wait for 9:45.');}
+    else if(w==='close'){worsen('NO-GO');reasons.push('NO-TRADE window 15:45-16:00 — do not open new 0DTE risk (theta + pin).');}
+    else if(w==='pre'||w==='after'||w==='closed'){worsen('NO-GO');reasons.push('Outside regular session — no 0DTE scalp.');}
+    else if(w==='lunch'){worsen('CAUTION');reasons.push('Lunch chop 11:00-13:30 — low realized vol, theta trap. Only sharp fast moves.');}
+    if(s.ribbon==='pinched'){worsen('NO-GO');reasons.push('EMA ribbon pinched/flat (5-10-20 within ~1 pt) — realized vol dead. No long premium until it fans out.');}
+    let structure='Single-leg 0DTE (long call/put)';
+    const ivp=(s.ivp===''||s.ivp==null)?NaN:Number(s.ivp);
+    if(!isNaN(ivp)&&ivp>=70){structure='Debit spread';worsen('CAUTION');reasons.push('IV percentile '+ivp+' elevated — avoid naked long premium; use a debit spread or wait for IV to deflate.');}
+    if(s.hviv==='ivgthv'){structure='Debit spread';worsen('CAUTION');reasons.push('IV running hot vs HV — market overpaying for movement; long premium decays. Lean spreads.');}
+    else if(s.hviv==='hvgtiv'&&(isNaN(ivp)||ivp<70)){reasons.push('HV > IV — movement underpriced; favorable for naked long scalps.');}
+    const bias=NX.spyDirectionalBias(s);
+    if(gate!=='NO-GO'){
+      if(bias.dir==='LONG'&&s.ribbon==='fanneddown'){worsen('NO-GO');reasons.push('Read is LONG but ribbon fanned DOWN — conflict. Stand aside.');}
+      if(bias.dir==='SHORT'&&s.ribbon==='fannedup'){worsen('NO-GO');reasons.push('Read is SHORT but ribbon fanned UP — conflict. Stand aside.');}
+      if(bias.dir==='NEUTRAL'){worsen('CAUTION');}
+    }
+    const time=w==='lunch'?'10 min':w==='amprime'?'15-20 min':(w==='power'||w==='pmprime')?'10-15 min':'10 min';
+    const stops={time:time,price:'-25% of premium (pre-set)',target:'+30-50%, scale half, BE stop on runner'};
+    if(reasons.length===0)reasons.push('Time, ribbon and vol all clear; directional read intact.');
+    return {gate:gate,windowKey:w,windowLabel:LABEL[w]||w,structure:structure,bias:bias,reasons:reasons,stops:stops};
   },
   runFullSPYAnalysis(){
     NX.loadSPYLogic();

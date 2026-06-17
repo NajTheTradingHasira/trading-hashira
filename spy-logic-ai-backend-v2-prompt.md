@@ -235,7 +235,7 @@ async def _call_claude(system, user_msg):
                 "Content-Type": "application/json"
             },
             json={
-                "model": "claude-sonnet-4-20250514",
+                "model": "claude-opus-4-8",
                 "max_tokens": 4000,
                 "system": system,
                 "messages": [

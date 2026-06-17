@@ -810,7 +810,7 @@ tr:hover{background:var(--bg2)}
           </div>
           <!-- Claude output -->
           <div id="spy-ai-claude" style="display:none">
-            <div class="empty-state" style="padding:30px"><div class="icon" style="color:var(--purple)">⊘</div>Click CLAUDE for reasoning-powered tape reading<br/><span style="font-size:10px;color:var(--text-dim);margin-top:6px;display:block">claude-sonnet-4 · deep reasoning · 5-min cache</span></div>
+            <div class="empty-state" style="padding:30px"><div class="icon" style="color:var(--purple)">⊘</div>Click CLAUDE for reasoning-powered tape reading<br/><span style="font-size:10px;color:var(--text-dim);margin-top:6px;display:block">claude-opus-4.8 · deep reasoning · 5-min cache</span></div>
           </div>
         </div>
       </div>
@@ -2909,7 +2909,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
         try{
           let content=`Analyze: ${t}`;
           if(agents[i].id==='synthesizer') content=`Analyze ${t}. Prior research:\n${JSON.stringify(acc)}`;
-          const res=await fetch(NX.getBase()+'/api/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4000,system:`You are the ${agents[i].name}. Respond ONLY in JSON with fields: title(string), sections(array of {heading,content}), and optionally keyMetrics, keyLevels, verdict, conviction, tradeStructures, riskMatrix, causalChains.`,messages:[{role:'user',content}]})});
+          const res=await fetch(NX.getBase()+'/api/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-opus-4-8',max_tokens:4000,system:`You are the ${agents[i].name}. Respond ONLY in JSON with fields: title(string), sections(array of {heading,content}), and optionally keyMetrics, keyLevels, verdict, conviction, tradeStructures, riskMatrix, causalChains.`,messages:[{role:'user',content}]})});
           if(!res.ok) throw new Error('API '+res.status);
           const d=await res.json();
           const txt=d.content?.filter(b=>b.type==='text').map(b=>b.text).join('')||'';

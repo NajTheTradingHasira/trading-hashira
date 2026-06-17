@@ -34,7 +34,7 @@ Find the closing `</div>` of `pg-spylogic` (the very last `</div>` that closes t
           </div>
           <!-- Claude output -->
           <div id="spy-ai-claude" style="display:none">
-            <div class="empty-state" style="padding:30px"><div class="icon" style="color:var(--purple)">⊘</div>Click CLAUDE for reasoning-powered tape reading<br/><span style="font-size:10px;color:var(--text-dim);margin-top:6px;display:block">claude-sonnet-4 · deep reasoning · 5-min cache</span></div>
+            <div class="empty-state" style="padding:30px"><div class="icon" style="color:var(--purple)">⊘</div>Click CLAUDE for reasoning-powered tape reading<br/><span style="font-size:10px;color:var(--text-dim);margin-top:6px;display:block">claude-opus-4.8 · deep reasoning · 5-min cache</span></div>
           </div>
         </div>
       </div>

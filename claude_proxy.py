@@ -29,7 +29,7 @@ PERPLEXITY_URL = "https://api.perplexity.ai/chat/completions"
 # ─── Request Models ───
 
 class ClaudeRequest(BaseModel):
-    model: str = "claude-sonnet-4-20250514"
+    model: str = "claude-opus-4-8"
     max_tokens: int = 4000
     system: Optional[str] = None
     messages: list

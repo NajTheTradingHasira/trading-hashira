@@ -629,21 +629,21 @@ tr:hover{background:var(--bg2)}
             <div style="display:grid;gap:8px" id="spy-levels-grid">
               <div style="padding:12px;border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,0.03),transparent);border:1px solid rgba(255,255,255,0.06)">
                 <div style="display:flex;justify-content:space-between;align-items:center">
-                  <div style="font-weight:700;font-variant-numeric:tabular-nums">Zone 1: <input id="spy-z1" value="560–563" style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 6px;width:90px;color:var(--text);font-family:inherit;font-size:12px"/></div>
+                  <div style="font-weight:700;font-variant-numeric:tabular-nums">Zone 1: <input id="spy-z1" value="560–563" oninput="NX._zonesTouched=true" style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 6px;width:90px;color:var(--text);font-family:inherit;font-size:12px"/></div>
                   <span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:rgba(255,77,77,0.15);color:var(--red)">SUPPLY</span>
                 </div>
                 <div style="margin-top:6px;font-size:11px;color:var(--text-muted)">Use for failed first-hour rallies, especially if price loses VWAP and cannot regain on bounce.</div>
               </div>
               <div style="padding:12px;border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,0.03),transparent);border:1px solid rgba(255,255,255,0.06)">
                 <div style="display:flex;justify-content:space-between;align-items:center">
-                  <div style="font-weight:700;font-variant-numeric:tabular-nums">Zone 2: <input id="spy-z2" value="555–557" style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 6px;width:90px;color:var(--text);font-family:inherit;font-size:12px"/></div>
+                  <div style="font-weight:700;font-variant-numeric:tabular-nums">Zone 2: <input id="spy-z2" value="555–557" oninput="NX._zonesTouched=true" style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 6px;width:90px;color:var(--text);font-family:inherit;font-size:12px"/></div>
                   <span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:rgba(255,200,0,0.15);color:var(--amber)">PIVOT</span>
                 </div>
                 <div style="margin-top:6px;font-size:11px;color:var(--text-muted)">Reversion target after exhausted opening drive. Decision node for trend continuation vs balance.</div>
               </div>
               <div style="padding:12px;border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,0.03),transparent);border:1px solid rgba(255,255,255,0.06)">
                 <div style="display:flex;justify-content:space-between;align-items:center">
-                  <div style="font-weight:700;font-variant-numeric:tabular-nums">Zone 3: <input id="spy-z3" value="548–550" style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 6px;width:90px;color:var(--text);font-family:inherit;font-size:12px"/></div>
+                  <div style="font-weight:700;font-variant-numeric:tabular-nums">Zone 3: <input id="spy-z3" value="548–550" oninput="NX._zonesTouched=true" style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 6px;width:90px;color:var(--text);font-family:inherit;font-size:12px"/></div>
                   <span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:rgba(0,255,136,0.15);color:var(--green)">DEMAND</span>
                 </div>
                 <div style="margin-top:6px;font-size:11px;color:var(--text-muted)">Only buy when tape stabilizes, VWAP reclaimed, and flush shows responsive buying — not trend-day liquidation.</div>
@@ -2723,6 +2723,20 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
           if(d.above_vwap&&d.vwap_distance>1)vwapSel.value='holding';
           else if(!d.above_vwap&&d.vwap_distance>1)vwapSel.value='lost';
           else vwapSel.value='chop';
+        }
+        // Seed Supply Map zones from live 5d levels (SUPPLY under 5d high, PIVOT at
+        // range midpoint, DEMAND above 5d low; band ~0.4% of spot, min 2 pts).
+        // Manual edits set NX._zonesTouched (oninput) and are never overwritten.
+        if(!NX._zonesTouched){
+          const zp=Number(d.price),zhi=Number(d.recent_5d_high),zlo=Number(d.recent_5d_low);
+          if(isFinite(zp)&&isFinite(zhi)&&isFinite(zlo)&&zhi>zlo){
+            const zw=Math.max(2,Math.round(zp*0.004));const zmid=(zhi+zlo)/2;
+            const zfmt=(a,b)=>Math.round(a)+'–'+Math.round(b);
+            const z1=$('#spy-z1'),z2=$('#spy-z2'),z3=$('#spy-z3');
+            if(z1)z1.value=zfmt(zhi-zw,zhi);
+            if(z2)z2.value=zfmt(zmid-zw/2,zmid+zw/2);
+            if(z3)z3.value=zfmt(zlo,zlo+zw);
+          }
         }
         NX.runSPYLogic();
       }

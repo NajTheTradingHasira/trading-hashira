@@ -554,6 +554,7 @@ tr:hover{background:var(--bg2)}
             <button class="btn" onclick="NX.runFullSPYAnalysis()" style="background:var(--cyan);color:#000;font-weight:700">▶ RUN TRADE LOGIC</button>
             <button class="btn" onclick="document.getElementById('spy-levels').scrollIntoView({behavior:'smooth'})">⬇ SUPPLY MAP</button>
           </div>
+          <div id="spy-structure-bar" class="card" style="padding:12px;margin-bottom:8px"></div>
           <div id="spy-stance" class="card" style="padding:14px;background:linear-gradient(135deg,rgba(0,255,255,0.06),var(--card-bg));border:1px solid rgba(0,255,255,0.2)">
             <div style="font-weight:700;margin-bottom:4px;font-size:12px">CURRENT STANCE</div>
             <div style="color:var(--text-muted);font-size:12px" id="spy-stance-text">Default: short failed rallies into overhead supply unless price accepts above supply and reclaims VWAP with confirming internals.</div>
@@ -629,21 +630,21 @@ tr:hover{background:var(--bg2)}
             <div style="display:grid;gap:8px" id="spy-levels-grid">
               <div style="padding:12px;border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,0.03),transparent);border:1px solid rgba(255,255,255,0.06)">
                 <div style="display:flex;justify-content:space-between;align-items:center">
-                  <div style="font-weight:700;font-variant-numeric:tabular-nums">Zone 1: <input id="spy-z1" value="560–563" oninput="NX._zonesTouched=true" style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 6px;width:90px;color:var(--text);font-family:inherit;font-size:12px"/></div>
+                  <div style="font-weight:700;font-variant-numeric:tabular-nums">Zone 1: <input id="spy-z1" value="—" oninput="NX._zonesTouched=true" style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 6px;width:90px;color:var(--text);font-family:inherit;font-size:12px"/></div>
                   <span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:rgba(255,77,77,0.15);color:var(--red)">SUPPLY</span>
                 </div>
                 <div style="margin-top:6px;font-size:11px;color:var(--text-muted)">Use for failed first-hour rallies, especially if price loses VWAP and cannot regain on bounce.</div>
               </div>
               <div style="padding:12px;border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,0.03),transparent);border:1px solid rgba(255,255,255,0.06)">
                 <div style="display:flex;justify-content:space-between;align-items:center">
-                  <div style="font-weight:700;font-variant-numeric:tabular-nums">Zone 2: <input id="spy-z2" value="555–557" oninput="NX._zonesTouched=true" style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 6px;width:90px;color:var(--text);font-family:inherit;font-size:12px"/></div>
+                  <div style="font-weight:700;font-variant-numeric:tabular-nums">Zone 2: <input id="spy-z2" value="—" oninput="NX._zonesTouched=true" style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 6px;width:90px;color:var(--text);font-family:inherit;font-size:12px"/></div>
                   <span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:rgba(255,200,0,0.15);color:var(--amber)">PIVOT</span>
                 </div>
                 <div style="margin-top:6px;font-size:11px;color:var(--text-muted)">Reversion target after exhausted opening drive. Decision node for trend continuation vs balance.</div>
               </div>
               <div style="padding:12px;border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,0.03),transparent);border:1px solid rgba(255,255,255,0.06)">
                 <div style="display:flex;justify-content:space-between;align-items:center">
-                  <div style="font-weight:700;font-variant-numeric:tabular-nums">Zone 3: <input id="spy-z3" value="548–550" oninput="NX._zonesTouched=true" style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 6px;width:90px;color:var(--text);font-family:inherit;font-size:12px"/></div>
+                  <div style="font-weight:700;font-variant-numeric:tabular-nums">Zone 3: <input id="spy-z3" value="—" oninput="NX._zonesTouched=true" style="background:transparent;border:1px solid var(--border);border-radius:4px;padding:2px 6px;width:90px;color:var(--text);font-family:inherit;font-size:12px"/></div>
                   <span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:rgba(0,255,136,0.15);color:var(--green)">DEMAND</span>
                 </div>
                 <div style="margin-top:6px;font-size:11px;color:var(--text-muted)">Only buy when tape stabilizes, VWAP reclaimed, and flush shows responsive buying — not trend-day liquidation.</div>
@@ -2630,6 +2631,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
       out.innerHTML=
         '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'
         +'<span style="padding:4px 12px;border-radius:20px;font-size:13px;font-weight:800;letter-spacing:0.04em;background:'+GB[r.gate]+';color:'+GC[r.gate]+'">'+r.gate+'</span>'
+        +(r.governor?'<span style="padding:3px 10px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:0.04em;background:'+(SL_COLORS[r.governor.color]||SL_COLORS.amber).bg+';color:'+(SL_COLORS[r.governor.color]||SL_COLORS.amber).fg+'">'+slEsc(r.governor.label)+'</span>':'')
         +'<span style="font-size:11px;color:var(--text-dim)">'+r.windowLabel+'</span>'
         +'</div>'
         +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">'
@@ -2644,7 +2646,10 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
         +'<div style="margin-top:8px;font-size:10px;color:var(--text-dim)">Target: '+r.stops.target+'</div>';
     }
     const stance=g('spy-stance-text');
-    if(stance)stance.textContent=r.gate+' — '+r.bias.label+'. '+r.reasons[0];
+    if(stance)stance.textContent=r.gate+' — '+r.bias.label
+      +(r.governor&&r.governor.mode!=='idle'&&r.governor.mode!=='off'?' · '+r.governor.label:'')
+      +'. '+r.reasons[0];
+    slRenderStructure();
   },
   spyTimeWindow(d){
     const fmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',hour12:false,weekday:'short'});
@@ -2699,9 +2704,10 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
       if(bias.dir==='NEUTRAL'){worsen('CAUTION');}
     }
     const time=w==='lunch'?'10 min':w==='amprime'?'15-20 min':(w==='power'||w==='pmprime')?'10-15 min':'10 min';
-    const stops={time:time,price:'-25% of premium (pre-set)',target:'+30-50%, scale half, BE stop on runner'};
+    const stops={time:time,price:SL_STOP.label+' — HARD, pre-set at entry',pricePct:SL_STOP.pct,hard:true,target:'+30-50%, scale half, BE stop on runner',runner:true};
+    const G=slApplyGovernor(bias,stops,reasons,w,worsen);
     if(reasons.length===0)reasons.push('Time, ribbon and vol all clear; directional read intact.');
-    return {gate:gate,windowKey:w,windowLabel:LABEL[w]||w,structure:structure,bias:bias,reasons:reasons,stops:stops};
+    return {gate:gate,windowKey:w,windowLabel:LABEL[w]||w,structure:structure,bias:bias,reasons:reasons,stops:stops,struct:G.struct,governor:G.governor};
   },
   runFullSPYAnalysis(){
     NX.loadSPYLogic();
@@ -2713,6 +2719,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     try{
       const d=await NX.apiFetch('/api/spy-logic');
       if(d&&!d.error){
+        NX._spyLive=d;   // spot source for slStructure()
         const stance=$('#spy-stance-text');
         if(stance){
           const above=d.above_vwap;const pct=d.day_change_pct||0;
@@ -2734,14 +2741,12 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
         // range midpoint, DEMAND above 5d low; band ~0.4% of spot, min 2 pts).
         // Manual edits set NX._zonesTouched (oninput) and are never overwritten.
         if(!NX._zonesTouched){
-          const zp=Number(d.price),zhi=Number(d.recent_5d_high),zlo=Number(d.recent_5d_low);
-          if(isFinite(zp)&&isFinite(zhi)&&isFinite(zlo)&&zhi>zlo){
-            const zw=Math.max(2,Math.round(zp*0.004));const zmid=(zhi+zlo)/2;
-            const zfmt=(a,b)=>Math.round(a)+'–'+Math.round(b);
+          const zones=slDeriveZones(d);
+          if(zones){
             const z1=$('#spy-z1'),z2=$('#spy-z2'),z3=$('#spy-z3');
-            if(z1)z1.value=zfmt(zhi-zw,zhi);
-            if(z2)z2.value=zfmt(zmid-zw/2,zmid+zw/2);
-            if(z3)z3.value=zfmt(zlo,zlo+zw);
+            if(z1)z1.value=zones[0];
+            if(z2)z2.value=zones[1];
+            if(z3)z3.value=zones[2];
           }
         }
         NX.runSPYLogic();
@@ -4579,6 +4584,230 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     }
   },
 };
+
+// ══════════════════════════════════════════════════════════════
+// SPY LOGIC — STRUCTURAL GOVERNOR  (transplanted from APEX 2026-07-26)
+//   The weekly tag is the FRAME; the intraday read is the TRADE.
+//   A read that fights the weekly tag is a scalp with a shelf life,
+//   not a trend — the engine degrades it automatically (no runner,
+//   halved time stop, gate can never print GO).
+//   Identifiers stay in the sl/SL_ namespace exactly as in APEX so the
+//   two inline implementations stay diffable against each other.
+//   Re-anchor by editing the four numbers below off a WEEKLY chart.
+// ══════════════════════════════════════════════════════════════
+const SL_STRUCTURE = {
+    asOf:       '2026-07-26',
+    reclaim:    743.91,   // spot above  → weekly Stage 2 confirmed
+    support:    735.21,   // spot below  → Stage 2 under pressure
+    flip:       722.54,   // spot below  → structural tag flips bearish (Stage 3/4)
+    staleDays:  10,       // nudge to re-anchor after this many days
+    vixFragile: 25,       // VIX at/above this downgrades a confirmed tag
+    source:     'Weekly 30-wk SMA rising; levels from the 07/24 review.'
+};
+
+// The last leak. Hard, pre-set at entry, non-negotiable.
+const SL_STOP = { pct: 25, label: '−25% of premium' };
+
+// Counter-structural time stops (halved vs with-structure)
+const SL_SCALP_TIME = { open:'5 min', amprime:'8-10 min', lunch:'5 min', pmprime:'6-8 min', power:'5-8 min' };
+
+// APEX's palette is --bull/--bear/--warn; hashira's is --green/--red/--amber.
+const SL_COLORS = {
+    red:   { fg:'var(--red)',   bg:'var(--red-dim)' },
+    green: { fg:'var(--green)', bg:'var(--green-dim)' },
+    amber: { fg:'var(--amber)', bg:'var(--amber-dim)' }
+};
+
+function slEsc(s){
+    return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// APEX reads PRICE_CACHE['^VIX']; hashira has no such cache, so the ticker
+// strip stashes the value it already fetches on NX._vix (see loadTickerBar).
+function slVix(){
+    try{ const p=Number(NX._vix); return isFinite(p)&&p>0?p:null; }catch(e){ return null; }
+}
+
+// Live daily spot, cached by loadSPYLogic off GET /api/spy-logic.
+function slSpot(){
+    try{ const p=NX._spyLive&&Number(NX._spyLive.price); return isFinite(p)&&p>0?p:null; }
+    catch(e){ return null; }
+}
+
+// ── Structural tag ────────────────────────────────────────
+// Regime-input discipline: a stage label is NEVER claimed off intraday data
+// alone. Weekly anchor + live daily price + VIX must all be present, or the
+// panel prints STRUCTURE UNVERIFIED and the governor stays off.
+function slStructure(){
+    const out = {
+        verified:false, missing:[], tag:null, label:'STRUCTURE UNVERIFIED',
+        dir:null, color:'amber', spot:null, vix:null, ageDays:null,
+        stale:false, detail:'', levels:SL_STRUCTURE
+    };
+
+    const anchored = Date.parse(SL_STRUCTURE.asOf+'T00:00:00');
+    if(isFinite(anchored)){
+        out.ageDays = Math.floor((Date.now()-anchored)/86400000);
+        out.stale   = out.ageDays > SL_STRUCTURE.staleDays;
+    } else {
+        out.missing.push('weekly anchor date');
+    }
+
+    const spot = slSpot();
+    if(spot!=null) out.spot = spot; else out.missing.push('live daily price');
+
+    const vix = slVix();
+    if(vix!=null) out.vix = vix; else out.missing.push('VIX');
+
+    if(out.missing.length) return out;   // no stage claim off partial inputs
+
+    out.verified = true;
+    const L = SL_STRUCTURE;
+    if(out.spot >= L.reclaim){
+        out.tag='stage2'; out.dir='LONG'; out.color='green';
+        out.label='WEEKLY STAGE 2 — CONFIRMED';
+        out.detail='Holding above '+L.reclaim.toFixed(2)+'. Shorts are counter-structural.';
+    } else if(out.spot >= L.support){
+        out.tag='stage2w'; out.dir='LONG'; out.color='green';
+        out.label='WEEKLY STAGE 2 — WEAKENING';
+        out.detail='Below the '+L.reclaim.toFixed(2)+' reclaim but holding '+L.support.toFixed(2)+'. Structure intact, conviction reduced.';
+    } else if(out.spot >= L.flip){
+        out.tag='transition'; out.dir=null; out.color='amber';
+        out.label='STAGE 2 AT RISK — NO TAG';
+        out.detail='Lost '+L.support.toFixed(2)+', has not broken '+L.flip.toFixed(2)+'. Tag unresolved — both sides are scalps.';
+    } else {
+        out.tag='stage3'; out.dir='SHORT'; out.color='red';
+        out.label='STRUCTURE BROKEN — STAGE 3/4';
+        out.detail='Broke '+L.flip.toFixed(2)+'. Governor inverts: LONGS are now the counter-structural side.';
+    }
+
+    if(out.tag==='stage2' && out.vix >= L.vixFragile){
+        out.tag='stage2w'; out.color='amber';
+        out.label='WEEKLY STAGE 2 — WEAKENING';
+        out.detail += ' VIX '+out.vix.toFixed(2)+' at/above '+L.vixFragile+' — tag downgraded, structure fragile.';
+    }
+    return out;
+}
+
+// ── Zone derivation from live 5-day range (port of APEX slDeriveZones) ──
+function slDeriveZones(d){
+    const price=Number(d&&d.price), hi=Number(d&&d.recent_5d_high), lo=Number(d&&d.recent_5d_low);
+    if(!isFinite(price)||!isFinite(hi)||!isFinite(lo)||hi<=lo) return null;
+    const band = Math.max(2, Math.round(price*0.004));
+    const mid  = (hi+lo)/2;
+    const fmt  = (a,b)=>Math.round(a)+'–'+Math.round(b);
+    return [fmt(hi-band,hi), fmt(mid-band/2,mid+band/2), fmt(lo,lo+band)];
+}
+
+// Ladder rows for the structure bar. Rendered even when unverified —
+// these are static facts, not a stage claim.
+function slLevelLadder(){
+    return [['RECLAIM', SL_STRUCTURE.reclaim, 'Stage 2 confirmed above', 'green'],
+            ['SUPPORT', SL_STRUCTURE.support, 'Stage 2 pressured below', 'amber'],
+            ['FLIP',    SL_STRUCTURE.flip,    'Tag flips bearish below', 'red']];
+}
+
+// ── STRUCTURAL GOVERNOR ────────────────────────────────
+// Applied on top of an already-computed gate. It may only make a read
+// WORSE — every pre-existing NO-GO rule (opening auction, closing pin,
+// pinched ribbon, ribbon/direction conflict) still dominates, because
+// worsen() only ever ratchets downward.
+function slApplyGovernor(bias, stops, reasons, win, worsen){
+    const struct = slStructure();
+    const scalp = ()=>{
+        stops.time   = SL_SCALP_TIME[win] || '5-8 min';
+        stops.target = '+20-30% — take the full clip, NO runner';
+        stops.runner = false;
+    };
+    let governor = { mode:'off', label:'GOVERNOR OFF', color:'amber', note:'' };
+
+    if(!struct.verified){
+        governor = { mode:'unverified', label:'STRUCTURE UNVERIFIED', color:'amber',
+                     note:'Missing '+struct.missing.join(', ')+'.' };
+        worsen('CAUTION');
+        reasons.push('STRUCTURE UNVERIFIED — missing '+struct.missing.join(', ')+'. No stage label claimed and the governor is off; do not size this off an intraday read alone.');
+    } else if(bias.dir==='NEUTRAL'){
+        governor = { mode:'idle', label:struct.label, color:struct.color,
+                     note:'No directional read to govern yet.' };
+    } else if(struct.dir===null){
+        governor = { mode:'transition', label:'TRANSITION — SCALP ONLY', color:'amber',
+                     note:'Structural tag unresolved between '+SL_STRUCTURE.flip.toFixed(2)+' and '+SL_STRUCTURE.support.toFixed(2)+'.' };
+        worsen('CAUTION');
+        scalp();
+        reasons.push('TRANSITION ZONE — SPY '+struct.spot.toFixed(2)+' sits between '+SL_STRUCTURE.flip.toFixed(2)+' and '+SL_STRUCTURE.support.toFixed(2)+'. No tag either way, so BOTH directions are scalps: half size, hard time stop, no runner.');
+    } else if(bias.dir!==struct.dir){
+        governor = { mode:'counter', label:'COUNTER-STRUCTURAL — SCALP ONLY', color:'red',
+                     note:bias.dir+' against '+struct.label+'.' };
+        worsen('CAUTION');
+        scalp();
+        reasons.push('COUNTER-STRUCTURAL — '+bias.dir+' into '+struct.label+' (SPY '+struct.spot.toFixed(2)+'). This is a scalp with a shelf life, not a trend: half size, halved time stop, no runner, and the gate cannot print GO.');
+    } else {
+        governor = { mode:'aligned', label:'WITH-STRUCTURE', color:'green',
+                     note:bias.dir+' agrees with '+struct.label+'.' };
+        reasons.push('WITH-STRUCTURE — '+bias.dir+' agrees with '+struct.label+' (SPY '+struct.spot.toFixed(2)+'). Full plan available: scale half at target, BE stop on the runner.');
+    }
+
+    if(struct.stale) reasons.push('Weekly anchor is '+struct.ageDays+' days old (set '+SL_STRUCTURE.asOf+') — re-anchor SL_STRUCTURE off a fresh weekly chart.');
+    reasons.push('HARD STOP '+SL_STOP.label+' — pre-set at entry, no exceptions. No loser exceeds it.');
+
+    return { struct:struct, governor:governor };
+}
+
+// ── Structure bar ─────────────────────────────────────────
+function slRenderStructure(){
+    const el = document.getElementById('spy-structure-bar');
+    if(!el) return;
+    const S = slStructure();
+    const c = SL_COLORS[S.color] || SL_COLORS.amber;
+
+    const rows = slLevelLadder().map(row=>{
+        const lc    = SL_COLORS[row[3]];
+        const side  = S.spot==null ? '—' : (S.spot>=row[1] ? 'ABOVE' : 'BELOW');
+        const dist  = S.spot==null ? '' : Math.abs(S.spot-row[1]).toFixed(2)+' pts';
+        const sideC = S.spot==null ? SL_COLORS.amber.fg : (S.spot>=row[1] ? SL_COLORS.green.fg : SL_COLORS.red.fg);
+        return '<div style="display:flex;align-items:center;gap:8px;font-size:10px;padding:3px 0;border-top:1px solid var(--border)">'
+            +'<span style="font-weight:800;letter-spacing:0.06em;color:'+lc.fg+';min-width:56px">'+row[0]+'</span>'
+            +'<span style="font-variant-numeric:tabular-nums;font-weight:700;min-width:54px">'+row[1].toFixed(2)+'</span>'
+            +'<span style="color:'+sideC+';font-weight:700;min-width:44px">'+side+'</span>'
+            +'<span style="color:var(--text-dim);font-variant-numeric:tabular-nums;min-width:58px">'+dist+'</span>'
+            +'<span style="color:var(--text-muted)">'+slEsc(row[2])+'</span>'
+            +'</div>';
+    }).join('');
+
+    el.innerHTML =
+        '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px">'
+        +'<span style="padding:3px 10px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:0.04em;background:'+c.bg+';color:'+c.fg+'">'+slEsc(S.label)+'</span>'
+        +(S.spot!=null?'<span style="font-size:11px;font-variant-numeric:tabular-nums">SPY '+S.spot.toFixed(2)+'</span>':'')
+        +(S.vix!=null?'<span style="font-size:10px;color:'+(S.vix>=SL_STRUCTURE.vixFragile?'var(--amber)':'var(--text-dim)')+'">VIX '+S.vix.toFixed(2)+'</span>':'')
+        +'<span style="margin-left:auto;font-size:9px;color:var(--text-dim)">anchored '+slEsc(SL_STRUCTURE.asOf)+(S.ageDays!=null?' · '+S.ageDays+'d':'')+'</span>'
+        +'</div>'
+        +(S.detail?'<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">'+slEsc(S.detail)+'</div>':'')
+        +(S.missing.length?'<div style="font-size:10px;color:var(--amber);margin-bottom:4px">Missing '+slEsc(S.missing.join(', '))+' — governor off, no stage claimed.</div>':'')
+        +rows
+        +'<div style="margin-top:6px;font-size:9px;color:var(--text-dim)">'+slEsc(SL_STRUCTURE.source)+' · counter-structural reads are scalps with a shelf life, not trends.</div>';
+}
+
+// ── Hard stop calculator ──────────────────────────────────
+function slStopCalc(){
+    const premEl = document.getElementById('spy-stop-prem');
+    const qtyEl  = document.getElementById('spy-stop-qty');
+    const outEl  = document.getElementById('spy-stop-out');
+    if(!outEl) return;
+    const prem = Number(premEl && premEl.value);
+    let qty    = Math.max(1, Math.min(3, Math.round(Number(qtyEl && qtyEl.value) || 1)));
+    if(!isFinite(prem) || prem <= 0){
+        outEl.innerHTML = '<span style="color:var(--text-dim)">Enter entry premium to size the hard stop.</span>';
+        return;
+    }
+    const stopPx = prem * (1 - SL_STOP.pct/100);
+    const loss   = prem * (SL_STOP.pct/100) * 100 * qty;
+    outEl.innerHTML =
+        '<span style="font-weight:800;color:var(--red)">STOP $'+stopPx.toFixed(2)+'</span>'
+        +'<span style="color:var(--text-muted)"> · max loss $'+Math.round(loss)+' on '+qty+' lot'+(qty===1?'':'s')+'</span>'
+        +(qty>=3?'<span style="color:var(--amber)"> · at 3-lot cap</span>':'');
+}
+
 // ─── Enter-key bindings ───
 ['opt-ticker','news-ticker','stage-ticker','dd-ticker','tt-ticker','earn-ticker','ai-ticker','lstm-ticker','hmm-stk-input'].forEach(id=>{
   const el=$('#'+id);
@@ -4608,6 +4837,7 @@ async function refreshTickerBar(){
     });
     // Insert VIX after DIA (position 4)
     if(vix&&vix.price){
+      NX._vix=parseFloat(vix.price)||null;   // governor input, see slVix()
       items.splice(4,0,{sym:'VIX',price:parseFloat(vix.price)||0,chg:parseFloat(vix.change_pct)||0});
     }
 

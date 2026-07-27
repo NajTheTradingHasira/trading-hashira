@@ -2767,6 +2767,11 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
         NX.runSPYLogic();
       }
     }catch(e){console.warn('SPY Logic auto-fetch failed:',e);NX.runSPYLogic()}
+    // Deliberately not awaited and in a finally: the structure endpoint is
+    // independent of /api/spy-logic, so it must still be consulted when that
+    // fetch throws or returns an error payload. Panel is already on screen;
+    // slFetchStructure() repaints the bar in place when the response lands.
+    finally{ slFetchStructure(); }
   },
   loadSPYAnalysis(provider){
     provider=provider||'perplexity';
@@ -4610,7 +4615,10 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
 //   two inline implementations stay diffable against each other.
 //   Re-anchor by editing the four numbers below off a WEEKLY chart.
 // ══════════════════════════════════════════════════════════════
-const SL_STRUCTURE = {
+// Seeded from GET /api/spy-logic/structure by slFetchStructure(); these baked
+// values are the fallback that stays on screen when the endpoint is unreachable
+// or returns a payload that fails validation. Not const -- reassigned on adopt.
+let SL_STRUCTURE = {
     asOf:       '2026-07-26',
     reclaim:    743.91,   // spot above  → weekly Stage 2 confirmed
     support:    735.21,   // spot below  → Stage 2 under pressure
@@ -4619,6 +4627,55 @@ const SL_STRUCTURE = {
     vixFragile: 25,       // VIX at/above this downgrades a confirmed tag
     source:     'Weekly 30-wk SMA rising; levels from the 07/24 review.'
 };
+
+// Provenance of whatever is currently in SL_STRUCTURE. Anything other than
+// 'live' renders amber in the structure bar -- a trader glancing at it should
+// never have to wonder whether the levels on screen are current.
+let SL_STRUCTURE_SOURCE = { kind:'baked', label:'BAKED', detail:'endpoint not consulted yet' };
+
+// Last line of defence before a bad triple silently inverts the structural tag.
+// The endpoint validates server-side too; this is deliberate belt-and-braces.
+function slValidStructure(d){
+    if(!d || typeof d !== 'object') return false;
+    for(const k of ['reclaim','support','flip']){
+        if(typeof d[k] !== 'number' || !isFinite(d[k]) || d[k] <= 0) return false;
+    }
+    // Two comparisons joined by &&, NOT a chain. `d.flip < d.support < d.reclaim`
+    // parses as ((d.flip < d.support) < d.reclaim) -- a boolean coerced to 0/1 and
+    // compared against a SPY price, which is true regardless of the real ordering.
+    // That would pass on inverted levels, the one case this exists to catch.
+    // (spy_logic_router.py chains legitimately -- Python chains, JS does not.)
+    if(!(d.flip < d.support && d.support < d.reclaim)) return false;
+    if(typeof d.asOf !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d.asOf)) return false;
+    return true;
+}
+
+// Never blocks first paint -- called without await after the panel has drawn, so
+// a hung endpoint degrades to a stale-but-correct panel, never a blank one.
+async function slFetchStructure(){
+    try{
+        const d = await NX.apiFetch('/api/spy-logic/structure');
+        if(!slValidStructure(d)){
+            SL_STRUCTURE_SOURCE = { kind:'rejected', label:'BAKED — payload rejected',
+                                    detail:'endpoint returned levels that failed validation' };
+            return;
+        }
+        SL_STRUCTURE = {
+            asOf:d.asOf, reclaim:d.reclaim, support:d.support, flip:d.flip,
+            staleDays:d.staleDays, vixFragile:d.vixFragile, source:d.source
+        };
+        // degraded is a state to display, not an error to retry.
+        SL_STRUCTURE_SOURCE = d.degraded
+            ? { kind:'degraded', label:'SERVER — DEGRADED',
+                detail: d.degradedReason || 'server served its baked default' }
+            : { kind:'live', label:'SERVER', detail:'revision '+d.revision };
+    }catch(e){
+        SL_STRUCTURE_SOURCE = { kind:'unreachable', label:'BAKED — endpoint unreachable',
+                                detail:String(e && e.message || e) };
+    }finally{
+        slRenderStructure();   // repaint in place, whatever the outcome
+    }
+}
 
 // The last leak. Hard, pre-set at entry, non-negotiable.
 const SL_STOP = { pct: 25, label: '−25% of premium' };
@@ -4800,7 +4857,9 @@ function slRenderStructure(){
         +(S.detail?'<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">'+slEsc(S.detail)+'</div>':'')
         +(S.missing.length?'<div style="font-size:10px;color:var(--amber);margin-bottom:4px">Missing '+slEsc(S.missing.join(', '))+' — governor off, no stage claimed.</div>':'')
         +rows
-        +'<div style="margin-top:6px;font-size:9px;color:var(--text-dim)">'+slEsc(SL_STRUCTURE.source)+' · counter-structural reads are scalps with a shelf life, not trends.</div>';
+        +'<div style="margin-top:6px;font-size:9px;color:var(--text-dim)">'+slEsc(SL_STRUCTURE.source)+' · counter-structural reads are scalps with a shelf life, not trends.'
+        +'<span style="margin-left:8px;color:'+(SL_STRUCTURE_SOURCE.kind==='live'?'var(--text-dim)':'var(--amber)')+'">'+slEsc(SL_STRUCTURE_SOURCE.label)+'</span>'
+        +'</div>';
 }
 
 // ── Hard stop calculator ──────────────────────────────────

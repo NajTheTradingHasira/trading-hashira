@@ -63,6 +63,14 @@ export const SL_RULES = [
 // ═══════════════════════════════════════════════════════════════
 // 2. THE TAG — regime-input discipline lives here
 // ═══════════════════════════════════════════════════════════════
+
+// ── Input freshness ──────────────────────────────────────────────
+// A stale input is treated exactly like a missing one during RTH. A tag
+// computed off a spot from forty minutes ago still renders as a confident
+// stage label, which is strictly worse than printing nothing: it looks
+// authoritative and it is not. Outside RTH a stale spot is stale BY DEFINITION
+// (the market is closed), so the age is reported and nothing is downgraded.
+export const SL_STALE = { soft: 120000, hard: 300000 };   // 2 min report age · 5 min downgrade
 /**
  * Classify the weekly structural tag from live inputs.
  *
@@ -71,12 +79,43 @@ export const SL_RULES = [
  * `missing` names what is absent. This is the "never stage-classify off a
  * daily" rule encoded so it cannot be forgotten.
  *
+ * A STALE input is treated the same way as a missing one during RTH — see
+ * SL_STALE below. Pass spotAt/vixAt to enable that; omit them and no staleness
+ * is claimed.
+ *
  * @param {number|null} spot   live daily price (null/NaN → unverified)
  * @param {number|null} vix    live VIX         (null/NaN → unverified)
  * @param {number} [now]       epoch ms, injectable for tests
  * @param {object} [levels]    override SL_STRUCTURE
+ * @param {number|null} [spotAt] epoch ms when spot was FETCHED (null → age unknown)
+ * @param {number|null} [vixAt]  epoch ms when vix was FETCHED  (null → age unknown)
  */
-export function structuralTag({ spot, vix, now = Date.now(), levels = SL_STRUCTURE } = {}) {
+
+// RTH = the cash session, on the ET clock. Pure: `at` is always supplied.
+export function isRTH(at) {
+    const fmt = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false, weekday: 'short'
+    });
+    const p = Object.fromEntries(fmt.formatToParts(new Date(at)).map(x => [x.type, x.value]));
+    if (p.weekday === 'Sat' || p.weekday === 'Sun') return false;
+    const m = (+p.hour) * 60 + (+p.minute);
+    return m >= 570 && m < 960;   // 09:30–16:00 ET
+}
+
+export function ageMs(at, now) {
+    return (typeof at === 'number' && isFinite(at) && at > 0) ? Math.max(0, now - at) : null;
+}
+
+export function fmtAge(ms) {
+    const s = Math.floor(ms / 1000);
+    return s < 60 ? s + 's' : Math.floor(s / 60) + 'm';
+}
+
+// spotAt / vixAt are the epoch-ms stamps of when each input was FETCHED.
+// Omitting them means the age is unknown, and an unknown age claims nothing —
+// we do not assert freshness we have not measured. That default is what keeps
+// callers which never stamp (parity.mjs, unit fixtures) behaving as before.
+export function structuralTag({ spot, vix, now = Date.now(), levels = SL_STRUCTURE, spotAt = null, vixAt = null } = {}) {
     const out = {
         verified: false, missing: [], tag: null, label: 'STRUCTURE UNVERIFIED',
         dir: null, color: 'amber', spot: null, vix: null, ageDays: null,
@@ -97,7 +136,23 @@ export function structuralTag({ spot, vix, now = Date.now(), levels = SL_STRUCTU
     const v = Number(vix);
     if (isFinite(v) && v > 0) out.vix = v; else out.missing.push('VIX');
 
-    if (out.missing.length) return out;   // no stage claim off partial inputs
+    // Freshness is graded after presence: an input that is absent is already
+    // in `missing`, and a second complaint about its age would be noise.
+    out.rth = isRTH(now);
+    out.spotAge = out.spot != null ? ageMs(spotAt, now) : null;
+    out.vixAge = out.vix != null ? ageMs(vixAt, now) : null;
+    out.spotStale = out.spotAge != null && out.spotAge >= SL_STALE.hard;
+    out.vixStale = out.vixAge != null && out.vixAge >= SL_STALE.hard;
+    // Age is surfaced past the soft threshold during RTH, and always outside
+    // it — a closed-market panel should say so rather than look current.
+    out.spotAgeLabel = (out.spotAge != null && (!out.rth || out.spotAge >= SL_STALE.soft)) ? fmtAge(out.spotAge) : null;
+    out.vixAgeLabel = (out.vixAge != null && (!out.rth || out.vixAge >= SL_STALE.soft)) ? fmtAge(out.vixAge) : null;
+    if (out.rth) {
+        if (out.spotStale) out.missing.push('a fresh daily price (last fetch ' + fmtAge(out.spotAge) + ' ago)');
+        if (out.vixStale) out.missing.push('a fresh VIX (last fetch ' + fmtAge(out.vixAge) + ' ago)');
+    }
+
+    if (out.missing.length) return out;   // no stage claim off partial or stale inputs
 
     out.verified = true;
     if (out.spot >= levels.reclaim) {

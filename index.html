@@ -2735,6 +2735,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
       const d=await NX.apiFetch('/api/spy-logic');
       if(d&&!d.error){
         NX._spyLive=d;   // spot source for slStructure()
+        NX._spyLiveAt=Date.now();   // freshness stamp, see slSpotAt()
         const stance=$('#spy-stance-text');
         if(stance){
           const above=d.above_vwap;const pct=d.day_change_pct||0;
@@ -4707,6 +4708,55 @@ function slSpot(){
     catch(e){ return null; }
 }
 
+// ── Input freshness ───────────────────────────────────────
+// A stale input is treated exactly like a missing one during RTH. A tag
+// computed off a spot from forty minutes ago still renders as a confident
+// stage label, which is strictly worse than printing nothing: it looks
+// authoritative and it is not. Outside RTH a stale spot is stale BY
+// DEFINITION (the market is closed), so the age is shown and nothing is
+// downgraded.
+const SL_STALE = { soft: 120000, hard: 300000 };   // 2 min show age · 5 min downgrade
+
+// Fetch stamps. Absent stamp => age unknown => no staleness is claimed;
+// we do not assert freshness we have not measured. This is also what keeps
+// parity.mjs unaffected: it injects bare {price} objects with no stamps.
+function slSpotAt(){ try{ return NX._spyLiveAt || null; }catch(e){ return null; } }
+function slVixAt(){  try{ return NX._vixAt   || null; }catch(e){ return null; } }
+
+function slAgeMs(at, now){
+    return (typeof at==='number' && isFinite(at) && at>0) ? Math.max(0, now-at) : null;
+}
+function slFmtAge(ms){
+    const s = Math.floor(ms/1000);
+    return s < 60 ? s+'s' : Math.floor(s/60)+'m';
+}
+// RTH = the cash session. Reuses the existing ET window helper rather than
+// introducing a second clock that could disagree with it.
+function slIsRTH(d){
+    try{
+        const w = NX.spyTimeWindow(d || new Date());
+        return w!=='pre' && w!=='after' && w!=='closed';
+    }catch(e){ return false; }
+}
+
+// Keeps spot fresh on the ticker bar's existing 60s cadence — no new timer.
+// Deliberately NOT loadSPYLogic(): that re-derives the opening/VWAP dropdowns
+// and reseeds the Supply Map zones, so running it every minute would clobber
+// manual edits. This touches the spot value, its stamp and the bar, nothing else.
+async function slRefreshSpot(){
+    if(!NX._spyLive) return;   // panel never opened — nothing to keep fresh yet
+    try{
+        const d = await NX.apiFetch('/api/spy-logic');
+        if(d && !d.error && Number(d.price) > 0){
+            NX._spyLive   = d;
+            NX._spyLiveAt = Date.now();
+        }
+        // A failed refresh deliberately leaves the OLD stamp in place: ageing
+        // into STRUCTURE UNVERIFIED is the correct outcome of a dead feed.
+    }catch(e){ /* same — never re-stamp on failure */ }
+    finally{ try{ slRenderStructure(); }catch(e){} }
+}
+
 // ── Structural tag ────────────────────────────────────────
 // Regime-input discipline: a stage label is NEVER claimed off intraday data
 // alone. Weekly anchor + live daily price + VIX must all be present, or the
@@ -4732,7 +4782,24 @@ function slStructure(){
     const vix = slVix();
     if(vix!=null) out.vix = vix; else out.missing.push('VIX');
 
-    if(out.missing.length) return out;   // no stage claim off partial inputs
+    // Freshness is graded after presence: an input that is absent is already
+    // in `missing`, and a second complaint about its age would be noise.
+    const nowMs   = Date.now();
+    out.rth       = slIsRTH(new Date(nowMs));
+    out.spotAge   = spot!=null ? slAgeMs(slSpotAt(), nowMs) : null;
+    out.vixAge    = vix!=null  ? slAgeMs(slVixAt(),  nowMs) : null;
+    out.spotStale = out.spotAge!=null && out.spotAge >= SL_STALE.hard;
+    out.vixStale  = out.vixAge!=null  && out.vixAge  >= SL_STALE.hard;
+    // Age is surfaced past the soft threshold during RTH, and always outside
+    // it — a closed-market panel should say so rather than look current.
+    out.spotAgeLabel = (out.spotAge!=null && (!out.rth || out.spotAge>=SL_STALE.soft)) ? slFmtAge(out.spotAge) : null;
+    out.vixAgeLabel  = (out.vixAge!=null  && (!out.rth || out.vixAge >=SL_STALE.soft)) ? slFmtAge(out.vixAge)  : null;
+    if(out.rth){
+        if(out.spotStale) out.missing.push('a fresh daily price (last fetch '+slFmtAge(out.spotAge)+' ago)');
+        if(out.vixStale)  out.missing.push('a fresh VIX (last fetch '+slFmtAge(out.vixAge)+' ago)');
+    }
+
+    if(out.missing.length) return out;   // no stage claim off partial or stale inputs
 
     out.verified = true;
     const L = SL_STRUCTURE;
@@ -4850,8 +4917,12 @@ function slRenderStructure(){
     el.innerHTML =
         '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px">'
         +'<span style="padding:3px 10px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:0.04em;background:'+c.bg+';color:'+c.fg+'">'+slEsc(S.label)+'</span>'
-        +(S.spot!=null?'<span style="font-size:11px;font-variant-numeric:tabular-nums">SPY '+S.spot.toFixed(2)+'</span>':'')
-        +(S.vix!=null?'<span style="font-size:10px;color:'+(S.vix>=SL_STRUCTURE.vixFragile?'var(--amber)':'var(--text-dim)')+'">VIX '+S.vix.toFixed(2)+'</span>':'')
+        +(S.spot!=null?'<span style="font-size:11px;font-variant-numeric:tabular-nums">SPY '+S.spot.toFixed(2)
+            +(S.spotAgeLabel?'<span style="margin-left:4px;font-size:9px;color:'+(S.spotStale?'var(--amber)':'var(--text-dim)')+'">'+slEsc(S.spotAgeLabel)+' old</span>':'')
+            +'</span>':'')
+        +(S.vix!=null?'<span style="font-size:10px;color:'+(S.vix>=SL_STRUCTURE.vixFragile?'var(--amber)':'var(--text-dim)')+'">VIX '+S.vix.toFixed(2)
+            +(S.vixAgeLabel?'<span style="margin-left:4px;font-size:9px;color:'+(S.vixStale?'var(--amber)':'var(--text-dim)')+'">'+slEsc(S.vixAgeLabel)+' old</span>':'')
+            +'</span>':'')
         +'<span style="margin-left:auto;font-size:9px;color:var(--text-dim)">anchored '+slEsc(SL_STRUCTURE.asOf)+(S.ageDays!=null?' · '+S.ageDays+'d':'')+'</span>'
         +'</div>'
         +(S.detail?'<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">'+slEsc(S.detail)+'</div>':'')
@@ -4912,6 +4983,7 @@ async function refreshTickerBar(){
     // Insert VIX after DIA (position 4)
     if(vix&&vix.price){
       NX._vix=parseFloat(vix.price)||null;   // governor input, see slVix()
+      NX._vixAt=Date.now();                  // freshness stamp, see slVixAt()
       items.splice(4,0,{sym:'VIX',price:parseFloat(vix.price)||0,chg:parseFloat(vix.change_pct)||0});
     }
 
@@ -4921,6 +4993,10 @@ async function refreshTickerBar(){
       return`<div class="tk-item"><span class="tk-sym">${i.sym}</span><span class="tk-price">${i.price?i.price.toFixed(2):'—'}</span><span class="tk-chg ${cls}">${i.price?arrow+' '+Math.abs(i.chg).toFixed(2)+'%':''}</span></div>`;
     }).join('');
   }catch(e){console.warn('Ticker bar:',e.message)}
+  // Ride the ticker bar's 60s interval for spot too, so the governor's two
+  // live inputs refresh on the same clock instead of spot being frozen at
+  // whenever the panel happened to be opened.
+  slRefreshSpot();
 }
 
 // ─── Init ───

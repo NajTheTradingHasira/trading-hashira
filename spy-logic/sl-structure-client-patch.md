@@ -5,22 +5,48 @@ shipped endpoint (`nexus-terminal`, `api/spy_logic_router.py`) and the transplan
 governor in `index.html`. Where the two disagree, the code wins — check it, don't trust
 this document.
 
-Applies to: `trading-hashira/index.html`, branch `feat/spy-logic-apex-parity`.
-Same shape applies to APEX and nexus; the response contract is shared by all three.
+Applies to: `trading-hashira/index.html`. Landed on `main` via `bb5ecca` (PR #2); the
+branches this doc originally named (`feat/spy-logic-apex-parity`,
+`feat/sl-structure-fetch-wiring`) are both merged and deleted.
+Same shape applies to APEX and nexus; the response contract is shared by all three —
+**those two are still unwired and this doc remains live for them.**
 
 ---
 
-## 1. What this changes
+## 1. What this changes — IMPLEMENTED 2026-07-26
 
-Today `SL_STRUCTURE` is a baked constant in `index.html`. That is the second copy the
-endpoint exists to eliminate — re-anchoring the weekly levels means editing three
-frontends instead of one Railway env var.
+> **Status: landed. This section is history, not a constraint.**
+> An earlier draft of §1 read *"Do not merge the parity branch without this."* That is
+> **obsolete** — it was overtaken by the actual rollout and contradicted `main` for the
+> window between the two merges. Do not treat it as a live gate.
 
-After this patch the panel seeds `SL_STRUCTURE` from
-`GET {NEXUS_API}/api/spy-logic/structure` and keeps the baked constant as a fallback.
+`SL_STRUCTURE` was a baked constant in `index.html` — the second of three independent
+copies the endpoint exists to eliminate, since re-anchoring the weekly levels meant
+editing three frontends instead of one Railway env var.
 
-**Do not merge the parity branch without this.** A branch that ships the governor with a
-baked constant is exactly the drift the design prevents.
+The panel now seeds `SL_STRUCTURE` from `GET {NEXUS_API}/api/spy-logic/structure` and
+keeps the baked constant as a fallback.
+
+### What actually shipped
+
+Two PRs, deliberately sequenced rather than bundled:
+
+| PR | Commit | What landed |
+|---|---|---|
+| #1 | `60cec27` | Parity branch, merged **with the baked constant intact** |
+| #2 | `bb5ecca` | This patch — fetch wiring, provenance badge, client-side validation |
+
+The baked constant was **not** drift in #1. It is the designed fallback, and it stays in
+the file after #2: every failure path (endpoint unreachable, payload rejected, malformed
+`asOf`, inverted triple) falls back to it and labels the bar amber. Shipping the governor
+against it for the gap between the two merges was a deliberate, authorized call, not an
+oversight — the governor was already correct on those levels, and the fetch only changes
+*where they come from*, never whether a stage is claimed.
+
+Re-anchoring is now **by env var, not by editing the constant in code**. Set
+`SPY_STRUCTURE_JSON` on the Railway service; the client picks it up on the next panel
+load. Editing the baked triple in `index.html` is no longer the re-anchor path — it only
+moves the fallback.
 
 ---
 

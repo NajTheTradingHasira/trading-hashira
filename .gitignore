@@ -22,3 +22,14 @@ Thumbs.db
 
 # Node (if any)
 node_modules/
+
+# --- secret hygiene (propagated 2026-08-01, shared across the four trading repos) ---
+# *.key, *.pem, credentials.json and secrets.json are already covered above.
+# .env* is broader than the explicit .env.* list; the carve-outs follow it so
+# templates stay committable (last matching pattern wins).
+.env*
+!.env.example
+!.env.sample
+# stray editor/OS duplicates that slip narrower .env rules
+* - Copy.*
+*- Copy.*

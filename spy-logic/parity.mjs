@@ -76,12 +76,50 @@
  * boundarySpots() also asserts every level it was handed appears in SPOTS, so
  * replacing the derivation with a literal list exits 2 rather than going quiet.
  *
+ * ── Why the SELECTION is compared before the merge ──────────────────────
+ *
+ * The harness used to take the plan from apex.slSelectScenario() and hand THAT
+ * SAME OBJECT to core.governorFor(). Both sides were therefore merging APEX's
+ * selection. That proves the merge agrees and says nothing whatsoever about
+ * whether the two registries pick the same scenario — and picking the wrong
+ * scenario is the more dangerous of the two failures, because the panel keeps
+ * printing a plausible label and a coherent plan, just the wrong one.
+ *
+ * Both registries are ordered arrays matched with `find(sc => sc.match(s))`,
+ * where several entries legitimately match the same tape and precedence is the
+ * ONLY thing that disambiguates them. Reordering one array, or editing one
+ * matcher, diverges the two silently. That is precisely the class of bug this
+ * suite was believed to be catching and provably was not.
+ *
+ * So PHASE 1b calls EACH implementation's own selector over the full 972-tape
+ * grid and compares id, label, dir, note, the whole plan, and each side's
+ * independently-derived runnerEligible. Selection is structure-independent, so
+ * it is swept over the tape grid rather than the three pruned reads — those
+ * only ever reach three of the eight scenarios.
+ *
+ * Phase 2 then gives each side its OWN plan, so a selection divergence shows up
+ * in both numbers instead of being masked by a shared input.
+ *
+ * ── Why the source is a committed ref ───────────────────────────────────
+ *
+ * The harness used to read APEX's index.html off the working tree. Every green
+ * number it ever printed was measured against a file that existed on no branch
+ * and that nobody else could reproduce. "Matches production" was an assumption,
+ * not an assertion.
+ *
+ * It now extracts the inline block with `git show <ref>:index.html` and runs
+ * once per ref — by default the checked-out ref AND main, which is what APEX
+ * actually deploys. The working tree is still checked, but only to report
+ * whether it differs from the pinned ref.
+ *
  * Env:
  *   PARITY_LIVE_URL     /api/spy-logic/structure — fetched for the LIVE pass
  *   SPY_STRUCTURE_JSON  the same var the backend reads, used if no URL is set
+ *   APEX_REFS           comma-separated refs to check (default "HEAD,main")
  */
 import fs from 'fs';
 import path from 'path';
+import { execFileSync } from 'child_process';
 import { pathToFileURL } from 'url';
 
 const apexPath = process.argv[2];
@@ -97,20 +135,75 @@ if (!fs.existsSync(apexPath)) {
 }
 
 const core = await import(pathToFileURL(path.resolve(corePath)).href);
+// The scenario registry, imported directly. governorFor() only ever receives a
+// plan; the SELECTOR that produces one is here, and comparing it is the whole
+// point of phase 1b.
+const scen = await import(pathToFileURL(path.resolve(path.dirname(path.resolve(corePath)), 'spyScenarios.js')).href);
 
-// ── load the APEX inline block against DOM stubs ─────────────
-// Anchored on content, not line numbers. The end anchor is the renderer
-// banner: everything above it is pure logic, everything below touches the DOM.
-const html = fs.readFileSync(apexPath, 'utf8');
-
+// ── resolve the APEX sources: committed refs, not a working tree ─────
 const START_ANCHOR = 'const SL_STATE = {';
 const END_ANCHOR = '// ── Renderers';
 
-const start = html.indexOf(START_ANCHOR);
-if (start < 0) { console.error('start anchor not found: ' + START_ANCHOR); process.exit(1); }
-const end = html.indexOf(END_ANCHOR, start);
-if (end < 0) { console.error('end anchor not found: ' + END_ANCHOR); process.exit(1); }
-const src = html.slice(start, end);
+function sliceBlock(html, origin) {
+    const start = html.indexOf(START_ANCHOR);
+    if (start < 0) { console.error('start anchor not found in ' + origin + ': ' + START_ANCHOR); process.exit(2); }
+    const end = html.indexOf(END_ANCHOR, start);
+    if (end < 0) { console.error('end anchor not found in ' + origin + ': ' + END_ANCHOR); process.exit(2); }
+    return html.slice(start, end);
+}
+
+const git = (repo, args) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 1 << 28 });
+
+function apexSources() {
+    const abs = path.resolve(apexPath);
+    const worktreeSrc = sliceBlock(fs.readFileSync(abs, 'utf8'), 'working tree');
+
+    let repo, rel;
+    try {
+        repo = git(path.dirname(abs), ['rev-parse', '--show-toplevel']).trim();
+        rel = path.relative(repo, abs).split(path.sep).join('/');
+    } catch {
+        console.log('\n⚠ APEX is not in a git repository — falling back to the working-tree file.');
+        console.log('    Nothing here is pinned; this run measures a file that exists on no branch.');
+        return [{ label: 'WORKTREE (unpinned)', src: worktreeSrc, pinned: false }];
+    }
+
+    const refs = (process.env.APEX_REFS || 'HEAD,main').split(',').map(r => r.trim()).filter(Boolean);
+    const out = [];
+    for (const ref of refs) {
+        let sha, html;
+        try {
+            sha = git(repo, ['rev-parse', '--short', ref]).trim();
+            html = git(repo, ['show', ref + ':' + rel]);
+        } catch (e) {
+            // A named ref that cannot be read is a failure, not a skip. Silently
+            // dropping `main` would restore exactly the assumption being removed.
+            console.error('\n✗ APEX ref ' + ref + ' could not be read from ' + repo + ': ' + ((e && e.message) || e) + '\n');
+            process.exit(1);
+        }
+        out.push({ label: ref + '@' + sha, src: sliceBlock(html, ref), pinned: true, ref, sha });
+    }
+
+    // Report, do not silently prefer: a dirty tree is the state the old harness
+    // measured without saying so.
+    const first = out[0];
+    if (worktreeSrc !== first.src) {
+        console.log('\n⚠ APEX working tree DIFFERS from ' + first.label + ' inside the SL_ block.');
+        console.log('    The working tree is NOT what is measured below. Commit it, or the');
+        console.log('    thing you are testing is not the thing you are running.');
+    } else {
+        console.log('apex source: working tree matches ' + first.label + ' inside the SL_ block');
+    }
+    // Identical refs are still both reported — the pass is armed for the day
+    // they diverge, and saying so is more useful than quietly deduplicating.
+    for (let i = 1; i < out.length; i++) {
+        if (out[i].src === first.src) {
+            console.log('apex source: ' + out[i].label + ' is byte-identical to ' + first.label +
+                        ' inside the SL_ block (second pass adds no signal today, and will the day it does)');
+        }
+    }
+    return out;
+}
 
 // Captured before the stub below replaces it. The LIVE pass may need to reach
 // the real /api/spy-logic/structure endpoint; the inline block must not.
@@ -126,132 +219,52 @@ globalThis.NEXUS_API = 'http://parity';
 globalThis.fetch = async () => ({ ok: false, status: 500, json: async () => ({}) });
 globalThis.setInterval = () => 0;
 
-// eslint-disable-next-line no-eval
-(0, eval)(src + '\nglobalThis.__apex = { slStructure, slRunGate, slStructureContext, slDirectionalRead, slSelectScenario, SL_STATE, SL_STRUCTURE, SL_INPUTS_DEF };');
-const apex = globalThis.__apex;
-
-// ── PRECONDITION: structure drift ────────────────────────────
-// If the inline anchor and the core anchor disagree, every downstream
-// comparison is meaningless — the two implementations are describing
-// different weeks. Bail loudly before comparing anything.
-{
-    const a = apex.SL_STRUCTURE, c = core.SL_STRUCTURE;
-    const keys = ['asOf', 'reclaim', 'support', 'flip', 'staleDays', 'vixFragile'];
-    const drift = keys.filter(k => String(a[k]) !== String(c[k]));
-    if (drift.length) {
-        console.error('\n✗ STRUCTURE DRIFT — inline anchor and core anchor disagree.');
-        for (const k of drift) {
-            console.error(`    ${k}: apex=${JSON.stringify(a[k])}  core=${JSON.stringify(c[k])}`);
-        }
-        console.error('\nNothing was compared. Re-anchor one side, or this run means nothing.\n');
-        process.exit(2);
-    }
-    console.log('precondition: structure anchors agree (' + a.asOf +
-        ', reclaim ' + a.reclaim + ' / support ' + a.support + ' / flip ' + a.flip + ')');
-}
-
-// The anchor as shipped, snapshotted before any pass overrides it. The
-// structural sweep drives BOTH implementations off an explicit levels object,
-// so it has to be able to put this one back afterwards.
-const SHIPPED = { ...apex.SL_STRUCTURE };
-
-let checks = 0, fail = 0;
-const diff = (label, a, b) => {
-    checks++;
-    const A = JSON.stringify(a), B = JSON.stringify(b);
-    if (A !== B) { fail++; console.log('  ✗ ' + label + '\n      apex: ' + A + '\n      core: ' + B); }
+// ── bucketed counters ────────────────────────────────────────
+// One aggregate number hides which HALF disagreed. Selection and merge fail for
+// different reasons and are fixed in different files, so they are counted apart
+// and reported apart.
+const BUCKETS = {
+    selection: { checks: 0, fail: 0, title: 'scenario SELECTION  (each registry picks its own)' },
+    merge:     { checks: 0, fail: 0, title: 'plan MERGE          (governor + stops + gate floor)' },
+    structure: { checks: 0, fail: 0, title: 'structural tag' },
+    collapse:  { checks: 0, fail: 0, title: 'collapse proof' },
+    misc:      { checks: 0, fail: 0, title: 'stopMath / context shape' }
 };
+const SHOW_MAX = 40;
+let shown = 0;
+function cmp(bucket, label, a, b) {
+    const B = BUCKETS[bucket];
+    B.checks++;
+    const A = JSON.stringify(a), Z = JSON.stringify(b);
+    if (A === Z) return;
+    B.fail++;
+    if (++shown <= SHOW_MAX) {
+        console.log('  ✗ [' + bucket + '] ' + label + '\n      apex: ' + A + '\n      core: ' + Z);
+    } else if (shown === SHOW_MAX + 1) {
+        console.log('  … further failures suppressed for readability; the totals below are exact');
+    }
+}
 
 const WINDOWS = ['open', 'amprime', 'lunch', 'pmprime', 'power', 'close'];
-
-// ═══════════════════════════════════════════════════════════════
-// PHASE 1 — collapse proof over the FULL tape grid
-// ═══════════════════════════════════════════════════════════════
-// Derive the option lists from SL_INPUTS_DEF itself rather than hardcoding
-// them, so adding a select or an option grows the grid automatically instead
-// of silently leaving the new value untested.
-const DEF = Object.fromEntries(apex.SL_INPUTS_DEF.map(([k, , opts]) => [k, opts.map(o => o[0])]));
-const TAPE_KEYS = ['opening', 'vwap', 'internals', 'retest', 'ribbon', 'hviv'];
-
-const tapeGrid = [];
-(function build(i, acc) {
-    if (i === TAPE_KEYS.length) { tapeGrid.push({ ...acc, ivp: 40 }); return; }
-    for (const v of DEF[TAPE_KEYS[i]]) build(i + 1, { ...acc, [TAPE_KEYS[i]]: v });
-})(0, {});
-
-console.log('\nphase 1 — collapse proof: ' + tapeGrid.length + ' tape combinations x ' +
-    WINDOWS.length + ' windows = ' + (tapeGrid.length * WINDOWS.length) + ' scenarios');
-
-// Fix a verified structure so only the tape varies. DERIVED from the shipped
-// anchor, not typed in: a literal here is a number that quietly stops meaning
-// "comfortably inside the confirmed band" the next time the weekly re-anchors.
 const round2 = v => Number(v.toFixed(2));
-const MID_CONFIRMED = round2((SHIPPED.support + SHIPPED.reclaim) / 2);
-const CALM_VIX = round2(SHIPPED.vixFragile * 0.75);
-apex.SL_STATE.live = { price: MID_CONFIRMED };
-globalThis.PRICE_CACHE['^VIX'] = { price: CALM_VIX };
 
-const groups = new Map();
-let phase1 = 0, collapseViolations = 0;
+const INPUTS = {
+    SHORT:   { opening: 'below', vwap: 'lost',    internals: 'weak',   retest: 'lowerhigh', ribbon: 'fanneddown', ivp: 40, hviv: 'inline' },
+    LONG:    { opening: 'above', vwap: 'holding', internals: 'strong', retest: 'higherlow', ribbon: 'fannedup',   ivp: 40, hviv: 'inline' },
+    NEUTRAL: { opening: 'above', vwap: 'chop',    internals: 'mixed',  retest: 'higherlow', ribbon: 'fannedup',   ivp: 40, hviv: 'inline' }
+};
 
-for (const tape of tapeGrid) {
-    for (const win of WINDOWS) {
-        phase1++;
-        const inputs = { ...tape, window: win };
-        apex.SL_STATE.inputs = inputs;
-        const r = apex.slRunGate(inputs);
-        // Keyed on the SCENARIO, not on bias.dir. Before the plan existed,
-        // stops.target/runner were set by the governor alone, so every tape
-        // yielding the same direction collapsed to one signature. The plan is
-        // per-scenario and runner eligibility is DERIVED, so two LONG reads now
-        // legitimately differ: buy_pullbacks rides (continuation + confirmed),
-        // bullish_lean does not (no retest printed). Grouping by direction
-        // reports that as a violation when it is the intended behaviour.
-        const key = apex.slSelectScenario(inputs).id + '|' + win;
-        // The governor verdict plus the fields the governor is allowed to move.
-        const sig = JSON.stringify({
-            governor: r.governor,
-            time: r.stops.time,
-            target: r.stops.target,
-            runner: r.stops.runner
-        });
-        if (!groups.has(key)) groups.set(key, { sig, example: inputs });
-        else if (groups.get(key).sig !== sig) {
-            collapseViolations++;
-            if (collapseViolations <= 5) {
-                console.log('  ✗ collapse violated for ' + key);
-                console.log('      first: ' + JSON.stringify(groups.get(key).example));
-                console.log('      this:  ' + JSON.stringify(inputs));
-                console.log('      a: ' + groups.get(key).sig);
-                console.log('      b: ' + sig);
-            }
-        }
-    }
-}
-checks += phase1;
-fail += collapseViolations;
-console.log(collapseViolations === 0
-    ? '  ✓ governor output depends on the tape only through biasDir — prune licensed'
-    : '  ✗ ' + collapseViolations + ' collapse violations — the phase-2 prune is NOT valid');
-
-// ═══════════════════════════════════════════════════════════════
-// PHASE 2 — structural sweep against the pruned tape set
-// ═══════════════════════════════════════════════════════════════
-// Boundary-dense: every level appears exactly, one cent above, one cent below.
-//
-// DERIVED, never typed in. The old harness hardcoded the probe triple, so the
-// week the anchor moved, every "boundary" spot landed in the flat interior of a
-// band and the sweep silently stopped testing the thing it exists to test —
-// while still reporting 2016 green scenarios. That failure is invisible by
-// construction: a harness that probes nothing looks exactly like a harness that
-// probes everything and finds nothing. Deriving the probes from the same object
-// both implementations are reading makes the decay unrepresentable, and
-// assertLevelsProbed() below refuses to run if it ever creeps back.
+// ── boundary probes, DERIVED ─────────────────────────────────
+// The old harness hardcoded the probe triple, so the week the anchor moved,
+// every "boundary" spot landed in the flat interior of a band and the sweep
+// silently stopped testing the thing it exists to test — while still reporting
+// 2016 green scenarios. Probing nothing and probing everything and finding
+// nothing print the same line. Deriving from the levels object both
+// implementations read makes the decay unrepresentable; the guard below refuses
+// to run if it creeps back.
 function boundarySpots(levels) {
     const L = [levels.flip, levels.support, levels.reclaim];
     const probes = L.flatMap(v => [round2(v - 0.01), v, round2(v + 0.01)]);
-    // Interior context, also derived: one well below the flip, one mid
-    // transition zone, one mid pressure band, one well above the reclaim.
     const context = [
         round2(levels.flip - 20),
         round2((levels.flip + levels.support) / 2),
@@ -260,10 +273,8 @@ function boundarySpots(levels) {
     ];
     const spots = [null, ...context, ...probes];
 
-    // THE GUARD. Every level in the fixture must appear in SPOTS exactly.
-    // This is the assertion that makes the hardcoding unreintroducible: swap the
-    // flatMap back for a literal list and the next re-anchor exits 2 instead of
-    // printing a green run over dead probes.
+    // THE GUARD. Swap the flatMap back for a literal and the next re-anchor
+    // exits 2 instead of printing a green run over dead probes.
     const unprobed = L.filter(v => !spots.includes(v));
     if (unprobed.length) {
         console.error('\n✗ BOUNDARY GUARD — a level in the fixture is not probed by SPOTS.');
@@ -275,44 +286,17 @@ function boundarySpots(levels) {
     return spots;
 }
 
-// Same decay, same fix: vixFragile is a boundary too, and 24.99/25 were typed
-// in beside it. Probe it off the fixture so a fixture with a different fragile
-// threshold is actually tested at its threshold.
+// vixFragile is a boundary too, and 24.99/25 were typed in beside it.
 function boundaryVixes(levels) {
     const f = levels.vixFragile;
     return [null, round2(f * 0.5), round2(f * 0.7), round2(f - 0.01), f, round2(f + 0.01), round2(f * 1.2), round2(f * 1.8)];
 }
 
-const INPUTS = {
-    SHORT:   { opening: 'below', vwap: 'lost',    internals: 'weak',   retest: 'lowerhigh', ribbon: 'fanneddown', ivp: 40, hviv: 'inline' },
-    LONG:    { opening: 'above', vwap: 'holding', internals: 'strong', retest: 'higherlow', ribbon: 'fannedup',   ivp: 40, hviv: 'inline' },
-    NEUTRAL: { opening: 'above', vwap: 'chop',    internals: 'mixed',  retest: 'higherlow', ribbon: 'fannedup',   ivp: 40, hviv: 'inline' }
-};
-
-// ── the two level fixtures ───────────────────────────────────
-//
-// PRIMARY is SYNTHETIC and fixed: round numbers, obviously not a real
-// anchoring, chosen so the derived probes are exact in binary floating point.
-// It never changes, so the primary run is deterministic and offline forever —
-// it does not care what the weekly did and it does not touch the network.
-//
-// It is deliberately NOT the production triple. If the fixture tracked
-// production, the LIVE pass below would be a re-run of the same numbers and
-// would prove nothing.
-const SYNTHETIC = {
-    asOf:       SHIPPED.asOf,      // shared so both sides age identically
-    flip:       700.00,
-    support:    750.00,
-    reclaim:    800.00,
-    staleDays:  SHIPPED.staleDays,
-    vixFragile: 25,
-    source:     'parity synthetic fixture — not a real anchoring'
-};
-
-// LIVE is whatever production is actually serving. The synthetic pass proves
-// the two implementations agree at SOME boundary; only this one proves they
-// agree at the boundaries traders are looking at today.
-async function resolveLiveLevels() {
+// ── the live level override, resolved once ───────────────────
+// Whatever production is actually serving. The synthetic fixture proves the two
+// implementations agree at SOME boundary; only this proves they agree at the
+// boundaries traders are looking at today.
+async function resolveLiveOverride() {
     const url = process.env.PARITY_LIVE_URL;
     if (url) {
         let d;
@@ -321,12 +305,12 @@ async function resolveLiveLevels() {
             if (!r.ok) throw new Error('HTTP ' + r.status);
             d = await r.json();
         } catch (e) {
-            // Loud, not skipped. PARITY_LIVE_URL being set is a statement that
-            // the live pass matters; failing to reach it is a failure.
+            // Loud, not skipped. Setting PARITY_LIVE_URL is a statement that the
+            // live pass matters; failing to reach it is a failure.
             console.error('\n✗ LIVE PASS — could not read ' + url + ': ' + ((e && e.message) || e) + '\n');
             process.exit(1);
         }
-        return { levels: { ...d }, origin: 'endpoint ' + url, real: true };
+        return { over: d, origin: 'endpoint ' + url, real: true };
     }
     const raw = process.env.SPY_STRUCTURE_JSON;
     if (raw) {
@@ -336,136 +320,323 @@ async function resolveLiveLevels() {
             console.error('\n✗ LIVE PASS — SPY_STRUCTURE_JSON is not valid JSON: ' + ((e && e.message) || e) + '\n');
             process.exit(1);
         }
-        return { levels: { ...SHIPPED, ...d }, origin: 'env SPY_STRUCTURE_JSON', real: true };
+        return { over: d, origin: 'env SPY_STRUCTURE_JSON', real: true };
     }
-    return { levels: { ...SHIPPED }, origin: 'shipped baked anchor', real: false };
+    return { over: null, origin: 'shipped baked anchor', real: false };
 }
 
-const LIVE = await resolveLiveLevels();
-
+const LIVE = await resolveLiveOverride();
 const now = Date.now();
-let phase2 = 0;
 
-// Drives BOTH implementations off one explicit levels object: the inline block
-// by mutating the `let SL_STRUCTURE` it reads, the core through its `levels`
-// parameter. Anything else compares two different weeks.
-function structuralSweep(label, levels) {
-    Object.assign(apex.SL_STRUCTURE, levels);
-    const SPOTS = boundarySpots(levels);
-    const VIXES = boundaryVixes(levels);
+const totals = { scenarios: 0, selectionCombos: 0 };
 
-    console.log('\nphase 2 — structural sweep [' + label + ']: ' + SPOTS.length + ' spots x ' + VIXES.length +
-        ' VIXes x ' + Object.keys(INPUTS).length + ' reads x ' + WINDOWS.length + ' windows = ' +
-        (SPOTS.length * VIXES.length * Object.keys(INPUTS).length * WINDOWS.length) + ' scenarios');
-    console.log('    boundaries probed: flip ' + levels.flip + ' / support ' + levels.support +
-        ' / reclaim ' + levels.reclaim + ' / vixFragile ' + levels.vixFragile);
+// ═══════════════════════════════════════════════════════════════
+// ONE SUITE PER APEX SOURCE
+// ═══════════════════════════════════════════════════════════════
+function runSuite(source) {
+    const TAG = source.label;
+    const at = s => `{${TAG}} ` + s;
+    console.log('\n════════════════════════════════════════════════════════');
+    console.log('APEX SOURCE: ' + TAG + (source.pinned ? '' : '   ⚠ UNPINNED'));
+    console.log('════════════════════════════════════════════════════════');
 
-    const at = s => `[${label}] ` + s;
+    // Reset the stub world so one source cannot leak state into the next.
+    for (const k of Object.keys(globalThis.PRICE_CACHE)) delete globalThis.PRICE_CACHE[k];
 
-    for (const spot of SPOTS) {
-        for (const vix of VIXES) {
-            apex.SL_STATE.live = spot == null ? null : { price: spot };
-            if (vix == null) delete globalThis.PRICE_CACHE['^VIX'];
-            else globalThis.PRICE_CACHE['^VIX'] = { price: vix };
+    // Registry symbols are probed with typeof rather than named directly: a ref
+    // that predates the scenario port must report that fact, not throw.
+    // eslint-disable-next-line no-eval
+    (0, eval)(source.src + `
+globalThis.__apex = {
+    slStructure, slRunGate, slStructureContext, slDirectionalRead,
+    SL_STATE, SL_STRUCTURE, SL_INPUTS_DEF,
+    slSelectScenario: typeof slSelectScenario === 'function' ? slSelectScenario : null,
+    slRunnerEligible: typeof slRunnerEligible === 'function' ? slRunnerEligible : null,
+    SL_READS:         typeof SL_READS !== 'undefined' ? SL_READS : null
+};`);
+    const apex = globalThis.__apex;
+    const hasRegistry = !!(apex.slSelectScenario && apex.SL_READS);
+    if (!hasRegistry) {
+        console.log('⚠ this ref PREDATES the scenario registry — no slSelectScenario/SL_READS.');
+        console.log('    Selection cannot be compared for it. Reported as skipped, not as passing.');
+    }
 
-            const aS = apex.slStructure();
-            const cS = core.structuralTag({ spot, vix, now, levels });
+    // ── PRECONDITION: structure drift ────────────────────────
+    {
+        const a = apex.SL_STRUCTURE, c = core.SL_STRUCTURE;
+        const keys = ['asOf', 'reclaim', 'support', 'flip', 'staleDays', 'vixFragile'];
+        const drift = keys.filter(k => String(a[k]) !== String(c[k]));
+        if (drift.length) {
+            console.error('\n✗ STRUCTURE DRIFT — inline anchor and core anchor disagree.');
+            for (const k of drift) console.error(`    ${k}: apex=${JSON.stringify(a[k])}  core=${JSON.stringify(c[k])}`);
+            console.error('\nNothing was compared. Re-anchor one side, or this run means nothing.\n');
+            process.exit(2);
+        }
+        console.log('precondition: structure anchors agree (' + a.asOf +
+            ', reclaim ' + a.reclaim + ' / support ' + a.support + ' / flip ' + a.flip + ')');
+    }
 
-            diff(at(`structuralTag(spot=${spot}, vix=${vix})`),
-                { verified: aS.verified, missing: aS.missing, tag: aS.tag, label: aS.label, dir: aS.dir, color: aS.color, spot: aS.spot, vix: aS.vix, stale: aS.stale, detail: aS.detail },
-                { verified: cS.verified, missing: cS.missing, tag: cS.tag, label: cS.label, dir: cS.dir, color: cS.color, spot: cS.spot, vix: cS.vix, stale: cS.stale, detail: cS.detail });
+    const SHIPPED = { ...apex.SL_STRUCTURE };
+    const MID_CONFIRMED = round2((SHIPPED.support + SHIPPED.reclaim) / 2);
+    const CALM_VIX = round2(SHIPPED.vixFragile * 0.75);
 
-            // levelLadder is deliberately NOT compared here: APEX's ladder lives in
-            // the renderer section, below the END anchor, so there is no inline
-            // counterpart in the sliced region. Comparing core against a re-derivation
-            // would test this harness, not parity. It is covered by the unit tests.
+    // ── the tape grid, derived from SL_INPUTS_DEF ────────────
+    const DEF = Object.fromEntries(apex.SL_INPUTS_DEF.map(([k, , opts]) => [k, opts.map(o => o[0])]));
+    const TAPE_KEYS = ['opening', 'vwap', 'internals', 'retest', 'ribbon', 'hviv'];
+    const tapeGrid = [];
+    (function build(i, acc) {
+        if (i === TAPE_KEYS.length) { tapeGrid.push({ ...acc, ivp: 40 }); return; }
+        for (const v of DEF[TAPE_KEYS[i]]) build(i + 1, { ...acc, [TAPE_KEYS[i]]: v });
+    })(0, {});
 
-            for (const [name, base] of Object.entries(INPUTS)) {
-                for (const win of WINDOWS) {
-                    phase2++;
-                    const inputs = Object.assign({}, base, { window: win });
-                    apex.SL_STATE.inputs = inputs;
-                    const aR = apex.slRunGate(inputs);
-                    // Pass the plan. APEX's slRunGate now merges it, so calling the
-                    // core without one compares a plan-wired implementation against an
-                    // unwired one and every scenario whose plan revokes a runner reads
-                    // as drift. Harmless against a core that predates the argument.
-                    const cPlan = apex.slSelectScenario(inputs).plan;
-                    const cG = core.governorFor({ biasDir: aR.bias.dir, struct: cS, windowKey: win, plan: cPlan });
+    // ═══════════════════════════════════════════════════════════
+    // PHASE 1a — collapse proof over the FULL tape grid
+    // ═══════════════════════════════════════════════════════════
+    console.log('\nphase 1a — collapse proof: ' + tapeGrid.length + ' tape combinations x ' +
+        WINDOWS.length + ' windows = ' + (tapeGrid.length * WINDOWS.length) + ' scenarios');
 
-                    diff(at(`governor(${name}, spot=${spot}, vix=${vix}, win=${win})`),
-                        { mode: aR.governor.mode, label: aR.governor.label, color: aR.governor.color },
-                        { mode: cG.governor.mode, label: cG.governor.label, color: cG.governor.color });
+    apex.SL_STATE.live = { price: MID_CONFIRMED };
+    globalThis.PRICE_CACHE['^VIX'] = { price: CALM_VIX };
 
-                    diff(at(`stops(${name}, spot=${spot}, vix=${vix}, win=${win})`),
-                        { time: aR.stops.time, target: aR.stops.target, runner: aR.stops.runner, pricePct: aR.stops.pricePct },
-                        { time: cG.stops.time, target: cG.stops.target, runner: cG.stops.runner, pricePct: cG.stops.pricePct });
-
-                    // The gate floor may only ratchet downward.
-                    diff(at(`worsenGate(${name}, spot=${spot}, win=${win})`),
-                        core.worsenGate('GO', cG.gateFloor),
-                        cG.gateFloor === 'GO' ? 'GO' : cG.gateFloor);
+    const groups = new Map();
+    let phase1 = 0, collapseViolations = 0;
+    for (const tape of tapeGrid) {
+        for (const win of WINDOWS) {
+            phase1++;
+            const inputs = { ...tape, window: win };
+            apex.SL_STATE.inputs = inputs;
+            const r = apex.slRunGate(inputs);
+            // Keyed on the SCENARIO, not bias.dir: the plan is per-scenario and
+            // runner eligibility is derived, so two LONG reads legitimately
+            // differ (buy_pullbacks rides, bullish_lean does not).
+            const key = (hasRegistry ? apex.slSelectScenario(inputs).id : r.bias.dir) + '|' + win;
+            const sig = JSON.stringify({
+                governor: r.governor, time: r.stops.time,
+                target: r.stops.target, runner: r.stops.runner
+            });
+            if (!groups.has(key)) groups.set(key, { sig, example: inputs });
+            else if (groups.get(key).sig !== sig) {
+                collapseViolations++;
+                if (collapseViolations <= 5) {
+                    console.log('  ✗ collapse violated for ' + at(key));
+                    console.log('      first: ' + JSON.stringify(groups.get(key).example));
+                    console.log('      this:  ' + JSON.stringify(inputs));
+                    console.log('      a: ' + groups.get(key).sig);
+                    console.log('      b: ' + sig);
                 }
             }
         }
     }
-}   // structuralSweep
+    BUCKETS.collapse.checks += phase1;
+    BUCKETS.collapse.fail += collapseViolations;
+    console.log(collapseViolations === 0
+        ? '  ✓ governor output depends on the tape only through the scenario — prune licensed'
+        : '  ✗ ' + collapseViolations + ' collapse violations — the phase-2 prune is NOT valid');
 
-// PRIMARY — synthetic, offline, deterministic.
-structuralSweep('SYNTHETIC', SYNTHETIC);
+    // ═══════════════════════════════════════════════════════════
+    // PHASE 1b — SELECTION: each implementation picks its own
+    // ═══════════════════════════════════════════════════════════
+    // Both registries are ordered arrays resolved by `find(sc => sc.match(s))`.
+    // Several entries legitimately match the same tape; precedence is the ONLY
+    // disambiguator. Reorder one array or edit one matcher and the two diverge
+    // silently — the panel keeps printing a plausible label, just the wrong one.
+    //
+    // Selection is structure-independent, so it is swept over the whole tape
+    // grid rather than the three pruned reads, which only ever reach three of
+    // the eight scenarios.
+    if (hasRegistry) {
+        console.log('\nphase 1b — scenario selection: ' + tapeGrid.length +
+            ' tape combinations, each side calling its OWN selector');
 
-// SECOND PASS — the block production is actually serving.
-if (!LIVE.real) {
-    console.log('\n⚠ LIVE PASS is running against the ' + LIVE.origin + ', not production.');
-    console.log('    Set PARITY_LIVE_URL=<nexus>/api/spy-logic/structure (or SPY_STRUCTURE_JSON)');
-    console.log('    to probe the boundaries actually in production. Until then this pass');
-    console.log('    re-tests the fallback, which is not the same claim.');
-}
-structuralSweep('LIVE · ' + LIVE.origin, LIVE.levels);
+        // Precedence itself, compared directly and once.
+        cmp('selection', at('registry order (SL_READS vs SPY_SCENARIOS)'),
+            apex.SL_READS.map(r => r.id), scen.SPY_SCENARIOS.map(r => r.id));
 
-// Put the shipped anchor back for the sections below.
-Object.assign(apex.SL_STRUCTURE, SHIPPED);
+        const seenA = new Set(), seenC = new Set();
+        for (const tape of tapeGrid) {
+            const k = Object.values(tape).join('/');
+            const a = apex.slSelectScenario(tape);
+            const c = scen.selectScenario(tape);
+            seenA.add(a.id); seenC.add(c.id);
 
-// ── stopMath, independent of the grid ────────────────────────
-for (const prem of [0.68, 1.20, 2.55, 0, -1]) {
-    for (const lots of [1, 2, 3, 9]) {
-        const m = core.stopMath({ entryPremium: prem, lots });
-        if (prem <= 0) {
-            diff(`stopMath(${prem}, ${lots}) is null`, m, null);
-        } else {
-            diff(`stopMath(${prem}, ${lots})`,
-                { stopPrice: Number((prem * 0.75).toFixed(4)), maxLoss: Math.round(prem * 0.25 * 100 * Math.min(lots, 3)), lots: Math.min(lots, 3) },
-                { stopPrice: Number(m.stopPrice.toFixed(4)), maxLoss: Math.round(m.maxLoss), lots: m.lots });
+            cmp('selection', at(`select(${k}) identity`),
+                { id: a.id, label: a.label, dir: a.dir, note: a.note },
+                { id: c.id, label: c.label, dir: c.dir, note: c.note });
+
+            cmp('selection', at(`select(${k}) plan`), a.plan, c.plan);
+
+            // Each side derives eligibility from ITS OWN plan with ITS OWN
+            // function. Sharing either would make this comparison circular.
+            cmp('selection', at(`runnerEligible(${k})`),
+                apex.slRunnerEligible ? apex.slRunnerEligible(a.plan) : null,
+                scen.runnerEligible(c.plan));
+        }
+        totals.selectionCombos += tapeGrid.length;
+
+        // Reachability: a scenario nothing selects is a scenario nothing tests.
+        cmp('selection', at('scenario reachability'),
+            [...seenA].sort(), [...seenC].sort());
+        console.log('  scenarios reached: ' + seenA.size + '/' + apex.SL_READS.length +
+            ' inline, ' + seenC.size + '/' + scen.SPY_SCENARIOS.length + ' module');
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // PHASE 2 — structural sweep, each side merging its OWN plan
+    // ═══════════════════════════════════════════════════════════
+    let phase2 = 0;
+    function structuralSweep(label, levels) {
+        Object.assign(apex.SL_STRUCTURE, levels);
+        const SPOTS = boundarySpots(levels);
+        const VIXES = boundaryVixes(levels);
+
+        console.log('\nphase 2 — structural sweep [' + label + ']: ' + SPOTS.length + ' spots x ' +
+            VIXES.length + ' VIXes x ' + Object.keys(INPUTS).length + ' reads x ' + WINDOWS.length +
+            ' windows = ' + (SPOTS.length * VIXES.length * Object.keys(INPUTS).length * WINDOWS.length) + ' scenarios');
+        console.log('    boundaries probed: flip ' + levels.flip + ' / support ' + levels.support +
+            ' / reclaim ' + levels.reclaim + ' / vixFragile ' + levels.vixFragile);
+
+        const w = s => at('[' + label + '] ' + s);
+
+        for (const spot of SPOTS) {
+            for (const vix of VIXES) {
+                apex.SL_STATE.live = spot == null ? null : { price: spot };
+                if (vix == null) delete globalThis.PRICE_CACHE['^VIX'];
+                else globalThis.PRICE_CACHE['^VIX'] = { price: vix };
+
+                const aS = apex.slStructure();
+                const cS = core.structuralTag({ spot, vix, now, levels });
+
+                cmp('structure', w(`structuralTag(spot=${spot}, vix=${vix})`),
+                    { verified: aS.verified, missing: aS.missing, tag: aS.tag, label: aS.label, dir: aS.dir, color: aS.color, spot: aS.spot, vix: aS.vix, stale: aS.stale, detail: aS.detail },
+                    { verified: cS.verified, missing: cS.missing, tag: cS.tag, label: cS.label, dir: cS.dir, color: cS.color, spot: cS.spot, vix: cS.vix, stale: cS.stale, detail: cS.detail });
+
+                // levelLadder is deliberately NOT compared: APEX's ladder lives
+                // below the END anchor, so there is no inline counterpart in the
+                // sliced region. Comparing core against a re-derivation would
+                // test this harness, not parity.
+
+                for (const [name, base] of Object.entries(INPUTS)) {
+                    for (const win of WINDOWS) {
+                        phase2++;
+                        const inputs = Object.assign({}, base, { window: win });
+                        apex.SL_STATE.inputs = inputs;
+                        const aR = apex.slRunGate(inputs);
+
+                        // EACH SIDE'S OWN PLAN. The harness used to take APEX's
+                        // selection and hand that same object to the core, so both
+                        // were merging APEX's choice and a selection divergence
+                        // could not surface here. Now it surfaces in both numbers.
+                        const cPlan = hasRegistry ? scen.selectScenario(inputs).plan : undefined;
+                        const cG = core.governorFor({ biasDir: aR.bias.dir, struct: cS, windowKey: win, plan: cPlan });
+
+                        cmp('merge', w(`governor(${name}, spot=${spot}, vix=${vix}, win=${win})`),
+                            { mode: aR.governor.mode, label: aR.governor.label, color: aR.governor.color },
+                            { mode: cG.governor.mode, label: cG.governor.label, color: cG.governor.color });
+
+                        cmp('merge', w(`stops(${name}, spot=${spot}, vix=${vix}, win=${win})`),
+                            { time: aR.stops.time, target: aR.stops.target, runner: aR.stops.runner, pricePct: aR.stops.pricePct },
+                            { time: cG.stops.time, target: cG.stops.target, runner: cG.stops.runner, pricePct: cG.stops.pricePct });
+
+                        // The gate floor may only ratchet downward.
+                        cmp('merge', w(`worsenGate(${name}, spot=${spot}, win=${win})`),
+                            core.worsenGate('GO', cG.gateFloor),
+                            cG.gateFloor === 'GO' ? 'GO' : cG.gateFloor);
+                    }
+                }
+            }
         }
     }
+
+    // PRIMARY — synthetic, offline, deterministic, immune to re-anchoring.
+    // Deliberately NOT the production triple, or the live pass below would be a
+    // re-run of the same numbers.
+    const SYNTHETIC = {
+        asOf: SHIPPED.asOf,           // shared so both sides age identically
+        flip: 700.00, support: 750.00, reclaim: 800.00,
+        staleDays: SHIPPED.staleDays, vixFragile: 25,
+        source: 'parity synthetic fixture — not a real anchoring'
+    };
+    structuralSweep('SYNTHETIC', SYNTHETIC);
+
+    if (!LIVE.real) {
+        console.log('\n⚠ LIVE PASS is running against the ' + LIVE.origin + ', not production.');
+        console.log('    Set PARITY_LIVE_URL=<nexus>/api/spy-logic/structure (or SPY_STRUCTURE_JSON)');
+        console.log('    to probe the boundaries actually in production. Until then this pass');
+        console.log('    re-tests the fallback, which is not the same claim.');
+    }
+    structuralSweep('LIVE · ' + LIVE.origin, LIVE.real ? { ...SHIPPED, ...LIVE.over } : { ...SHIPPED });
+
+    // Put the shipped anchor back for the sections below.
+    Object.assign(apex.SL_STRUCTURE, SHIPPED);
+
+    // ── stopMath, independent of the grid ────────────────────
+    for (const prem of [0.68, 1.20, 2.55, 0, -1]) {
+        for (const lots of [1, 2, 3, 9]) {
+            const m = core.stopMath({ entryPremium: prem, lots });
+            if (prem <= 0) {
+                cmp('misc', at(`stopMath(${prem}, ${lots}) is null`), m, null);
+            } else {
+                cmp('misc', at(`stopMath(${prem}, ${lots})`),
+                    { stopPrice: Number((prem * 0.75).toFixed(4)), maxLoss: Math.round(prem * 0.25 * 100 * Math.min(lots, 3)), lots: Math.min(lots, 3) },
+                    { stopPrice: Number(m.stopPrice.toFixed(4)), maxLoss: Math.round(m.maxLoss), lots: m.lots });
+            }
+        }
+    }
+
+    // ── buildStructureContext shape ──────────────────────────
+    apex.SL_STATE.live = { price: MID_CONFIRMED };
+    globalThis.PRICE_CACHE['^VIX'] = { price: CALM_VIX };
+    apex.SL_STATE.inputs = Object.assign({}, INPUTS.SHORT, { window: 'amprime' });
+    {
+        const aCtx = apex.slStructureContext();
+        const aR = apex.slRunGate(apex.SL_STATE.inputs);
+        const cS = core.structuralTag({ spot: MID_CONFIRMED, vix: CALM_VIX, now, levels: SHIPPED });
+        const cG = core.governorFor({ biasDir: aR.bias.dir, struct: cS, windowKey: 'amprime' });
+        const cCtx = core.buildStructureContext({
+            struct: cS, read: aR.bias, windowLabel: aR.windowLabel,
+            entryStructure: aR.structure, governorResult: cG
+        });
+        cmp('misc', at('buildStructureContext top-level key set'),
+            Object.keys(aCtx).sort(), Object.keys(cCtx).sort());
+    }
+
+    totals.scenarios += phase1 + phase2;
+    return { hasRegistry };
 }
 
-// ── buildStructureContext shape ──────────────────────────────
-apex.SL_STATE.live = { price: MID_CONFIRMED };
-globalThis.PRICE_CACHE['^VIX'] = { price: CALM_VIX };
-apex.SL_STATE.inputs = Object.assign({}, INPUTS.SHORT, { window: 'amprime' });
-{
-    const aCtx = apex.slStructureContext();
-    const aR = apex.slRunGate(apex.SL_STATE.inputs);
-    const cS = core.structuralTag({ spot: MID_CONFIRMED, vix: CALM_VIX, now, levels: SHIPPED });
-    const cG = core.governorFor({ biasDir: aR.bias.dir, struct: cS, windowKey: 'amprime' });
-    const cCtx = core.buildStructureContext({
-        struct: cS, read: aR.bias, windowLabel: aR.windowLabel,
-        entryStructure: aR.structure, governorResult: cG
-    });
-    diff('buildStructureContext top-level key set',
-        Object.keys(aCtx).sort(), Object.keys(cCtx).sort());
-}
+// ── run ──────────────────────────────────────────────────────
+const SOURCES = apexSources();
+const results = SOURCES.map(runSuite);
 
 // ── report ───────────────────────────────────────────────────
-const scenarios = phase1 + phase2;
-console.log('');
-if (fail === 0) {
-    console.log(`✓ parity clean — ${scenarios} scenarios, ${checks} comparisons`);
-    console.log(`    phase 1 (collapse proof):    ${phase1}`);
-    console.log(`    phase 2 (structural sweep):  ${phase2}   (synthetic + live)`);
-    console.log(`    live pass source:            ${LIVE.origin}${LIVE.real ? '' : '  ⚠ NOT production'}`);
-} else {
-    console.log(`✗ parity FAILED — ${fail} of ${checks} comparisons disagreed across ${scenarios} scenarios`);
+const totalFail = Object.values(BUCKETS).reduce((n, b) => n + b.fail, 0);
+const totalChecks = Object.values(BUCKETS).reduce((n, b) => n + b.checks, 0);
+
+console.log('\n════════════════════════════════════════════════════════');
+console.log('RESULTS — ' + SOURCES.length + ' APEX source' + (SOURCES.length === 1 ? '' : 's') +
+    ', ' + totals.scenarios + ' scenarios, ' + totalChecks + ' comparisons');
+console.log('════════════════════════════════════════════════════════');
+for (const [k, b] of Object.entries(BUCKETS)) {
+    const mark = b.checks === 0 ? '–' : b.fail === 0 ? '✓' : '✗';
+    console.log('  ' + mark + ' ' + b.title.padEnd(50) +
+        String(b.checks).padStart(7) + ' compared, ' + String(b.fail).padStart(6) + ' disagreed');
 }
-process.exit(fail === 0 ? 0 : 1);
+console.log('');
+console.log('  SELECTION agreement : ' +
+    (BUCKETS.selection.checks === 0
+        ? 'NOT MEASURED — no ref carried a registry'
+        : (BUCKETS.selection.checks - BUCKETS.selection.fail) + ' / ' + BUCKETS.selection.checks +
+          '   (' + totals.selectionCombos + ' tape combinations, each side its own selector)'));
+console.log('  MERGE     agreement : ' +
+    (BUCKETS.merge.checks - BUCKETS.merge.fail) + ' / ' + BUCKETS.merge.checks);
+console.log('');
+for (const s of SOURCES) {
+    console.log('  source: ' + s.label + (s.pinned ? ' (pinned)' : '  ⚠ UNPINNED — exists on no branch'));
+}
+console.log('  live levels: ' + LIVE.origin + (LIVE.real ? '' : '  ⚠ NOT production'));
+if (results.some(r => !r.hasRegistry)) {
+    console.log('  ⚠ at least one ref predates the scenario registry; its selection was NOT compared');
+}
+console.log('');
+console.log(totalFail === 0 ? '✓ parity clean' : '✗ parity FAILED — ' + totalFail + ' of ' + totalChecks + ' comparisons disagreed');
+process.exit(totalFail === 0 ? 0 : 1);

@@ -2645,19 +2645,19 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
       out.innerHTML=
         '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'
         +'<span style="padding:4px 12px;border-radius:20px;font-size:13px;font-weight:800;letter-spacing:0.04em;background:'+GB[r.gate]+';color:'+GC[r.gate]+'">'+r.gate+'</span>'
-        +(r.governor?'<span style="padding:3px 10px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:0.04em;background:'+(SL_COLORS[r.governor.color]||SL_COLORS.amber).bg+';color:'+(SL_COLORS[r.governor.color]||SL_COLORS.amber).fg+'">'+slEsc(r.governor.label)+'</span>':'')
+        +(r.governor?'<span title="'+slEsc(r.governor.note+((r.stops.plan&&r.stops.plan.degradedBy&&r.stops.plan.degradedBy.length)?' · plan degraded: '+r.stops.plan.degradedBy.join(', '):''))+'" style="padding:3px 10px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:0.04em;background:'+(SL_COLORS[r.governor.color]||SL_COLORS.amber).bg+';color:'+(SL_COLORS[r.governor.color]||SL_COLORS.amber).fg+'">'+slEsc(r.governor.label)+'</span>':'')
         +'<span style="font-size:11px;color:var(--text-dim)">'+r.windowLabel+'</span>'
         +'</div>'
         +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">'
-        +'<div><div style="font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-dim)">Directional Read</div><div style="font-weight:700;font-size:12px;color:'+bc+'">'+r.bias.label+'</div></div>'
+        +'<div><div style="font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-dim)">Directional Read</div><div style="font-weight:700;font-size:12px;color:'+bc+'">'+r.bias.label+' <span style="color:var(--text-dim);font-size:10px;font-weight:400">'+slEsc(r.scenario.id)+'</span></div></div>'
         +'<div><div style="font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-dim)">Structure</div><div style="font-weight:700;font-size:12px">'+r.structure+'</div></div>'
-        +'<div><div style="font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-dim)">Stops</div><div style="font-weight:700;font-size:12px;font-variant-numeric:tabular-nums">'+r.stops.price+' &middot; '+r.stops.time+'</div></div>'
+        +'<div><div style="font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-dim)">Stops</div><div style="font-weight:700;font-size:12px;font-variant-numeric:tabular-nums">'+r.stops.price+' &middot; '+r.stops.time+(r.stops.maxHoldMin>0?' &middot; <span style="color:var(--amber)">hard '+r.stops.maxHoldMin+'m</span>':'')+'</div></div>'
         +'</div>'
         +'<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">'+r.bias.note+'</div>'
         +'<div style="display:grid;gap:4px">'
         +r.reasons.map(x=>'<div style="display:flex;gap:8px;font-size:11px"><span style="color:'+GC[r.gate]+';flex-shrink:0">&rsaquo;</span><span style="color:var(--text-muted)">'+x+'</span></div>').join('')
         +'</div>'
-        +'<div style="margin-top:8px;font-size:10px;color:var(--text-dim)">Target: '+r.stops.target+'</div>';
+        +'<div style="margin-top:8px;font-size:10px;color:var(--text-dim)">Target: '+r.stops.target+slLadderHtml(r)+'</div>';
     }
     const stance=g('spy-stance-text');
     if(stance)stance.textContent=r.gate+' — '+r.bias.label
@@ -2681,22 +2681,11 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     return 'after';
   },
   spyDirectionalBias(s){
-    const opening=s.opening,vwap=s.vwap,internals=s.internals,retest=s.retest;
-    if((opening==='below'||opening==='inside')&&vwap==='lost'&&internals==='weak'&&retest==='lowerhigh')
-      return {dir:'SHORT',label:'SHORT RALLIES',note:'Opening impulse failing under supply. Puts on a lower-high retest into resistance.'};
-    if((opening==='above'||opening==='gapdown')&&vwap==='holding'&&internals==='strong'&&retest==='higherlow')
-      return {dir:'LONG',label:'BUY PULLBACKS',note:'Holding above value with confirming internals. Buy first orderly pullback into reclaimed level/VWAP.'};
-    if(opening==='gapdown'&&vwap==='lost'&&internals==='weak')
-      return {dir:'SHORT',label:'TREND-DOWN WATCH',note:'Gap-down demand failing with VWAP overhead. Rallies are liquidity events to fade.'};
-    if(opening==='above'&&vwap==='holding'&&internals==='strong')
-      return {dir:'LONG',label:'BULLISH LEAN',note:'Accepted above supply with confirming breadth. Pullback entries; avoid chasing.'};
-    if(opening==='below'&&vwap==='holding'&&internals==='strong')
-      return {dir:'NEUTRAL',label:'POTENTIAL REVERSAL',note:'Below supply but holding VWAP with strong internals. Need acceptance above supply to flip long.'};
-    if((opening==='above'||opening==='inside')&&vwap==='lost'&&internals==='weak')
-      return {dir:'SHORT',label:'FAILED BREAKOUT',note:'Lost VWAP with weak internals after being above/inside supply. Short the lower-high retest.'};
-    if(vwap==='chop'||internals==='mixed'||retest==='none')
-      return {dir:'NEUTRAL',label:'REDUCE SIZE / WAIT',note:'Conditions unaligned. Noise, poor follow-through, rapid premium decay.'};
-    return {dir:'NEUTRAL',label:'STAND ASIDE',note:'Auction not yet clear.'};
+    // The eight reads now live in SL_READS as ordered match functions —
+    // same conditions, same order, same labels, same notes. Precedence is
+    // load-bearing; see the array. Signature and return shape unchanged.
+    const sc=slSelectScenario(s);
+    return {dir:sc.dir,label:sc.label,note:sc.note};
   },
   evaluateSetup(s){
     const LABEL={pre:'Pre-market',open:'9:30-9:45 OPEN',amprime:'9:45-11:00 AM PRIME',lunch:'11:00-13:30 LUNCH',pmprime:'13:30-15:00 PM PRIME',power:'15:00-15:45 POWER HOUR',close:'15:45-16:00 CLOSE',after:'After hours',closed:'Market closed'};
@@ -2712,17 +2701,18 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     if(!isNaN(ivp)&&ivp>=70){structure='Debit spread';worsen('CAUTION');reasons.push('IV percentile '+ivp+' elevated — avoid naked long premium; use a debit spread or wait for IV to deflate.');}
     if(s.hviv==='ivgthv'){structure='Debit spread';worsen('CAUTION');reasons.push('IV running hot vs HV — market overpaying for movement; long premium decays. Lean spreads.');}
     else if(s.hviv==='hvgtiv'&&(isNaN(ivp)||ivp<70)){reasons.push('HV > IV — movement underpriced; favorable for naked long scalps.');}
-    const bias=NX.spyDirectionalBias(s);
+    const scenario=slSelectScenario(s);
+    const bias={dir:scenario.dir,label:scenario.label,note:scenario.note};
     if(gate!=='NO-GO'){
       if(bias.dir==='LONG'&&s.ribbon==='fanneddown'){worsen('NO-GO');reasons.push('Read is LONG but ribbon fanned DOWN — conflict. Stand aside.');}
       if(bias.dir==='SHORT'&&s.ribbon==='fannedup'){worsen('NO-GO');reasons.push('Read is SHORT but ribbon fanned UP — conflict. Stand aside.');}
       if(bias.dir==='NEUTRAL'){worsen('CAUTION');}
     }
     const time=w==='lunch'?'10 min':w==='amprime'?'15-20 min':(w==='power'||w==='pmprime')?'10-15 min':'10 min';
-    const stops={time:time,price:SL_STOP.label+' — HARD, pre-set at entry',pricePct:SL_STOP.pct,hard:true,target:'+30-50%, scale half, BE stop on runner',runner:true};
-    const G=slApplyGovernor(bias,stops,reasons,w,worsen);
+    const stops={time:time,price:SL_STOP.label+' — HARD, pre-set at entry',pricePct:SL_STOP.pct,hard:true,runner:true};   // target derived in slApplyGovernor
+    const G=slApplyGovernor(bias,stops,reasons,w,worsen,scenario.plan);
     if(reasons.length===0)reasons.push('Time, ribbon and vol all clear; directional read intact.');
-    return {gate:gate,windowKey:w,windowLabel:LABEL[w]||w,structure:structure,bias:bias,reasons:reasons,stops:stops,struct:G.struct,governor:G.governor};
+    return {gate:gate,windowKey:w,windowLabel:LABEL[w]||w,structure:structure,bias:bias,scenario:{id:scenario.id,label:scenario.label},reasons:reasons,stops:stops,struct:G.struct,governor:G.governor};
   },
   runFullSPYAnalysis(){
     NX.loadSPYLogic();
@@ -4684,6 +4674,160 @@ const SL_STOP = { pct: 25, label: '−25% of premium' };
 // Counter-structural time stops (halved vs with-structure)
 const SL_SCALP_TIME = { open:'5 min', amprime:'8-10 min', lunch:'5 min', pmprime:'6-8 min', power:'5-8 min' };
 
+// ── Numeric hold ceilings ─────────────────────────────────
+// Paired 1:1 with the display strings above; each value is the UPPER BOUND of
+// the range its string expresses. The strings cannot move — they are the
+// cross-terminal diff surface against nexus and APEX. Do NOT compute these by
+// halving: the APEX spec says "half the window default, floor 6 min", and half
+// of lunch's 10 is 5 while the floor forces 6, which sits outside what
+// SL_SCALP_TIME.lunch ('5 min') expresses. Pairing by hand makes them agree.
+// open/close are 0 in both — already unconditional NO-GO windows.
+const SL_NUMERIC_HOLD       = { open:0, amprime:20, lunch:10, pmprime:15, power:15, close:0, pre:0, after:0, closed:0 };
+const SL_NUMERIC_SCALP_HOLD = { open:0, amprime:10, lunch:5,  pmprime:8,  power:8,  close:0, pre:0, after:0, closed:0 };
+
+// ── Scenario registry — ORDERED. Precedence is load-bearing. ──
+// Transcribed from nexus src/lib/spyScenarios.js. DO NOT SORT. DO NOT KEY BY ID.
+// The reads OVERLAP and order is the only thing that separates them:
+//   (above,holding,strong,higherlow) matches BUY PULLBACKS *and* BULLISH LEAN
+//   (inside,lost,weak,none)          matches FAILED BREAKOUT *and* REDUCE SIZE / WAIT
+// The earlier entry wins purely by position, and the failure mode is silent —
+// a plausible label, just the wrong one. spy-logic/inline-parity.mjs enumerates
+// all 108 input combinations against the module to prove this array matches.
+const SL_EXIT_POLICY = { LEVEL:'LEVEL_FIRST', TIME:'TIME_FIRST' };
+
+// Runner eligibility is DERIVED, never hand-set. Both must hold:
+//   thesis==='continuation'  the move is open-ended — somewhere to run TO
+//   entryConfirmed===true    a COMPLETED confirming event, not a persisting state
+// Exactly two qualify: buy_pullbacks and trend_down_watch.
+function slRunnerEligible(plan){ return plan.thesis==='continuation' && plan.entryConfirmed===true; }
+
+const SL_READS = [
+  { id:'short_rallies', label:'SHORT RALLIES', dir:'SHORT',
+    note:'Opening impulse failing under supply. Puts on a lower-high retest into resistance.',
+    match:s=>(s.opening==='below'||s.opening==='inside')&&s.vwap==='lost'&&s.internals==='weak'&&s.retest==='lowerhigh',
+    plan:{ thesis:'terminus', entryConfirmed:true, exitPolicy:SL_EXIT_POLICY.LEVEL,
+           targets:['vwap','support'], maxHoldMin:15, fragileTags:['stage2','stage2w'] } },
+  { id:'buy_pullbacks', label:'BUY PULLBACKS', dir:'LONG',
+    note:'Holding above value with confirming internals. Buy first orderly pullback into reclaimed level/VWAP.',
+    match:s=>(s.opening==='above'||s.opening==='gapdown')&&s.vwap==='holding'&&s.internals==='strong'&&s.retest==='higherlow',
+    plan:{ thesis:'continuation', entryConfirmed:true, exitPolicy:SL_EXIT_POLICY.LEVEL,
+           targets:['reclaim'], maxHoldMin:20, fragileTags:['transition','stage3'] } },
+  { id:'trend_down_watch', label:'TREND-DOWN WATCH', dir:'SHORT',
+    note:'Gap-down demand failing with VWAP overhead. Rallies are liquidity events to fade.',
+    match:s=>s.opening==='gapdown'&&s.vwap==='lost'&&s.internals==='weak',
+    plan:{ thesis:'continuation', entryConfirmed:true, exitPolicy:SL_EXIT_POLICY.LEVEL,
+           targets:['support','flip'], maxHoldMin:15, fragileTags:['stage2','stage2w'] } },
+  { id:'bullish_lean', label:'BULLISH LEAN', dir:'LONG',
+    note:'Accepted above supply with confirming breadth. Pullback entries; avoid chasing.',
+    match:s=>s.opening==='above'&&s.vwap==='holding'&&s.internals==='strong',
+    // Open-ended thesis, but no retest printed — "avoid chasing" IS entryConfirmed:false.
+    // No confirmed entry means no level to scale against, so targets is empty and the
+    // clock is the only exit: an unconfirmed continuation is TIME-BOXED, not free to ride.
+    plan:{ thesis:'continuation', entryConfirmed:false, exitPolicy:SL_EXIT_POLICY.TIME,
+           targets:[], maxHoldMin:12, fragileTags:['transition','stage3'] } },
+  { id:'potential_reversal', label:'POTENTIAL REVERSAL', dir:'NEUTRAL',
+    // NEUTRAL BY DESIGN — do not "fix" to LONG. evaluateSetup forces CAUTION on a
+    // NEUTRAL read; flipping this to LONG turns that CAUTION into a GO.
+    note:'Below supply but holding VWAP with strong internals. Need acceptance above supply to flip long.',
+    match:s=>s.opening==='below'&&s.vwap==='holding'&&s.internals==='strong',
+    plan:{ thesis:'terminus', entryConfirmed:false, exitPolicy:SL_EXIT_POLICY.TIME,
+           targets:[], maxHoldMin:10, fragileTags:[] } },
+  { id:'failed_breakout', label:'FAILED BREAKOUT', dir:'SHORT',
+    note:'Lost VWAP with weak internals after being above/inside supply. Short the lower-high retest.',
+    match:s=>(s.opening==='above'||s.opening==='inside')&&s.vwap==='lost'&&s.internals==='weak',
+    plan:{ thesis:'terminus', entryConfirmed:true, exitPolicy:SL_EXIT_POLICY.LEVEL,
+           targets:['vwap','support'], maxHoldMin:10, fragileTags:['stage2','stage2w'] } },
+  { id:'reduce_size_wait', label:'REDUCE SIZE / WAIT', dir:'NEUTRAL',
+    note:'Conditions unaligned. Noise, poor follow-through, rapid premium decay.',
+    match:s=>s.vwap==='chop'||s.internals==='mixed'||s.retest==='none',
+    plan:{ thesis:'terminus', entryConfirmed:false, exitPolicy:SL_EXIT_POLICY.TIME,
+           targets:[], maxHoldMin:8, fragileTags:[] } },
+  { id:'stand_aside', label:'STAND ASIDE', dir:'NEUTRAL',
+    note:'Auction not yet clear.',
+    match:()=>true,   // CATCH-ALL. Must stay last — this is what makes selection total.
+    plan:{ thesis:'terminus', entryConfirmed:false, exitPolicy:SL_EXIT_POLICY.TIME,
+           targets:[], maxHoldMin:0, fragileTags:[] } }
+];
+
+// First match wins. Total by construction; the || tail guards an edited catch-all.
+function slSelectScenario(s){
+  return SL_READS.find(sc=>sc.match(s)) || SL_READS[SL_READS.length-1];
+}
+
+// Merge a scenario's baseline plan with the governor verdict. DOWNWARD ONLY:
+// maxHoldMin takes the min, runnerEligible is ANDed, targets truncate. Nothing
+// here lengthens a hold, grants a runner the derivation refused, or adds a rung.
+function slApplyPlan(plan, ctx){
+  ctx = ctx || {};
+  // Defensive on the arrays: this is the entry point a ninth scenario arrives
+  // through, and a partial plan should be governed conservatively, not throw.
+  const out = {
+    exitPolicy: plan.exitPolicy,
+    targets: (plan.targets||[]).slice(),
+    maxHoldMin: plan.maxHoldMin,
+    runnerEligible: slRunnerEligible(plan),
+    degradedBy: []
+  };
+  const cap = SL_NUMERIC_HOLD[ctx.windowKey];
+  if(cap!=null && cap < out.maxHoldMin){ out.maxHoldMin = cap; out.degradedBy.push('window'); }
+  if(ctx.counterStructural || ctx.transition){
+    const sc = SL_NUMERIC_SCALP_HOLD[ctx.windowKey];
+    if(sc!=null && sc < out.maxHoldMin){ out.maxHoldMin = sc; out.degradedBy.push(ctx.counterStructural?'counter-structural':'transition'); }
+    if(out.runnerEligible){ out.runnerEligible=false; out.degradedBy.push('no-runner'); }
+    if(out.targets.length>1){ out.targets=out.targets.slice(0,1); out.degradedBy.push('target-truncated'); }
+  }
+  // Frame fragility is METADATA, not an eligibility gate. Filtering scenarios by
+  // frame would let selection fall through to a LATER, BROADER entry — the gate
+  // would end up enabling a trade rather than disqualifying one.
+  if(ctx.struct && ctx.struct.verified && (plan.fragileTags||[]).indexOf(ctx.struct.tag)>=0){
+    if(out.runnerEligible){ out.runnerEligible=false; out.degradedBy.push('fragile-frame'); }
+    if(out.targets.length>1){ out.targets=out.targets.slice(0,1); out.degradedBy.push('target-truncated'); }
+  }
+  // A zero-minute hold is a no-trade, not a fast trade.
+  if(out.maxHoldMin<=0){ out.maxHoldMin=0; out.runnerEligible=false; out.targets=[]; }
+  return out;
+}
+
+// Render the target ladder, or say the plan is time-boxed.
+// Rendering nothing where the ladder goes reads as "no plan" rather than "the
+// clock IS the plan", which is a different and worse claim. A rung resolved off
+// a stale anchor renders amber with its age, never as a confident price.
+function slLadderHtml(r){
+    const keys = (r.stops && r.stops.targets) || [];
+    if(!keys.length){
+        return (r.stops && r.stops.maxHoldMin > 0)
+            ? ' &middot; <span style="color:var(--amber)">time-boxed, no level target</span>'
+            : '';
+    }
+    const parts = keys.map(function(k){
+        const t = slResolveTarget(k, r.struct);
+        const col = t.state === 'current' ? 'var(--text)' : 'var(--amber)';
+        const tip = t.state === 'stale' ? ' title="Anchored '+slEsc(SL_STRUCTURE.asOf)+', '+t.ageDays+'d old — re-anchor SL_STRUCTURE"' : '';
+        return '<span style="color:'+col+'"'+tip+'>'+slEsc(t.label)+'</span>';
+    });
+    return ' &middot; ladder ' + parts.join(' &rarr; ');
+}
+
+// Resolve a target key to a renderable rung. THREE states, not two.
+// Finiteness alone is not enough: the baked SL_STRUCTURE defaults are finite and
+// positive, so a finite-only guard reports a months-old anchor as a current
+// level. A stale-but-confident price is worse than a missing one.
+function slResolveTarget(key, struct){
+  const KEY = String(key).toUpperCase();
+  const absent = lab => ({ key:key, label: lab || (KEY+' (no level)'), price:null,
+                           state:'absent', resolved:false, stale:false, ageDays:null });
+  if(key==='vwap') return absent('VWAP (no level)');   // no live VWAP feed; say so
+  const L = (struct && struct.levels) || SL_STRUCTURE;
+  const v = L && L[key];
+  if(!(Number.isFinite(v) && v>0)) return absent();
+  const stale = !!(struct && struct.stale);
+  const ageDays = (struct && Number.isFinite(struct.ageDays)) ? struct.ageDays : null;
+  return { key:key, price:v, state: stale?'stale':'current', resolved:true, stale:stale, ageDays:ageDays,
+           label: stale && ageDays!=null ? KEY+' '+v.toFixed(2)+' ('+ageDays+'d old)'
+                : stale                  ? KEY+' '+v.toFixed(2)+' (stale)'
+                :                          KEY+' '+v.toFixed(2) };
+}
+
 // APEX's palette is --bull/--bear/--warn; hashira's is --green/--red/--amber.
 const SL_COLORS = {
     red:   { fg:'var(--red)',   bg:'var(--red-dim)' },
@@ -4852,12 +4996,11 @@ function slLevelLadder(){
 // WORSE — every pre-existing NO-GO rule (opening auction, closing pin,
 // pinched ribbon, ribbon/direction conflict) still dominates, because
 // worsen() only ever ratchets downward.
-function slApplyGovernor(bias, stops, reasons, win, worsen){
+function slApplyGovernor(bias, stops, reasons, win, worsen, plan){
     const struct = slStructure();
     const scalp = ()=>{
         stops.time   = SL_SCALP_TIME[win] || '5-8 min';
-        stops.target = '+20-30% — take the full clip, NO runner';
-        stops.runner = false;
+        stops.runner = false;   // target is derived from this at the end
     };
     let governor = { mode:'off', label:'GOVERNOR OFF', color:'amber', note:'' };
 
@@ -4889,6 +5032,29 @@ function slApplyGovernor(bias, stops, reasons, win, worsen){
 
     if(struct.stale) reasons.push('Weekly anchor is '+struct.ageDays+' days old (set '+SL_STRUCTURE.asOf+') — re-anchor SL_STRUCTURE off a fresh weekly chart.');
     reasons.push('HARD STOP '+SL_STOP.label+' — pre-set at entry, no exceptions. No loser exceeds it.');
+
+    // ── plan merge (optional) ──
+    // Omit `plan` and this behaves exactly as before the registry existed.
+    // Downward only: the plan can REVOKE a runner the governor allowed, never
+    // grant one the governor revoked.
+    if(plan){
+        stops.plan       = slApplyPlan(plan, { struct:struct, windowKey:win,
+                                               counterStructural: governor.mode==='counter',
+                                               transition: governor.mode==='transition' });
+        stops.runner     = stops.runner && stops.plan.runnerEligible;
+        stops.maxHoldMin = stops.plan.maxHoldMin;
+        stops.targets    = stops.plan.targets;
+        stops.exitPolicy = stops.plan.exitPolicy;
+    }
+
+    // ── target string: DERIVED, never authored ──
+    // stops.runner is the single source of truth for "may this trade ride"; the
+    // string renders that boolean. Authoring it in two places let them disagree,
+    // and a target promising a runner beside runner:false renders both with no
+    // way to tell which is lying. Reproduces the prior strings exactly.
+    stops.target = stops.runner
+        ? '+30-50%, scale half, BE stop on runner'
+        : '+20-30% — take the full clip, NO runner';
 
     return { struct:struct, governor:governor };
 }

@@ -14,3 +14,4 @@
 # including the ~420 KB index.html — on the next checkout. Pin the one file the
 # parity discipline depends on, nothing else.
 spy-logic/spy-governor-core.js text eol=lf
+spy-logic/spyScenarios.js      text eol=lf

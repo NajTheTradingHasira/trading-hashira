@@ -74,26 +74,47 @@ const closeIdx = balancedFrom(html, openIdx);
 if (closeIdx < 0) { console.error('unbalanced braces after anchor'); process.exit(1); }
 const body = html.slice(openIdx + 1, closeIdx);
 
-// If the port lands a registry inline, pull it in too so the read can resolve
-// against it. Absent before the port; required after, if the body references it.
-let prelude = '';
-const REG = 'const SL_SCENARIOS';
-const rAt = html.indexOf(REG);
-if (rAt >= 0) {
-    const rOpen = html.indexOf('[', rAt);
-    let depth = 0, i = rOpen, q = null, rClose = -1;
-    for (; i < html.length; i++) {
-        const c = html[i], p = html[i - 1];
+// If the port lands a registry inline, pull it in — along with everything it
+// depends on. Extracting SL_SCENARIOS alone is not enough: the array literal
+// references SL_EXIT_POLICY, and the read calls slSelectScenario, which calls
+// slRunnerEligible. Missing any of them is a ReferenceError at eval, not a
+// silent pass, so the failure is loud — but the dependency list has to be
+// maintained alongside the port.
+function extractDecl(src, header, open, close) {
+    const at = src.indexOf(header);
+    if (at < 0) return null;
+    const o = src.indexOf(open, at);
+    if (o < 0) return null;
+    let depth = 0, q = null;
+    for (let i = o; i < src.length; i++) {
+        const c = src[i], p = src[i - 1];
         if (q) { if (c === q && p !== '\\') q = null; continue; }
         if (c === '"' || c === "'" || c === '`') { q = c; continue; }
-        if (c === '[') depth++;
-        else if (c === ']') { depth--; if (depth === 0) { rClose = i; break; } }
+        if (c === open) depth++;
+        else if (c === close) { depth--; if (depth === 0) return src.slice(at, i + 1); }
     }
-    if (rClose > 0) prelude = html.slice(rAt, rClose + 1) + ';\n';
+    return null;
 }
-if (/SL_SCENARIOS/.test(body) && !prelude) {
-    console.error('the inline read references SL_SCENARIOS but the array could not be extracted');
-    process.exit(1);
+
+const DEPS = [
+    ['const SL_EXIT_POLICY', '{', '}'],
+    ['function slRunnerEligible', '{', '}'],
+    ['const SL_SCENARIOS', '[', ']'],
+    ['function slSelectScenario', '{', '}'],
+];
+let prelude = '', found = [];
+for (const [header, o, c] of DEPS) {
+    const chunk = extractDecl(html, header, o, c);
+    if (chunk) { prelude += chunk + ';\n'; found.push(header.split(' ').pop()); }
+}
+
+// Whatever the read actually references must have been extracted, or the run is
+// meaningless. Check by name rather than trusting the list above to be current.
+for (const sym of ['SL_SCENARIOS', 'slSelectScenario', 'SL_EXIT_POLICY', 'slRunnerEligible']) {
+    if (new RegExp('\\b' + sym + '\\b').test(body + prelude) && !new RegExp('\\b' + sym + '\\b').test(prelude)) {
+        console.error('the inline read reaches ' + sym + ' but it could not be extracted from the HTML');
+        process.exit(1);
+    }
 }
 
 // eslint-disable-next-line no-eval
@@ -109,7 +130,7 @@ let n = 0, fail = 0;
 const seen = new Set();
 console.log('inline source: ' + htmlPath);
 console.log('module:        ' + modPath);
-console.log('registry inline: ' + (prelude ? 'yes — extracted with the read' : 'no (pre-port if-chain)'));
+console.log("registry inline:  " + (prelude ? "yes — extracted with deps: " + found.join(", ") : "no (pre-port if-chain)"));
 console.log('');
 
 for (const opening of OPENING) for (const vwap of VWAP)

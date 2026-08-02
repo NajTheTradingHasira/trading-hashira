@@ -1,0 +1,16 @@
+# Cross-terminal parity file: byte-identical to nexus src/lib/spyGovernor.js
+# (md5 6ebeb678... at the last synced port). Pin the working-tree copy to LF on
+# every platform so a raw md5sum matches the canonical file without having to go
+# through `git show`.
+#
+# Needed because core.autocrlf is true on the Windows checkouts. The blob is
+# always LF, so git itself never sees drift — but a fresh checkout materializes
+# CRLF on disk, and md5sum then reports a difference that does not exist. That
+# false drift is worst exactly when it matters: during a port, when a real md5
+# comparison is the check being run.
+#
+# Deliberately NOT adding a repo-wide `* text=auto`. This repo has never had a
+# .gitattributes, so introducing one would renormalize every tracked file —
+# including the ~420 KB index.html — on the next checkout. Pin the one file the
+# parity discipline depends on, nothing else.
+spy-logic/spy-governor-core.js text eol=lf

@@ -2681,7 +2681,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     return 'after';
   },
   spyDirectionalBias(s){
-    // The eight reads now live in SL_SCENARIOS as ordered match functions —
+    // The eight reads now live in SL_READS as ordered match functions —
     // same conditions, same order, same labels, same notes. Precedence is
     // load-bearing; see the array. Signature and return shape unchanged.
     const sc=slSelectScenario(s);
@@ -4701,7 +4701,7 @@ const SL_EXIT_POLICY = { LEVEL:'LEVEL_FIRST', TIME:'TIME_FIRST' };
 // Exactly two qualify: buy_pullbacks and trend_down_watch.
 function slRunnerEligible(plan){ return plan.thesis==='continuation' && plan.entryConfirmed===true; }
 
-const SL_SCENARIOS = [
+const SL_READS = [
   { id:'short_rallies', label:'SHORT RALLIES', dir:'SHORT',
     note:'Opening impulse failing under supply. Puts on a lower-high retest into resistance.',
     match:s=>(s.opening==='below'||s.opening==='inside')&&s.vwap==='lost'&&s.internals==='weak'&&s.retest==='lowerhigh',
@@ -4751,7 +4751,7 @@ const SL_SCENARIOS = [
 
 // First match wins. Total by construction; the || tail guards an edited catch-all.
 function slSelectScenario(s){
-  return SL_SCENARIOS.find(sc=>sc.match(s)) || SL_SCENARIOS[SL_SCENARIOS.length-1];
+  return SL_READS.find(sc=>sc.match(s)) || SL_READS[SL_READS.length-1];
 }
 
 // Merge a scenario's baseline plan with the governor verdict. DOWNWARD ONLY:

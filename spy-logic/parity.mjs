@@ -112,6 +112,26 @@
  * actually deploys. The working tree is still checked, but only to report
  * whether it differs from the pinned ref.
  *
+ * ── What this suite does NOT cover ──────────────────────────────────────
+ *
+ * Printed in the summary of every run, not just documented here. An uncovered
+ * surface that says nothing looks exactly like a covered one.
+ *
+ *   levelLadder / slLadderHtml — no shared counterpart. The module returns a
+ *   data array of the fixed triple; the inline block returns an HTML string
+ *   built from the plan's targets. Comparing them means re-deriving one from
+ *   the other, which tests the harness rather than parity.
+ *
+ *   degraded payloads — APEX does not honour levels.degraded (§9.11), so a
+ *   degraded fixture would measure a fixed implementation against a
+ *   known-unfixed one. Declared here, asserted in degraded.test.mjs.
+ *
+ * Note on phase 3: resolveTarget IS covered, but breadth on one axis is not
+ * coverage of another. The structural sweep resolves targets at 112 spot/VIX
+ * combinations and every one uses a fresh anchor, so collapsing the tri-state
+ * to `state: 'current'` passed all 1120 of those comparisons. Phase 3 exists
+ * to move anchor age and level validity, the axes the sweep holds constant.
+ *
  * Env:
  *   PARITY_LIVE_URL     /api/spy-logic/structure — fetched for the LIVE pass
  *   SPY_STRUCTURE_JSON  the same var the backend reads, used if no URL is set
@@ -226,6 +246,7 @@ globalThis.setInterval = () => 0;
 const BUCKETS = {
     selection: { checks: 0, fail: 0, title: 'scenario SELECTION  (each registry picks its own)' },
     merge:     { checks: 0, fail: 0, title: 'plan MERGE          (governor + stops + gate floor)' },
+    targets:   { checks: 0, fail: 0, title: 'target resolution   (CURRENT/STALE/ABSENT tri-state)' },
     structure: { checks: 0, fail: 0, title: 'structural tag' },
     collapse:  { checks: 0, fail: 0, title: 'collapse proof' },
     misc:      { checks: 0, fail: 0, title: 'stopMath / context shape' }
@@ -247,6 +268,16 @@ function cmp(bucket, label, a, b) {
 
 const WINDOWS = ['open', 'amprime', 'lunch', 'pmprime', 'power', 'close'];
 const round2 = v => Number(v.toFixed(2));
+
+// The three real rungs, the hardcoded-absent one, and a key no registry emits —
+// the last is the only way to reach resolveTarget's finite guard, which is
+// otherwise dead code because reclaim/support/flip are always present and the
+// backend validates them gt=0.
+const TARGET_KEYS = ['reclaim', 'support', 'flip', 'vwap', 'not_a_level'];
+const shapeTarget = t => ({
+    key: t.key, label: t.label, price: t.price,
+    state: t.state, resolved: t.resolved, stale: t.stale, ageDays: t.ageDays
+});
 
 const INPUTS = {
     SHORT:   { opening: 'below', vwap: 'lost',    internals: 'weak',   retest: 'lowerhigh', ribbon: 'fanneddown', ivp: 40, hviv: 'inline' },
@@ -352,6 +383,7 @@ globalThis.__apex = {
     SL_STATE, SL_STRUCTURE, SL_INPUTS_DEF,
     slSelectScenario: typeof slSelectScenario === 'function' ? slSelectScenario : null,
     slRunnerEligible: typeof slRunnerEligible === 'function' ? slRunnerEligible : null,
+    slResolveTarget:  typeof slResolveTarget  === 'function' ? slResolveTarget  : null,
     SL_READS:         typeof SL_READS !== 'undefined' ? SL_READS : null
 };`);
     const apex = globalThis.__apex;
@@ -510,10 +542,18 @@ globalThis.__apex = {
                     { verified: aS.verified, missing: aS.missing, tag: aS.tag, label: aS.label, dir: aS.dir, color: aS.color, spot: aS.spot, vix: aS.vix, stale: aS.stale, detail: aS.detail },
                     { verified: cS.verified, missing: cS.missing, tag: cS.tag, label: cS.label, dir: cS.dir, color: cS.color, spot: cS.spot, vix: cS.vix, stale: cS.stale, detail: cS.detail });
 
-                // levelLadder is deliberately NOT compared: APEX's ladder lives
-                // below the END anchor, so there is no inline counterpart in the
-                // sliced region. Comparing core against a re-derivation would
-                // test this harness, not parity.
+                // ── target resolution: the tri-state ─────────────
+                // Each side resolves off the struct IT built, which is the path
+                // the panel actually takes. `absent` is included via a key no
+                // registry emits, so the finite guard is exercised and not just
+                // the hardcoded vwap short-circuit.
+                if (apex.slResolveTarget) {
+                    for (const key of TARGET_KEYS) {
+                        cmp('targets', w(`resolveTarget(${key}, spot=${spot}, vix=${vix})`),
+                            shapeTarget(apex.slResolveTarget(key, aS)),
+                            shapeTarget(core.resolveTarget(key, cS)));
+                    }
+                }
 
                 for (const [name, base] of Object.entries(INPUTS)) {
                     for (const win of WINDOWS) {
@@ -565,6 +605,46 @@ globalThis.__apex = {
         console.log('    re-tests the fallback, which is not the same claim.');
     }
     structuralSweep('LIVE · ' + LIVE.origin, LIVE.real ? { ...SHIPPED, ...LIVE.over } : { ...SHIPPED });
+
+    // ═══════════════════════════════════════════════════════════
+    // PHASE 3 — target resolution across the axes the sweep cannot reach
+    // ═══════════════════════════════════════════════════════════
+    // The sweep above resolves targets at 112 spot/VIX combinations, but every
+    // one of them uses a FRESH anchor, so `stale` is false throughout and the
+    // whole stale/current axis goes untested. Collapsing the tri-state to
+    // `state: 'current'` passed all 1120 of those comparisons. Breadth on one
+    // axis is not coverage of another.
+    //
+    // These fixtures move the axes the sweep holds constant: anchor age, and
+    // levels that are present but not usable as prices.
+    if (apex.slResolveTarget) {
+        const OLD = '2026-01-05';   // far enough back to be stale under any staleDays
+        const FIXTURES = [
+            ['fresh',       { ...SYNTHETIC },                       MID_CONFIRMED],
+            ['stale',       { ...SYNTHETIC, asOf: OLD },            MID_CONFIRMED],
+            ['zero-level',  { ...SYNTHETIC, support: 0 },           MID_CONFIRMED],
+            ['nan-level',   { ...SYNTHETIC, flip: NaN },            MID_CONFIRMED],
+            ['neg-level',   { ...SYNTHETIC, reclaim: -1 },          MID_CONFIRMED],
+            ['stale+zero',  { ...SYNTHETIC, asOf: OLD, support: 0 }, MID_CONFIRMED],
+            ['no-spot',     { ...SYNTHETIC },                       null]
+        ];
+        console.log('\nphase 3 — target resolution: ' + FIXTURES.length + ' anchor fixtures x ' +
+            TARGET_KEYS.length + ' keys (stale/current and the finite guard, which the sweep holds constant)');
+
+        for (const [name, levels, spot] of FIXTURES) {
+            Object.assign(apex.SL_STRUCTURE, levels);
+            apex.SL_STATE.live = spot == null ? null : { price: spot };
+            globalThis.PRICE_CACHE['^VIX'] = { price: CALM_VIX };
+            const aS = apex.slStructure();
+            const cS = core.structuralTag({ spot, vix: CALM_VIX, now, levels });
+            cmp('targets', at(`[${name}] struct.stale agrees`), aS.stale, cS.stale);
+            for (const key of TARGET_KEYS) {
+                cmp('targets', at(`[${name}] resolveTarget(${key})`),
+                    shapeTarget(apex.slResolveTarget(key, aS)),
+                    shapeTarget(core.resolveTarget(key, cS)));
+            }
+        }
+    }
 
     // Put the shipped anchor back for the sections below.
     Object.assign(apex.SL_STRUCTURE, SHIPPED);
@@ -629,6 +709,26 @@ console.log('  SELECTION agreement : ' +
           '   (' + totals.selectionCombos + ' tape combinations, each side its own selector)'));
 console.log('  MERGE     agreement : ' +
     (BUCKETS.merge.checks - BUCKETS.merge.fail) + ' / ' + BUCKETS.merge.checks);
+console.log('');
+// ── NOT COVERED ──────────────────────────────────────────────
+// Printed every run, in the summary, deliberately. An uncovered surface that
+// says nothing is indistinguishable from a covered one, and that silence is
+// what let normalizeLevels() sit unverified for five sessions. If something
+// here gets covered, delete the line — do not let the list outlive the gap.
+console.log('  NOT COVERED by this suite:');
+console.log('    · levelLadder / slLadderHtml — no shared counterpart to compare.');
+console.log('        core.levelLadder(struct) returns a data array of the fixed');
+console.log('        reclaim/support/flip triple with distance and side; APEX\'s');
+console.log('        slLadderHtml(r) returns an HTML string built from r.stops.targets.');
+console.log('        Different input, different output, different content. Comparing');
+console.log('        them would require re-deriving one from the other, which tests');
+console.log('        this harness rather than parity. Covered only by unit tests.');
+console.log('    · degraded payloads — APEX does not honour levels.degraded (§9.11):');
+console.log('        slFetchStructure drops the flag on adopt and slStructure still');
+console.log('        computes stale from ageDays alone. A degraded fixture here would');
+console.log('        be a fixed implementation measured against a known-unfixed one,');
+console.log('        so it is declared rather than asserted. Behaviour is covered');
+console.log('        hashira-side by spy-logic/degraded.test.mjs (8 cases).');
 console.log('');
 for (const s of SOURCES) {
     console.log('  source: ' + s.label + (s.pinned ? ' (pinned)' : '  ⚠ UNPINNED — exists on no branch'));

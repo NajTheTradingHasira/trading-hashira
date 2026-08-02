@@ -96,7 +96,7 @@ globalThis.fetch = async () => ({ ok: false, status: 500, json: async () => ({})
 globalThis.setInterval = () => 0;
 
 // eslint-disable-next-line no-eval
-(0, eval)(src + '\nglobalThis.__apex = { slStructure, slRunGate, slStructureContext, slDirectionalRead, SL_STATE, SL_STRUCTURE, SL_INPUTS_DEF };');
+(0, eval)(src + '\nglobalThis.__apex = { slStructure, slRunGate, slStructureContext, slDirectionalRead, slSelectScenario, SL_STATE, SL_STRUCTURE, SL_INPUTS_DEF };');
 const apex = globalThis.__apex;
 
 // ── PRECONDITION: structure drift ────────────────────────────
@@ -159,7 +159,14 @@ for (const tape of tapeGrid) {
         const inputs = { ...tape, window: win };
         apex.SL_STATE.inputs = inputs;
         const r = apex.slRunGate(inputs);
-        const key = r.bias.dir + '|' + win;
+        // Keyed on the SCENARIO, not on bias.dir. Before the plan existed,
+        // stops.target/runner were set by the governor alone, so every tape
+        // yielding the same direction collapsed to one signature. The plan is
+        // per-scenario and runner eligibility is DERIVED, so two LONG reads now
+        // legitimately differ: buy_pullbacks rides (continuation + confirmed),
+        // bullish_lean does not (no retest printed). Grouping by direction
+        // reports that as a violation when it is the intended behaviour.
+        const key = apex.slSelectScenario(inputs).id + '|' + win;
         // The governor verdict plus the fields the governor is allowed to move.
         const sig = JSON.stringify({
             governor: r.governor,
@@ -229,7 +236,12 @@ for (const spot of SPOTS) {
                 const inputs = Object.assign({}, base, { window: win });
                 apex.SL_STATE.inputs = inputs;
                 const aR = apex.slRunGate(inputs);
-                const cG = core.governorFor({ biasDir: aR.bias.dir, struct: cS, windowKey: win });
+                // Pass the plan. APEX's slRunGate now merges it, so calling the
+                // core without one compares a plan-wired implementation against an
+                // unwired one and every scenario whose plan revokes a runner reads
+                // as drift. Harmless against a core that predates the argument.
+                const cPlan = apex.slSelectScenario(inputs).plan;
+                const cG = core.governorFor({ biasDir: aR.bias.dir, struct: cS, windowKey: win, plan: cPlan });
 
                 diff(`governor(${name}, spot=${spot}, vix=${vix}, win=${win})`,
                     { mode: aR.governor.mode, label: aR.governor.label, color: aR.governor.color },

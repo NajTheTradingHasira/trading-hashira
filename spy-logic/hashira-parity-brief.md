@@ -31,6 +31,30 @@ exactly as in APEX so the two inline implementations stay diffable.
 
 Before: `grep -c "SL_" index.html` → **0**. After: **27**.
 
+### 2.1 Correction (2026-08-02): "diffable" holds for the GOVERNOR, not the ENGINE
+
+The claim above — that the shared `sl`/`SL_` namespace keeps the two inline implementations diffable — is **only true of the governor half**, and reading it as a whole-file guarantee is what nearly caused a bad port.
+
+| | hashira | APEX |
+|---|---|---|
+| Governor block | `sl`/`SL_` namespace | `sl`/`SL_` namespace — **diffable** |
+| Directional read | `NX.spyDirectionalBias(s)`, a method on the `NX` object literal | `function slDirectionalRead(inp)`, top level — **not diffable** |
+| Gate entry point | `NX.evaluateSetup(s)` | `slRunGate(inp)` |
+| Panel state | *(none)* | `SL_STATE` |
+
+The engine halves share no symbol, no call shape and no parameter name. `spy-logic/parity.mjs` bakes the APEX side of this in: its extraction anchors are `const SL_STATE = {` and `slRunGate`, **neither of which exists in this repo**, so pointing it here has never verified hashira's runtime — it compares APEX's inline block against `spy-governor-core.js`, a module nothing here executes. `spy-logic/inline-parity.mjs` exists to cover the gap and carries an ordered anchor list for exactly this reason.
+
+**`SL_SCENARIOS` is a false friend.** In APEX it is the three static playbook **cards** (`['SCENARIO A','red',title,body]`). It is *not* the scenario registry. The registry is **`SL_READS`** in both repos, deliberately named apart so the two never collide.
+
+### 2.2 Blockers for `evaluateSetup`-level parity
+
+The reads now match by enumeration (108/108, full `{dir,label,note}` triple). The **gate return shapes still do not**, and these are the outstanding items:
+
+- **`maxLots`** — nexus sets `stops.maxLots = SL_MAX_LOTS`; hashira's `stops` has no such key, so the panel cannot render a lot cap and any consumer reading it gets `undefined`.
+- **`struct` on the return** — hashira's `evaluateSetup` returns `struct`; nexus's does not, exposing the structural tag through `governor` instead.
+
+Both predate the scenario-selector work and were left alone rather than widening that port's blast radius. Until they are reconciled, cross-terminal parity is verifiable at the *read* level and at the *governor* level, but **not** at the `evaluateSetup` level — there is no harness that could assert it, because the objects are not the same shape.
+
 ---
 
 ## 3. What hashira already had

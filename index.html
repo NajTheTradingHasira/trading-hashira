@@ -340,6 +340,35 @@ tr:hover{background:var(--bg2)}
   th,td{padding:6px 6px}
 }
 </style>
+<style id="sl-linear-layout">
+#pg-spylogic div[style*="grid-template-columns:1.3fr 1fr"],
+#pg-spylogic div[style*="grid-template-columns:0.92fr 1.08fr"] {
+    grid-template-columns: 1fr !important;
+}
+#pg-spylogic div[style*="grid-template-columns:1fr 1fr"] {
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)) !important;
+}
+#pg-spylogic div[style*="grid-template-columns:repeat(4,1fr)"] {
+    grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)) !important;
+}
+#pg-spylogic div[style*="grid-template-columns:repeat(3,1fr)"] {
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)) !important;
+}
+#pg-spylogic {
+    --border:        rgba(255, 255, 255, 0.07);
+    --border-strong: rgba(255, 255, 255, 0.12);
+    --text:          #e2e8f0;
+    --text-muted:    #8892a4;
+    --text-faint:    #6b7688;
+    --text-dim:      #8892a4;
+}
+#pg-spylogic .card {
+    background-color:    #0b1017 !important;
+    border-top-color:    rgba(255, 255, 255, 0.07) !important;
+    border-right-color:  rgba(255, 255, 255, 0.07) !important;
+    border-bottom-color: rgba(255, 255, 255, 0.07) !important;
+}
+</style>
 </head>
 <body>
 <div id="ticker-bar"></div>

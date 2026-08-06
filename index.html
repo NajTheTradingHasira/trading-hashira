@@ -21,6 +21,7 @@
   --accent:#00b8d4;--accent-dim:#00b8d430;--accent-bg:#00b8d410;
   --amber:#ffc107;--amber-bg:#ffc10710;--amber-dim:#ffc10730;
   --purple:#b388ff;--purple-bg:rgba(179,136,255,.08);--purple-dim:rgba(179,136,255,.2);
+  --orange:#ff9100;--orange-bg:#ff910010;--orange-dim:#ff910030;
   --sidebar-w:210px;
   --topbar-h:44px;
   --radius:4px;
@@ -842,6 +843,7 @@ tr:hover{background:var(--bg2)}
               <button class="btn" id="spy-ai-claude-btn" onclick="NX.loadSPYAnalysis('claude')" style="font-size:11px;background:rgba(187,134,252,0.1);border:1px solid rgba(187,134,252,0.3);color:var(--purple)">⚡ CLAUDE</button>
               <button class="btn" id="spy-ai-fable-btn" onclick="NX.loadSPYAnalysis('fable')" style="font-size:11px;background:rgba(255,193,7,0.1);border:1px solid rgba(255,193,7,0.3);color:var(--amber)">⚡ FABLE</button>
               <button class="btn" id="spy-ai-gpt-btn" onclick="NX.loadSPYAnalysis('chatgpt')" style="font-size:11px;background:rgba(0,230,118,0.1);border:1px solid rgba(0,230,118,0.3);color:var(--green)">⚡ CHATGPT</button>
+              <button class="btn" id="spy-ai-grok-btn" onclick="NX.loadSPYAnalysis('grok')" style="font-size:11px;background:rgba(255,145,0,0.1);border:1px solid rgba(255,145,0,0.3);color:var(--orange)">⚡ GROK</button>
               <button class="btn" onclick="NX.loadSPYAnalysis('perplexity');NX.loadSPYAnalysis('claude')" style="font-size:11px">⚡ BOTH</button>
             </div>
           </div>
@@ -851,6 +853,7 @@ tr:hover{background:var(--bg2)}
             <button class="tab-btn" id="spy-ai-tab-claude" onclick="NX.switchSPYAITab('claude')" style="padding:6px 14px;font-size:11px;border-bottom:2px solid transparent;color:var(--text-muted);background:transparent;border-radius:0">Claude</button>
             <button class="tab-btn" id="spy-ai-tab-fable" onclick="NX.switchSPYAITab('fable')" style="padding:6px 14px;font-size:11px;border-bottom:2px solid transparent;color:var(--text-muted);background:transparent;border-radius:0">Fable</button>
             <button class="tab-btn" id="spy-ai-tab-gpt" onclick="NX.switchSPYAITab('chatgpt')" style="padding:6px 14px;font-size:11px;border-bottom:2px solid transparent;color:var(--text-muted);background:transparent;border-radius:0">ChatGPT</button>
+            <button class="tab-btn" id="spy-ai-tab-grok" onclick="NX.switchSPYAITab('grok')" style="padding:6px 14px;font-size:11px;border-bottom:2px solid transparent;color:var(--text-muted);background:transparent;border-radius:0">Grok</button>
           </div>
           <!-- Perplexity output -->
           <div id="spy-ai-ppx" style="display:block">
@@ -867,6 +870,10 @@ tr:hover{background:var(--bg2)}
           <!-- ChatGPT output -->
           <div id="spy-ai-gpt" style="display:none">
             <div class="empty-state" style="padding:30px"><div class="icon" style="color:var(--green)">⊘</div>Click CHATGPT for reasoning-powered tape reading<br/><span style="font-size:10px;color:var(--text-dim);margin-top:6px;display:block">gpt-5.6-sol · reasoning · 5-min cache</span></div>
+          </div>
+          <!-- Grok output -->
+          <div id="spy-ai-grok" style="display:none">
+            <div class="empty-state" style="padding:30px"><div class="icon" style="color:var(--orange)">⊘</div>Click GROK for live-search-powered tape reading<br/><span style="font-size:10px;color:var(--text-dim);margin-top:6px;display:block">grok-4.5 · live search · 5-min cache</span></div>
           </div>
         </div>
       </div>
@@ -2805,13 +2812,13 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
   },
   loadSPYAnalysis(provider){
     provider=provider||'perplexity';
-    const panelId=provider==='perplexity'?'spy-ai-ppx':provider==='fable'?'spy-ai-fable':provider==='chatgpt'?'spy-ai-gpt':'spy-ai-claude';
-    const btnId=provider==='perplexity'?'spy-ai-ppx-btn':provider==='fable'?'spy-ai-fable-btn':provider==='chatgpt'?'spy-ai-gpt-btn':'spy-ai-claude-btn';
+    const panelId=provider==='perplexity'?'spy-ai-ppx':provider==='fable'?'spy-ai-fable':provider==='chatgpt'?'spy-ai-gpt':provider==='grok'?'spy-ai-grok':'spy-ai-claude';
+    const btnId=provider==='perplexity'?'spy-ai-ppx-btn':provider==='fable'?'spy-ai-fable-btn':provider==='chatgpt'?'spy-ai-gpt-btn':provider==='grok'?'spy-ai-grok-btn':'spy-ai-claude-btn';
     const el=document.getElementById(panelId);
     const btn=document.getElementById(btnId);
     if(!el)return;
     NX.switchSPYAITab(provider);
-    el.innerHTML='<div style="padding:30px;text-align:center;color:var(--text-muted)"><div style="font-size:16px;margin-bottom:8px">⏳</div>Generating '+provider+' tape reading...<br/><span style="font-size:10px;color:var(--text-dim)">Fetching live data → AI analysis → '+(provider==='chatgpt'?'up to ~2 min (reasoning model)':'~15 seconds')+'</span></div>';
+    el.innerHTML='<div style="padding:30px;text-align:center;color:var(--text-muted)"><div style="font-size:16px;margin-bottom:8px">⏳</div>Generating '+provider+' tape reading...<br/><span style="font-size:10px;color:var(--text-dim)">Fetching live data → AI analysis → '+(provider==='chatgpt'?'up to ~2 min (reasoning model)':provider==='grok'?'~45 seconds':'~15 seconds')+'</span></div>';
     if(btn){btn.disabled=true;btn.style.opacity='0.5'}
     const base=NX.getBase();
     fetch(base+'/api/spy-logic/analysis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:provider})})
@@ -2822,11 +2829,11 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
         const ts=d.timestamp?new Date(d.timestamp).toLocaleTimeString():'';
         const priceStr=d.market_data?.price?'$'+d.market_data.price:'';
         const vwapStr=d.market_data?.vwap?'$'+d.market_data.vwap:'';
-        const color=provider==='perplexity'?'var(--cyan)':provider==='fable'?'var(--amber)':provider==='chatgpt'?'var(--green)':'var(--purple)';
+        const color=provider==='perplexity'?'var(--cyan)':provider==='fable'?'var(--amber)':provider==='chatgpt'?'var(--green)':provider==='grok'?'var(--orange)':'var(--purple)';
         const badge=(d.model_used||provider).toUpperCase();
         const header='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:6px">'
           +'<div style="display:flex;align-items:center;gap:8px">'
-          +'<span style="padding:2px 8px;border-radius:20px;font-size:9px;font-weight:700;background:'+(provider==='perplexity'?'rgba(0,255,255,0.1)':provider==='fable'?'rgba(255,193,7,0.1)':provider==='chatgpt'?'rgba(0,230,118,0.1)':'rgba(187,134,252,0.1)')+';color:'+color+'">'+badge+'</span>'
+          +'<span style="padding:2px 8px;border-radius:20px;font-size:9px;font-weight:700;background:'+(provider==='perplexity'?'rgba(0,255,255,0.1)':provider==='fable'?'rgba(255,193,7,0.1)':provider==='chatgpt'?'rgba(0,230,118,0.1)':provider==='grok'?'rgba(255,145,0,0.1)':'rgba(187,134,252,0.1)')+';color:'+color+'">'+badge+'</span>'
           +'<span style="font-size:11px;color:var(--text-muted)">SPY '+priceStr+' · VWAP '+vwapStr+'</span>'
           +'</div>'
           +'<span style="font-size:10px;color:var(--text-dim)">'+ts+'</span>'
@@ -2843,7 +2850,8 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
       perplexity:{panel:'spy-ai-ppx',tab:'spy-ai-tab-ppx',color:'var(--cyan)'},
       claude:{panel:'spy-ai-claude',tab:'spy-ai-tab-claude',color:'var(--purple)'},
       fable:{panel:'spy-ai-fable',tab:'spy-ai-tab-fable',color:'var(--amber)'},
-      chatgpt:{panel:'spy-ai-gpt',tab:'spy-ai-tab-gpt',color:'var(--green)'}
+      chatgpt:{panel:'spy-ai-gpt',tab:'spy-ai-tab-gpt',color:'var(--green)'},
+      grok:{panel:'spy-ai-grok',tab:'spy-ai-tab-grok',color:'var(--orange)'}
     };
     if(!tabs[provider])provider='perplexity';
     Object.keys(tabs).forEach(k=>{

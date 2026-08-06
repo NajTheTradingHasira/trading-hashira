@@ -2810,6 +2810,16 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     // slFetchStructure() repaints the bar in place when the response lands.
     finally{ slFetchStructure(); }
   },
+  // Every ternary below falls back to Claude in its tail, so a provider that is
+  // added to the row but missed in one of these chains fails SILENTLY rather
+  // than erroring — panelId worst of all, which would paint a real reading into
+  // Claude's pane under Claude's badge. The correct end state is an explicit
+  // unknown-provider branch; that belongs to the registry refactor.
+  //
+  // grok's wait is hedged above its evidence: one 41.9s round trip, measured
+  // after the close on 2026-08-05. RTH latency is unmeasured and live search
+  // makes the spread variable, so one post-close sample cannot support quoting
+  // "~45 seconds". Matches nexus src/SpyLogic.jsx.
   loadSPYAnalysis(provider){
     provider=provider||'perplexity';
     const panelId=provider==='perplexity'?'spy-ai-ppx':provider==='fable'?'spy-ai-fable':provider==='chatgpt'?'spy-ai-gpt':provider==='grok'?'spy-ai-grok':'spy-ai-claude';
@@ -2818,7 +2828,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     const btn=document.getElementById(btnId);
     if(!el)return;
     NX.switchSPYAITab(provider);
-    el.innerHTML='<div style="padding:30px;text-align:center;color:var(--text-muted)"><div style="font-size:16px;margin-bottom:8px">⏳</div>Generating '+provider+' tape reading...<br/><span style="font-size:10px;color:var(--text-dim)">Fetching live data → AI analysis → '+(provider==='chatgpt'?'up to ~2 min (reasoning model)':provider==='grok'?'~45 seconds':'~15 seconds')+'</span></div>';
+    el.innerHTML='<div style="padding:30px;text-align:center;color:var(--text-muted)"><div style="font-size:16px;margin-bottom:8px">⏳</div>Generating '+provider+' tape reading...<br/><span style="font-size:10px;color:var(--text-dim)">Fetching live data → AI analysis → '+(provider==='chatgpt'?'up to ~2 min (reasoning model)':provider==='grok'?'up to ~1 min':'~15 seconds')+'</span></div>';
     if(btn){btn.disabled=true;btn.style.opacity='0.5'}
     const base=NX.getBase();
     fetch(base+'/api/spy-logic/analysis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:provider})})

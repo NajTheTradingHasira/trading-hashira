@@ -94,6 +94,12 @@ globalThis.PRICE_CACHE = {};
 globalThis.NEXUS_API = 'http://parity';
 globalThis.fetch = async () => ({ ok: false, status: 500, json: async () => ({}) });
 globalThis.setInterval = () => 0;
+// The GEX regime overlay (grxApplyToGate) is defined ABOVE the sliced SL_
+// block in APEX and is out of parity scope: it is a post-gate overlay, not
+// part of the shared SL_ surface. With no GEX data loaded it is identity
+// (`if (!regime || !r) return r;`), which is exactly the state this harness
+// runs in — so an identity stub reproduces real behaviour, it does not mask it.
+globalThis.grxApplyToGate = r => r;
 
 // eslint-disable-next-line no-eval
 (0, eval)(src + '\nglobalThis.__apex = { slStructure, slRunGate, slStructureContext, slDirectionalRead, slSelectScenario, SL_STATE, SL_STRUCTURE, SL_INPUTS_DEF };');
@@ -288,8 +294,13 @@ apex.SL_STATE.inputs = Object.assign({}, INPUTS.SHORT, { window: 'amprime' });
         struct: cS, read: aR.bias, windowLabel: aR.windowLabel,
         entryStructure: aR.structure, governorResult: cG
     });
-    diff('buildStructureContext top-level key set',
-        Object.keys(aCtx).sort(), Object.keys(cCtx).sort());
+    // `gamma_regime` is APEX-only: the GEX classifier's additive field
+    // (`r.gammaRegime || null`), absent by design from the shared core and the
+    // other terminals. Exclude it rather than teaching the core a key that
+    // only one terminal legitimately owns.
+    const APEX_ONLY_KEYS = new Set(['gamma_regime']);
+    diff('buildStructureContext top-level key set (minus APEX-only keys)',
+        Object.keys(aCtx).filter(k => !APEX_ONLY_KEYS.has(k)).sort(), Object.keys(cCtx).sort());
 }
 
 // ── report ───────────────────────────────────────────────────

@@ -150,13 +150,19 @@ export function structuralTag({ spot, vix, now = Date.now(), levels = SL_STRUCTU
     const out = {
         verified: false, missing: [], tag: null, label: 'STRUCTURE UNVERIFIED',
         dir: null, color: 'amber', spot: null, vix: null, ageDays: null,
-        stale: false, detail: '', levels
+        stale: false, detail: '', levels,
+        degraded: !!levels.degraded, degradedReason: levels.degradedReason || null
     };
 
     const anchored = Date.parse(levels.asOf + 'T00:00:00');
     if (isFinite(anchored)) {
         out.ageDays = Math.floor((now - anchored) / 86400000);
-        out.stale = out.ageDays > levels.staleDays;
+        // A DEGRADED payload is stale regardless of age. `degraded` means the
+        // backend fell back to its own baked default because SPY_STRUCTURE_JSON
+        // was missing or invalid, so asOf describes the bake, not a real
+        // anchoring — a fresh-looking date over levels nobody vouched for is
+        // exactly the confident-but-wrong rung the tri-state exists to prevent.
+        out.stale = out.ageDays > levels.staleDays || !!levels.degraded;
     } else {
         out.missing.push('weekly anchor date');
     }
@@ -273,8 +279,18 @@ export function governorFor({ biasDir, struct, windowKey, plan } = {}) {
         reasons.push('WITH-STRUCTURE — ' + biasDir + ' agrees with ' + struct.label + ' (SPY ' + struct.spot.toFixed(2) + '). Full plan available: scale half at target, BE stop on the runner.');
     }
 
+    // Surfaced ahead of staleness: "the backend could not read its config" is a
+    // different problem from "the anchor is old", and only one of them is fixed
+    // by re-anchoring.
+    if (struct && struct.degraded) {
+        reasons.push('LEVELS DEGRADED — the backend is serving its baked default'
+            + (struct.degradedReason ? ' (' + struct.degradedReason + ')' : '')
+            + '. These levels were not anchored by anyone; treat every target as unverified until SPY_STRUCTURE_JSON is fixed.');
+    }
     if (struct && struct.stale) {
-        reasons.push('Weekly anchor is ' + struct.ageDays + ' days old (set ' + struct.levels.asOf + ') — re-anchor the structure block off a fresh weekly chart.');
+        reasons.push(struct.degraded
+            ? 'Anchor date ' + struct.levels.asOf + ' describes the baked default, not a real anchoring.'
+            : 'Weekly anchor is ' + struct.ageDays + ' days old (set ' + struct.levels.asOf + ') — re-anchor the structure block off a fresh weekly chart.');
     }
     reasons.push('HARD STOP ' + SL_STOP.label + ' — pre-set at entry, no exceptions. No loser exceeds it.');
 

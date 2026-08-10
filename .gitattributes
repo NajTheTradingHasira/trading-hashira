@@ -1,7 +1,18 @@
-# Cross-terminal parity file: byte-identical to nexus src/lib/spyGovernor.js
-# (md5 6ebeb678... at the last synced port). Pin the working-tree copy to LF on
-# every platform so a raw md5sum matches the canonical file without having to go
-# through `git show`.
+# Cross-terminal parity files, byte-identical to their nexus counterparts:
+#
+#   spy-logic/spy-governor-core.js  a044fb75…  ==  nexus src/lib/spyGovernor.js
+#   spy-logic/spyScenarios.js       24dcf5c4…  ==  nexus src/lib/spyScenarios.js
+#
+# Both verified equal at this commit. The previous note here attested
+# `md5 6ebeb678… at the last synced port` and had gone stale: the governor
+# pair had actually diverged (c988c992 here vs a044fb75 in nexus) because the
+# `degraded` threading landed in nexus and was never ported across. A hash in
+# a comment is a claim someone will trust without re-checking, so it is worth
+# more than the drift it hides — re-verify these two lines whenever either
+# file legitimately changes, in the same commit, or delete the claim.
+#
+# Pin the working-tree copy to LF on every platform so a raw md5sum matches
+# the canonical file without having to go through `git show`.
 #
 # Needed because core.autocrlf is true on the Windows checkouts. The blob is
 # always LF, so git itself never sees drift — but a fresh checkout materializes
@@ -11,7 +22,15 @@
 #
 # Deliberately NOT adding a repo-wide `* text=auto`. This repo has never had a
 # .gitattributes, so introducing one would renormalize every tracked file —
-# including the ~420 KB index.html — on the next checkout. Pin the one file the
-# parity discipline depends on, nothing else.
+# including the ~420 KB index.html — on the next checkout. Pin only the files
+# the parity discipline depends on, nothing else.
+#
+# The test harnesses are pinned for the same reason as the sources they guard.
+# spy-governor-core.test.mjs states its own contract — "any port to another
+# terminal must pass this file unchanged" — which only means anything if the
+# file a porter copies out is byte-comparable. Without the pin, autocrlf
+# materializes CRLF on checkout and that comparison reports drift that is not
+# there.
 spy-logic/spy-governor-core.js text eol=lf
 spy-logic/spyScenarios.js      text eol=lf
+spy-logic/*.test.mjs           text eol=lf

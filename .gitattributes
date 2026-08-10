@@ -1,7 +1,13 @@
 # Cross-terminal parity files, byte-identical to their nexus counterparts:
 #
-#   spy-logic/spy-governor-core.js  a044fb75…  ==  nexus src/lib/spyGovernor.js
+#   spy-logic/spy-governor-core.js  0a9408ef…  ==  nexus src/lib/spyGovernor.js
 #   spy-logic/spyScenarios.js       24dcf5c4…  ==  nexus src/lib/spyScenarios.js
+#
+# Both verified equal at this commit — md5sum re-run on both sides after the
+# port on this branch, not carried forward from the previous note. The governor
+# moved a044fb75 -> 0a9408ef when resolveTarget's `key === 'vwap'` special case
+# was deleted; nexus made that change first (its phase-5 branch) and this is the
+# matching half, so the pair is byte-identical again rather than merely close.
 #
 # Both verified equal at this commit. The previous note here attested
 # `md5 6ebeb678… at the last synced port` and had gone stale: the governor

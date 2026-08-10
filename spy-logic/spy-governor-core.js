@@ -541,11 +541,26 @@ export function resolveTarget(key, struct) {
         state: 'absent', resolved: false, stale: false, ageDays: null
     });
 
-    // No live VWAP feed in nexus. Absent by construction, not by failure —
-    // and never substituted with a number.
-    if (key === 'vwap') return absent('VWAP (no level)');
-
+    // NO PER-KEY SPECIAL CASES. There used to be one — `if (key === 'vwap')
+    // return absent('VWAP (no level)')` — and it was removed rather than
+    // extended, because the intraday ladders now emit keys that are legitimately
+    // absent-capable (onh, em_upper, opening-range extremes) and a hardcoded
+    // list would have to grow by one line per key forever, silently resolving
+    // any key nobody remembered to add.
+    //
+    // Removing it is behaviour-preserving for 'vwap' and provably so: `levels`
+    // has no `vwap` member, so the lookup below yields undefined, the guard
+    // fails, and absent() defaults its label to KEY + ' (no level)' — the exact
+    // string the special case passed explicitly. Optionality is a property of
+    // the LEVEL, declared per key by the registry, not of a name hardcoded here.
     const v = struct && struct.levels && struct.levels[key];
+
+    // THE GENERIC FINITE-GUARD. Until the line above was deleted this had never
+    // executed on a production input in its life: every key any ladder emitted
+    // was either a real member of `levels` or 'vwap', and 'vwap' was
+    // short-circuited before reaching here. It was live code that had only ever
+    // run in tests. It is now the ONLY thing standing between an absent
+    // intraday level and a rung rendered off `undefined`.
     if (!(Number.isFinite(v) && v > 0)) return absent();
 
     const stale = !!(struct && struct.stale);

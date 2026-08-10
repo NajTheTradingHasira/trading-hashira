@@ -36,6 +36,10 @@ import { runnerEligible } from './spyScenarios.js';
 // ═══════════════════════════════════════════════════════════════
 export const SL_STRUCTURE = {
     asOf:       '2026-07-26',
+    // Near-term pivot: OUTSIDE the ordered triple, null in the bake because the
+    // fallback has no business inventing one. levelLadder() appends a row for it
+    // only when a live block supplies one.
+    pivot:      null,
     reclaim:    743.91,   // spot above  → weekly Stage 2 confirmed
     support:    735.21,   // spot below  → Stage 2 under pressure
     flip:       722.54,   // spot below  → tag flips bearish (Stage 3/4)
@@ -454,11 +458,22 @@ export function buildStructureContext({ struct, read, windowLabel, entryStructur
 export function levelLadder(struct) {
     const L = (struct && struct.levels) || SL_STRUCTURE;
     const spot = struct && struct.spot;
+    // The near-term pivot is appended LAST and only when present. It sits
+    // outside the ordered triple — `flip < support < reclaim` says nothing
+    // about it, and on a markup week it is legitimately above `reclaim`.
+    // Absent appends nothing, so a block without one yields the same three rows
+    // it always did.
+    const P = L.pivot;
     return [
         { key: 'reclaim', label: 'RECLAIM', price: L.reclaim, color: 'green', note: 'Stage 2 confirmed above' },
         { key: 'support', label: 'SUPPORT', price: L.support, color: 'amber', note: 'Stage 2 pressured below' },
         { key: 'flip',    label: 'FLIP',    price: L.flip,    color: 'red',   note: 'Tag flips bearish below' }
-    ].map(row => {
+    ].concat(
+        (P && Number.isFinite(P.level) && P.level > 0)
+            ? [{ key: 'pivot', label: 'PIVOT', price: P.level, color: 'blue',
+                 note: P.origin || 'near-term pivot', asOf: P.asOf || null }]
+            : []
+    ).map(row => {
         // Finiteness checked at the READ site, not only at ingest. validStructure()
         // guards the API boundary, but `levels` can also arrive as a caller-supplied
         // override, and `spot - undefined` is NaN — which renders as the string

@@ -20,13 +20,26 @@
  *   // apply gov.gateFloor / gov.stops / gov.reasons to your own gate output
  *
  * Ships as ESM. For CommonJS consumers, see the bottom of the file.
+ *
+ * One import, and it points the safe way: spyScenarios.js has no imports of its
+ * own, so there is no cycle. applyPlan() needs the runner derivation and must
+ * not keep a second copy of the rule.
  */
+// Explicit .js extension: Vite resolves extensionless specifiers, plain Node does
+// not. Without it this module is unloadable outside the bundler, which silently
+// takes it out of reach of spy-logic/parity.mjs — the one harness that checks
+// nexus against APEX. Keep the extension.
+import { runnerEligible } from './spyScenarios.js';
 
 // ═══════════════════════════════════════════════════════════════
 // 1. THE ANCHOR — the only block you edit when the weekly re-anchors
 // ═══════════════════════════════════════════════════════════════
 export const SL_STRUCTURE = {
     asOf:       '2026-07-26',
+    // Near-term pivot: OUTSIDE the ordered triple, null in the bake because the
+    // fallback has no business inventing one. levelLadder() appends a row for it
+    // only when a live block supplies one.
+    pivot:      null,
     reclaim:    743.91,   // spot above  → weekly Stage 2 confirmed
     support:    735.21,   // spot below  → Stage 2 under pressure
     flip:       722.54,   // spot below  → tag flips bearish (Stage 3/4)
@@ -51,6 +64,24 @@ export const SL_SCALP_TIME = {
 export const SL_NORMAL_TIME = {
     lunch: '10 min', amprime: '15-20 min', pmprime: '10-15 min', power: '10-15 min'
 };
+
+// ── Numeric counterparts to the two tables above ─────────────────
+// Each value is the UPPER BOUND of the range the string beside it expresses.
+// The strings stay: they are what keeps this module diffable character-for-
+// character against hashira's and APEX's inline SL_ blocks, which is how drift
+// between the three has been caught to date. These are the enforceable version
+// of the same numbers.
+//
+// Do NOT derive these by parsing the strings at runtime, and do NOT compute
+// them by halving SL_NORMAL_TIME. The APEX spec says "half the window default,
+// floor 6 min", and that rule contradicts what shipped: half of lunch's 10 is
+// 5, the floor forces 6, but SL_SCALP_TIME.lunch is '5 min'. Pairing the tables
+// by hand makes the numeric and the string agree by construction instead.
+//
+// 'open' and 'close' are 0 in both: those windows are already an unconditional
+// NO-GO in evaluateSetup, so there is no hold to cap.
+export const NUMERIC_HOLD       = { open: 0, amprime: 20, lunch: 10, pmprime: 15, power: 15, close: 0, pre: 0, after: 0, closed: 0 };
+export const NUMERIC_SCALP_HOLD = { open: 0, amprime: 10, lunch:  5, pmprime:  8, power:  8, close: 0, pre: 0, after: 0, closed: 0 };
 
 export const SL_RULES = [
     'The weekly structural tag is the frame; the intraday read is the trade.',
@@ -197,20 +228,20 @@ export function structuralTag({ spot, vix, now = Date.now(), levels = SL_STRUCTU
  * @param {object} struct                     result of structuralTag()
  * @param {string} windowKey                  time window: open|amprime|lunch|pmprime|power|...
  */
-export function governorFor({ biasDir, struct, windowKey } = {}) {
+export function governorFor({ biasDir, struct, windowKey, plan } = {}) {
     const reasons = [];
     const stops = {
         time: SL_NORMAL_TIME[windowKey] || '10 min',
         price: SL_STOP.label + ' — HARD, pre-set at entry',
         pricePct: SL_STOP.pct,
         hard: true,
-        target: '+30-50%, scale half, BE stop on runner',
+        // `target` is NOT set here — it is derived from stops.runner at the end
+        // of this function. See the note above the return.
         runner: true,
         maxLots: SL_MAX_LOTS
     };
     const scalp = () => {
         stops.time   = SL_SCALP_TIME[windowKey] || '5-8 min';
-        stops.target = '+20-30% — take the full clip, NO runner';
         stops.runner = false;
     };
 
@@ -247,7 +278,114 @@ export function governorFor({ biasDir, struct, windowKey } = {}) {
     }
     reasons.push('HARD STOP ' + SL_STOP.label + ' — pre-set at entry, no exceptions. No loser exceeds it.');
 
+    // ── plan merge (optional) ──
+    // Omit `plan` and this function behaves exactly as it did before the
+    // scenario registry existed — that no-plan path is pinned byte-identical by
+    // the gate-invariance test, and it is the path parity.mjs exercises.
+    //
+    // Downward only, same discipline as gateFloor: the plan can REVOKE a runner
+    // the governor allowed, never grant one the governor revoked.
+    if (plan) {
+        stops.plan = applyPlan(plan, {
+            struct,
+            windowKey,
+            counterStructural: governor.mode === 'counter',
+            transition: governor.mode === 'transition'
+        });
+        stops.runner     = stops.runner && stops.plan.runnerEligible;
+        stops.maxHoldMin = stops.plan.maxHoldMin;
+        stops.targets    = stops.plan.targets;
+        stops.exitPolicy = stops.plan.exitPolicy;
+    }
+
+    // ── target string: DERIVED, never authored ──
+    // stops.runner is the single source of truth for "may this trade ride"; the
+    // string is a rendering of that boolean, computed LAST so it reflects every
+    // mutation above (scalp(), and later the plan merge).
+    //
+    // Previously the two were set independently — once in the stops literal and
+    // once inside scalp() — which left them free to disagree. A string promising
+    // a runner beside runner:false is worse than a stale string, because both
+    // render and the reader has no way to tell which one is lying.
+    //
+    // Reproduces the two prior strings EXACTLY, so nexus stays diffable
+    // character-for-character against the hashira/APEX inline SL_ blocks:
+    //   default path → runner true  → '+30-50%, scale half, BE stop on runner'
+    //   scalp() path → runner false → '+20-30% — take the full clip, NO runner'
+    stops.target = stops.runner
+        ? '+30-50%, scale half, BE stop on runner'
+        : '+20-30% — take the full clip, NO runner';
+
     return { governor, gateFloor, stops, reasons };
+}
+
+/**
+ * Merge a scenario's baseline plan with the governor's verdict.
+ *
+ * DOWNWARD ONLY, on every field:
+ *   maxHoldMin      → min(scenario, window ceiling, scalp ceiling)
+ *   runnerEligible  → derived AND governor
+ *   targets         → truncated, never extended
+ *
+ * There is deliberately no path that lengthens a hold, enables a runner the
+ * derivation disallowed, or adds a target. If a future rule needs to RELAX a
+ * plan, it belongs in the scenario baseline, not here — same discipline as
+ * gateFloor, which is a floor and never a ceiling.
+ *
+ * Not yet called by governorFor(). Wired in a later step.
+ *
+ * @param {object} plan  a SPY_SCENARIOS[].plan
+ * @param {object} ctx   {struct, windowKey, counterStructural, transition}
+ */
+export function applyPlan(plan, { struct, windowKey, counterStructural, transition } = {}) {
+    // Defensive on the array fields. This is the entry point a NINTH scenario
+    // arrives through, and a plan authored without `targets` or `fragileTags`
+    // should be governed conservatively rather than throw on .slice()/.includes()
+    // and take the panel down. NOT a licence to omit them: the suite requires
+    // every scenario in the registry to declare both explicitly.
+    const out = {
+        exitPolicy: plan.exitPolicy,
+        targets: (plan.targets || []).slice(),
+        maxHoldMin: plan.maxHoldMin,
+        runnerEligible: runnerEligible(plan),   // DERIVED — never read off the table
+        degradedBy: []
+    };
+
+    // Window ceiling — a plan can never outlast its window's own time stop.
+    const windowCap = NUMERIC_HOLD[windowKey];
+    if (windowCap != null && windowCap < out.maxHoldMin) {
+        out.maxHoldMin = windowCap;
+        out.degradedBy.push('window');
+    }
+
+    // Counter-structural / transition: clamp to the scalp ceiling, kill the
+    // runner, truncate the ladder. Mirrors scalp() on the display strings —
+    // kept in lockstep by the paired tables, NOT by halving arithmetic.
+    if (counterStructural || transition) {
+        const scalpCap = NUMERIC_SCALP_HOLD[windowKey];
+        if (scalpCap != null && scalpCap < out.maxHoldMin) {
+            out.maxHoldMin = scalpCap;
+            out.degradedBy.push(counterStructural ? 'counter-structural' : 'transition');
+        }
+        if (out.runnerEligible) { out.runnerEligible = false; out.degradedBy.push('no-runner'); }
+        if (out.targets.length > 1) { out.targets = out.targets.slice(0, 1); out.degradedBy.push('target-truncated'); }
+    }
+
+    // Frame fragility — METADATA, not an eligibility gate. A scenario naming the
+    // live tag in fragileTags loses its runner and its extended targets. It is
+    // still selected, still tradeable, simply governed harder. Nothing here can
+    // exclude it from selection: a filter would let the selector fall through to
+    // a LATER, BROADER scenario, i.e. the gate would enable a trade rather than
+    // disqualify one.
+    if (struct && struct.verified && (plan.fragileTags || []).includes(struct.tag)) {
+        if (out.runnerEligible) { out.runnerEligible = false; out.degradedBy.push('fragile-frame'); }
+        if (out.targets.length > 1) { out.targets = out.targets.slice(0, 1); out.degradedBy.push('target-truncated'); }
+    }
+
+    // A zero-minute hold is a no-trade, not a fast trade.
+    if (out.maxHoldMin <= 0) { out.maxHoldMin = 0; out.runnerEligible = false; out.targets = []; }
+
+    return out;
 }
 
 /** Gate ranking helper — apply gateFloor without ever improving a gate. */
@@ -320,18 +458,93 @@ export function buildStructureContext({ struct, read, windowLabel, entryStructur
 export function levelLadder(struct) {
     const L = (struct && struct.levels) || SL_STRUCTURE;
     const spot = struct && struct.spot;
+    // The near-term pivot is appended LAST and only when present. It sits
+    // outside the ordered triple — `flip < support < reclaim` says nothing
+    // about it, and on a markup week it is legitimately above `reclaim`.
+    // Absent appends nothing, so a block without one yields the same three rows
+    // it always did.
+    const P = L.pivot;
     return [
         { key: 'reclaim', label: 'RECLAIM', price: L.reclaim, color: 'green', note: 'Stage 2 confirmed above' },
         { key: 'support', label: 'SUPPORT', price: L.support, color: 'amber', note: 'Stage 2 pressured below' },
         { key: 'flip',    label: 'FLIP',    price: L.flip,    color: 'red',   note: 'Tag flips bearish below' }
-    ].map(row => {
-        const d = (spot == null) ? null : spot - row.price;
+    ].concat(
+        (P && Number.isFinite(P.level) && P.level > 0)
+            ? [{ key: 'pivot', label: 'PIVOT', price: P.level, color: 'blue',
+                 note: P.origin || 'near-term pivot', asOf: P.asOf || null }]
+            : []
+    ).map(row => {
+        // Finiteness checked at the READ site, not only at ingest. validStructure()
+        // guards the API boundary, but `levels` can also arrive as a caller-supplied
+        // override, and `spot - undefined` is NaN — which renders as the string
+        // "NaN" rather than as missing. A price that cannot be shown must read as
+        // absent, never as a number-shaped artefact.
+        const ok = Number.isFinite(row.price) && row.price > 0;
+        const d = (spot == null || !ok) ? null : spot - row.price;
         return Object.assign(row, {
+            resolved: ok,
             distance: d,
             distancePct: d == null ? null : (d / row.price) * 100,
-            side: spot == null ? null : (spot >= row.price ? 'ABOVE' : 'BELOW')
+            side: (spot == null || !ok) ? null : (spot >= row.price ? 'ABOVE' : 'BELOW')
         });
     });
+}
+
+/**
+ * Resolve a target key to a renderable rung. THREE states, not two.
+ *
+ * Number.isFinite(v) && v > 0 is checked HERE, at the read site. Neither ?? nor
+ * || distinguishes an absent level from a zero one:
+ *     levels.support ?? fallback   // 0 passes through as a real level
+ *     levels.support || fallback   // 0 silently becomes the fallback
+ * Both are wrong for a price. Test the number, not its truthiness.
+ *
+ * FINITENESS ALONE IS STILL NOT ENOUGH, and this is the whole reason the
+ * tri-state exists. The baked SL_STRUCTURE defaults are finite and positive, so
+ * a finite-only guard reports a months-old anchor as a current level. APEX main
+ * had no ingest at all and would have resolved every rung off the bake; nexus
+ * has the identical hole, merely hidden behind a working fetch — it reappears
+ * the moment /api/spy-logic/structure fails validStructure(), because then
+ * adoptStructure() never runs and `levels` stays the constant.
+ *
+ * A stale-but-confident price is worse than a missing one: "VWAP (no level)"
+ * exists so an unknown level LOOKS unknown, and a July anchor rendered bare
+ * defeats that. struct.stale is the discriminator, and structuralTag() has been
+ * computing it all along from levels.asOf vs levels.staleDays — it simply was
+ * not being read here.
+ *
+ * `resolved` is kept as (state !== 'absent') so existing truthiness checks
+ * survive, but it CANNOT separate current from stale. Branch on `state`.
+ *
+ * @returns {{key,price,state:'current'|'stale'|'absent',resolved,stale,ageDays,label}}
+ */
+export function resolveTarget(key, struct) {
+    const KEY = String(key).toUpperCase();
+    const absent = label => ({
+        key, label: label || (KEY + ' (no level)'), price: null,
+        state: 'absent', resolved: false, stale: false, ageDays: null
+    });
+
+    // No live VWAP feed in nexus. Absent by construction, not by failure —
+    // and never substituted with a number.
+    if (key === 'vwap') return absent('VWAP (no level)');
+
+    const v = struct && struct.levels && struct.levels[key];
+    if (!(Number.isFinite(v) && v > 0)) return absent();
+
+    const stale = !!(struct && struct.stale);
+    const ageDays = (struct && Number.isFinite(struct.ageDays)) ? struct.ageDays : null;
+    return {
+        key,
+        price: v,
+        state: stale ? 'stale' : 'current',
+        resolved: true,
+        stale,
+        ageDays,
+        label: stale && ageDays != null ? KEY + ' ' + v.toFixed(2) + ' (' + ageDays + 'd old)'
+             : stale                    ? KEY + ' ' + v.toFixed(2) + ' (stale)'
+             :                            KEY + ' ' + v.toFixed(2)
+    };
 }
 
 // CommonJS interop for quick node harnesses:

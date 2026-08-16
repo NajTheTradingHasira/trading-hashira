@@ -3129,6 +3129,22 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     }
     return ftds;
   },
+  // Mirrors nexus src/App.jsx detectBases — keep in sync.
+  //
+  // KNOWN DRIFT vs nexus, deliberate and specified, not an oversight. The
+  // 2026-08-15 base-analyzer fix ported changes 1 (base-count decline reset)
+  // and 3 (volume gate at all depths) to this file. Change 2 was scoped to
+  // nexus only, so two divergences stand here on purpose:
+  //
+  //   1. No `tradable` flag. nexus marks a base below the O'Neil 5-week
+  //      minimum `tradable: false` and suppresses its pivot, buy zone and stop
+  //      in the UI. This detector still emits a tradable pivot for a 3-week
+  //      structure.
+  //   2. No 'Base (unclassified)' label. The bare fallback below stays 'Base',
+  //      so a consolidation that matched no shape test still renders as a named
+  //      pattern. nexus renamed it.
+  //
+  // Close these by porting change 2, not by assuming they were missed.
   _detectBases(bars){
     // ── Convert daily to weekly using ISO week alignment (deterministic) ──
     const weekly=[];
@@ -3312,9 +3328,13 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
       const volDryUp=volDryUpCalc(baseWeeks);
       const baseLow=+bL.toFixed(2);
 
-      // ── Shallow pattern volume gate (change #3) ──
-      if(depth<15&&volDryUp/100>=0.75){
-        // Shallow pattern without volume contraction — reject
+      // ── Volume gate, all depths (change #3) ──
+      // Volume must contract in every base, not only shallow ones. Anything
+      // deeper than 15% used to skip this test entirely. 0.90 matches the
+      // ascending-base higher-lows ceiling already used above.
+      const vduCeiling=depth<15?0.75:0.90;
+      if(volDryUp/100>=vduCeiling){
+        // No volume contraction — reject
         wi++;continue;
       }
 
@@ -3376,10 +3396,28 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
       }
     }
     all.sort((a,b)=>a.startWk-b.startWk);
-    // Re-number and add late-stage warnings (change #5)
+    // ── O'Neil base count with decline resets, and late-stage warnings ──
+    // baseNum was a display index (i+1), not an O'Neil count, so the UI's
+    // "Base #" and its early/late-stage verdict were reading array position.
+    // It now chains on calendar proximity like nexus detectBases, and the chain
+    // restarts at 1 when the current base low undercuts the prior base low (the
+    // prior advance failed) or when price fell RESET_DECLINE_PCT or more from
+    // the running peak of the current chain.
+    const RESET_DECLINE_PCT=35;
+    let runCount=0;
+    let chainPeak=0;
     for(let i=0;i<all.length;i++){
-      all[i].baseNum=i+1;
-      if(i+1>=4&&(all[i].type.includes('Ascending')||all[i].type.includes('High Tight Flag'))){
+      const prev=i>0?all[i-1]:null;
+      let chain=false;
+      if(prev&&all[i].startDay-prev.endDay<30){
+        const undercut=all[i].baseLow<prev.baseLow;
+        const declinePct=chainPeak>0?(chainPeak-all[i].baseLow)/chainPeak*100:0;
+        chain=!undercut&&declinePct<RESET_DECLINE_PCT;
+      }
+      runCount=chain?runCount+1:1;
+      chainPeak=chain?Math.max(chainPeak,all[i].pivot):all[i].pivot;
+      all[i].baseNum=runCount;
+      if(runCount>=4&&(all[i].type.includes('Ascending')||all[i].type.includes('High Tight Flag'))){
         all[i].type+=' (late-stage cheat — elevated risk)';
       }
     }

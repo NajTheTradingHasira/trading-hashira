@@ -114,20 +114,80 @@ const SD_NONE = {
 const SECTIONS = ['breadth', 'vix', 'indexPrices', 'stageDistribution', 'cotSummary',
                   'uwMarketTide', 'uwIV', 'uwFlowAlerts', 'uwDarkPool'];
 
+// ── AI-6b fixtures — live shapes, 2026-08-18 ────────────────────────────
+
+// /api/uw/iv-context/{ticker}: already assembled server-side. The client
+// forwards `data` verbatim, so the fixture is the block, not the raw UW rows.
+const IV_OK = { ticker: 'SPY', data: {
+  asOf: '2026-08-17', ivPercentile: 8.8, currentIV: 12.7,
+  impliedMove: 2.4, hv30: 12.4, premiumLabel: 'FAIR',
+} };
+// HV leg down: the label is withheld and the reason travels.
+const IV_NO_LABEL = { ticker: 'SPY', data: {
+  asOf: '2026-08-17', ivPercentile: 8.8, currentIV: 12.7, impliedMove: 2.4,
+  labelUnavailableReason: 'HV feed: TimeoutError: simulated',
+} };
+
+const COT_OK = { report_date: '2026-08-11', source: 'CFTC Socrata API', count: 4, data: [
+  { contract: 'E-Mini S&P 500', category: 'equity', net_long: -255648,
+    wk_change: 61154, pct_oi: -8.1, signal: 'NET SHORT', date: '2026-08-11' },
+  { contract: 'Nasdaq 100', category: 'equity', net_long: -84484,
+    wk_change: -10553, pct_oi: -26.2, signal: 'NET SHORT', date: '2026-08-11' },
+  { contract: '10-Year T-Note', category: 'rates', net_long: -2123063,
+    wk_change: 54185, pct_oi: -31.8, signal: 'NET SHORT', date: '2026-08-11' },
+  { contract: 'British Pound', category: 'fx', net_long: 42722,
+    wk_change: 3683, pct_oi: 15.5, signal: 'NET LONG', date: '2026-08-11' },
+] };
+
+// A 405-row intraday series in production; the last row is the reading.
+// Both premiums are NEGATIVE at today's close — both net sold.
+const TIDE_OK = { data: [
+  { timestamp: '2026-08-17T09:30:00-04:00', net_call_premium: '21128642.0000',
+    net_put_premium: '9384495.0000', net_volume: 21768 },
+  { timestamp: '2026-08-17T16:14:00-04:00', net_call_premium: '-112150890.0000',
+    net_put_premium: '-63746196.0000', net_volume: -635998 },
+] };
+
+const FLOW_OK = { count: 2, data: [
+  { type: 'put', strike: '765', expiry: '2026-09-11', total_premium: '214375',
+    has_sweep: false, total_ask_side_prem: '54375', total_bid_side_prem: '137500',
+    iv_end: '0.128327024813679', open_interest: 1197 },
+  { type: 'call', strike: '780', expiry: '2026-08-18', total_premium: '98000',
+    has_sweep: true, total_ask_side_prem: '90000', total_bid_side_prem: '8000',
+    iv_end: '0.0806322320360911', open_interest: 5875 },
+] };
+
+// `premium` is the notional (price x size), verified against the feed.
+const DP_OK = { ticker: 'SPY', data: [
+  { ticker: 'SPY', price: '772.7', size: 800, premium: '618160.0' },
+  { ticker: 'SPY', price: '772.67', size: 647107, premium: '500000165.69' },
+  { ticker: 'SPY', price: '772.67', size: 580000, premium: '448148600.00' },
+  { ticker: 'SPY', price: '772.4338', size: 400000, premium: '308973520.0000' },
+  { ticker: 'SPY', price: '772.5', size: 100000, premium: '77250000.0' },
+  { ticker: 'SPY', price: '772.4', size: 50000, premium: '38620000.0' },
+  { ticker: 'SPY', price: '772.3', size: 1000, premium: '772300.0' },
+] };
+
 /** Run the real block against stubbed fetches. `'throw'` simulates an outage. */
-async function buildCtx({ bd, px, sd, watchlist = [{ ticker: 'AAPL' }, { ticker: 'MSFT' }],
-                          onPost } = {}) {
+async function buildCtx({ bd, px, sd, iv = IV_OK, cot = COT_OK, tide = TIDE_OK,
+                          flow = FLOW_OK, dp = DP_OK,
+                          watchlist = [{ ticker: 'AAPL' }, { ticker: 'MSFT' }],
+                          ticker = 'SPY', onPost, onFetch } = {}) {
+  const route = (val, label) => {
+    if (val === 'throw') throw new Error('500 Internal Server Error');
+    return val;
+  };
   const NX = {
     _wlGetData: () => ({ focus: watchlist }),
     async apiFetch(p) {
-      if (p.startsWith('/api/market-breadth')) {
-        if (bd === 'throw') throw new Error('500 Internal Server Error');
-        return bd;
-      }
-      if (p.startsWith('/api/prices')) {
-        if (px === 'throw') throw new Error('500 Internal Server Error');
-        return px;
-      }
+      if (onFetch) onFetch(p);
+      if (p.startsWith('/api/market-breadth')) return route(bd);
+      if (p.startsWith('/api/prices')) return route(px);
+      if (p.startsWith('/api/uw/iv-context/')) return route(iv);
+      if (p.startsWith('/api/cot/v2')) return route(cot);
+      if (p.startsWith('/api/uw/market-tide')) return route(tide);
+      if (p.startsWith('/api/uw/flow-alerts')) return route(flow);
+      if (p.startsWith('/api/uw/darkpool/')) return route(dp);
       throw new Error('unexpected GET ' + p);
     },
     async apiPost(p, body) {
@@ -136,8 +196,10 @@ async function buildCtx({ bd, px, sd, watchlist = [{ ticker: 'AAPL' }, { ticker:
       return sd;
     },
   };
-  const fn = new Function('NX', `return (async()=>{ ${BLOCK} ; return ctx; })()`);
-  return await fn(NX);
+  // `ticker` comes from runAIAnalysis's own scope, above the sliced block.
+  const fn = new Function('NX', 'ticker',
+    `return (async()=>{ ${BLOCK} ; return ctx; })()`);
+  return await fn(NX, ticker);
 }
 
 /** What actually reaches the backend: undefined keys do not survive. */
@@ -293,4 +355,127 @@ test('watchlist tickers are de-duplicated across categories', async () => {
     onPost: (_p, body) => { sent = body.tickers; },
   });
   assert.deepEqual(sent, ['AAPL', 'MSFT']);
+});
+
+// ── AI-6b: the five sections that were stubbed empty ────────────────────
+
+test('AI-6b: the IV block is forwarded verbatim, not recomputed', async () => {
+  const ctx = await wire({ bd: BD_OK, px: PX_OK, sd: SD_OK });
+  // premiumLabel, the x100 scaling, the days:30 pick and the staleness cut all
+  // happen server-side beside the IV feed. A second copy here would drift.
+  assert.deepEqual(ctx.uwIV, {
+    asOf: '2026-08-17', ivPercentile: 8.8, currentIV: 12.7,
+    impliedMove: 2.4, hv30: 12.4, premiumLabel: 'FAIR',
+  });
+});
+
+test('AI-6b: a withheld label travels with its reason, and is never invented', async () => {
+  const ctx = await wire({ bd: BD_OK, px: PX_OK, sd: SD_OK, iv: IV_NO_LABEL });
+  assert.ok(!('premiumLabel' in ctx.uwIV));
+  assert.equal(ctx.uwIV.labelUnavailableReason, 'HV feed: TimeoutError: simulated');
+  assert.equal(ctx.uwIV.currentIV, 12.7);      // the surviving legs still travel
+});
+
+test('AI-6b: the IV request is for the analysed ticker', async () => {
+  const seen = [];
+  await buildCtx({ bd: 'throw', px: 'throw', sd: 'throw', ticker: 'QQQ',
+                   onFetch: (p) => seen.push(p) });
+  assert.ok(seen.includes('/api/uw/iv-context/QQQ'));
+  assert.ok(seen.includes('/api/uw/darkpool/QQQ'));
+  assert.ok(seen.some((p) => p.startsWith('/api/uw/flow-alerts?ticker=QQQ')));
+});
+
+test('AI-6b: COT is two renames, filtered to equity', async () => {
+  const { cotSummary } = await wire({ bd: BD_OK, px: PX_OK, sd: SD_OK });
+  assert.equal(cotSummary.length, 2);          // rates and fx dropped
+  assert.deepEqual(cotSummary[0], {
+    contract: 'E-Mini S&P 500', netPosition: -255648,
+    weeklyChange: 61154, signal: 'NET SHORT',
+  });
+  assert.ok(!cotSummary.some((r) => r.contract === 'British Pound'));
+});
+
+test('AI-6b: market tide reads the LAST row, not the first', async () => {
+  const { uwMarketTide } = await wire({ bd: BD_OK, px: PX_OK, sd: SD_OK });
+  // The 09:30 row is +21.1M / +9.4M; the close is negative on both legs.
+  assert.equal(uwMarketTide.netCallPremium, -112150890);
+  assert.equal(uwMarketTide.netPutPremium, -63746196);
+});
+
+test('AI-6b: `dominant` is never derived client-side', async () => {
+  const { uwMarketTide } = await wire({ bd: BD_OK, px: PX_OK, sd: SD_OK });
+  // Both premiums are negative — both net SOLD. A naive
+  // net_call > net_put comparison would report "CALLS", describing call
+  // BUYING dominance on a day of call selling. Absent renders MISSING instead.
+  assert.ok(!('dominant' in uwMarketTide));
+});
+
+test('AI-6b: an empty tide series claims nothing', async () => {
+  const ctx = await wire({ bd: BD_OK, px: PX_OK, sd: SD_OK, tide: { data: [] } });
+  assert.deepEqual(ctx.uwMarketTide, {});
+});
+
+test('AI-6b: flow alerts map raw fields, and sentiment is not invented', async () => {
+  const { uwFlowAlerts } = await wire({ bd: BD_OK, px: PX_OK, sd: SD_OK });
+  assert.deepEqual(uwFlowAlerts[0], {
+    type: 'put', strike: 765, expiry: '2026-09-11',
+    premium: 214375, has_sweep: false,
+  });
+  // Side x option type is a judgment rule, not a mapping: a put sold into the
+  // bid is not the posture a put bought at the ask is.
+  assert.ok(!uwFlowAlerts.some((f) => 'sentiment' in f));
+});
+
+test('AI-6b: has_sweep false is a real value, not an absence', async () => {
+  const { uwFlowAlerts } = await wire({ bd: BD_OK, px: PX_OK, sd: SD_OK });
+  assert.equal(uwFlowAlerts[0].has_sweep, false);
+  assert.equal(uwFlowAlerts[1].has_sweep, true);
+});
+
+test('AI-6b: dark pool is the top 5 by notional, largest first', async () => {
+  const { uwDarkPool } = await wire({ bd: BD_OK, px: PX_OK, sd: SD_OK });
+  assert.equal(uwDarkPool.length, 5);          // 7 supplied
+  assert.deepEqual(uwDarkPool.map((r) => r.notional),
+    [500000165.69, 448148600, 308973520, 77250000, 38620000]);
+  assert.ok(!uwDarkPool.some((r) => r.notional === 772300));   // smallest dropped
+});
+
+test('AI-6b: dark pool maps premium -> notional and parses the strings', async () => {
+  const { uwDarkPool } = await wire({ bd: BD_OK, px: PX_OK, sd: SD_OK });
+  assert.deepEqual(uwDarkPool[0],
+    { ticker: 'SPY', price: 772.67, size: 647107, notional: 500000165.69 });
+});
+
+test('AI-6b: an unparseable notional sorts last rather than first', async () => {
+  const dp = { data: [
+    { ticker: 'SPY', price: '1', size: 1, premium: 'n/a' },
+    { ticker: 'SPY', price: '2', size: 2, premium: '5000000' },
+  ] };
+  const { uwDarkPool } = await wire({ bd: BD_OK, px: PX_OK, sd: SD_OK, dp });
+  assert.equal(uwDarkPool[0].notional, 5000000);
+  assert.ok(!('notional' in uwDarkPool[1]));   // absent, not zeroed
+});
+
+test('AI-6b: each new fetch fails independently of the others', async () => {
+  const ctx = await wire({ bd: BD_OK, px: PX_OK, sd: SD_OK,
+    iv: 'throw', cot: 'throw', tide: 'throw', flow: 'throw', dp: 'throw' });
+  for (const k of ['uwIV', 'uwMarketTide']) assert.deepEqual(ctx[k], {});
+  for (const k of ['cotSummary', 'uwFlowAlerts', 'uwDarkPool']) assert.deepEqual(ctx[k], []);
+  assert.equal(ctx.breadth.trin, 0.83);        // unaffected
+});
+
+test('AI-6b: a fully healthy payload populates all nine sections', async () => {
+  const ctx = await wire({ bd: BD_OK, px: PX_OK, sd: SD_OK });
+  for (const k of SECTIONS) {
+    const v = ctx[k];
+    const empty = Array.isArray(v) ? v.length === 0 : Object.keys(v).length === 0;
+    assert.ok(!empty, `section still empty: ${k}`);
+  }
+});
+
+test('AI-6b: total outage still assigns every section, fabricating nothing', async () => {
+  const ctx = await wire({ bd: 'throw', px: 'throw', sd: 'throw',
+    iv: 'throw', cot: 'throw', tide: 'throw', flow: 'throw', dp: 'throw' });
+  for (const k of SECTIONS) assert.ok(k in ctx, `missing section key: ${k}`);
+  assert.equal(JSON.stringify(ctx).includes('undefined'), false);
 });

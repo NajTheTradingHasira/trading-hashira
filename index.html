@@ -4603,12 +4603,89 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     el.innerHTML=`<div class="loading">Running 0DTE analysis for ${ticker}… (calls Weinstein classifier + Claude with web search — may take 30-60s)</div>`;
     st.innerHTML='<span style="color:var(--amber)">⏳ Calling classifier + Claude…</span>';
     try{
-      // Build index_context from dashboard data if available
-      const ctx={};
-      try{
-        const bd=await NX.apiFetch('/api/market-breadth').catch(()=>null);
-        if(bd)ctx.breadth={advDecl:bd.advancing+'/'+bd.declining,newHighsLows:bd.new_highs+'/'+bd.new_lows,mcclellan:bd.mcclellan,trin:bd.trin};
-      }catch{}
+      // ── Build index_context from live terminal data (AI-6a, nexus #20) ──
+      // Three rules here, each closing a distinct silent failure:
+      //  1. EVERY section key is assigned unconditionally — {} or [] when a
+      //     fetch fails or a source is not wired yet. ai.py's AI-7 machinery
+      //     then renders a MISSING header for each. An empty ctx would trip
+      //     _build_index_user_prompt's early return, which made a FAILED
+      //     payload quieter than a successful one.
+      //  2. Presence is decided by the keys we actually read, never by
+      //     truthiness. /api/market-breadth answers HTTP 200 with
+      //     {"error": …} when both its sources fail, and that dict is truthy —
+      //     which is how advDecl used to reach the model as the string
+      //     "undefined/undefined", a fabricated value rather than a gap.
+      //  3. A value we cannot build is left undefined, never stringified.
+      //     JSON.stringify drops undefined keys, so it arrives at the backend
+      //     as absent and renders MISSING with a DATA INTEGRITY entry naming it.
+      const ctx={
+        breadth:{},vix:{},indexPrices:{},stageDistribution:{},
+        // Not wired yet — AI-6b. Rendered MISSING, which is the honest state.
+        cotSummary:[],uwMarketTide:{},uwIV:{},uwFlowAlerts:[],uwDarkPool:[],
+      };
+      // Real value present under `k`? Rejects the {"error":…} envelope outright.
+      const _has=(o,k)=>!!o&&typeof o==='object'&&o.error===undefined&&o[k]!==undefined&&o[k]!==null;
+      const _val=(o,k)=>_has(o,k)?o[k]:undefined;
+      // "a/b" only when BOTH halves are real — never "undefined/undefined".
+      const _pair=(a,b)=>(a===undefined||a===null||b===undefined||b===null)?undefined:`${a}/${b}`;
+
+      // /api/research/stage-distribution caps at 100 tickers (ScanRequest);
+      // slice here rather than let the model boundary 422 the whole call.
+      const wlTickers=[...new Set(Object.values(NX._wlGetData()||{}).flat()
+        .map(i=>i&&i.ticker).filter(Boolean))].slice(0,100);
+
+      const [bdR,pxR,sdR]=await Promise.allSettled([
+        NX.apiFetch('/api/market-breadth'),
+        NX.apiFetch('/api/prices?symbols=SPY,QQQ,IWM,%5EVIX'),
+        wlTickers.length
+          ? NX.apiPost('/api/research/stage-distribution',{tickers:wlTickers})
+          : Promise.reject(new Error('watchlist empty')),
+      ]);
+
+      // Breadth — all 8 sub-keys ai.py reads (was 4, one of them misnamed).
+      if(bdR.status==='fulfilled'){
+        const bd=bdR.value;
+        ctx.breadth={
+          advDecl:_pair(_val(bd,'advancing'),_val(bd,'declining')),
+          advDeclRatio:_val(bd,'ad_ratio'),
+          newHighsLows:_pair(_val(bd,'new_highs'),_val(bd,'new_lows')),
+          trin:_val(bd,'trin'),
+          // NOT bd.mcclellan — the endpoint's key is mcclellan_oscillator, so
+          // the old mapping sent undefined and this field was never populated.
+          mcclellan:_val(bd,'mcclellan_oscillator'),
+          summation:_val(bd,'summation_index'),
+          aboveMA:_val(bd,'ma_breadth'),
+          sectorBreadth:_val(bd,'sector_breadth'),
+        };
+      }
+
+      // VIX + index prices come from one /api/prices call.
+      if(pxR.status==='fulfilled'){
+        const px=_val(pxR.value,'prices')||{};
+        const vx=px['^VIX'];
+        // ai.py reads vix.dayChange; /api/prices calls the same number dayPct.
+        if(_has(vx,'price')||_has(vx,'dayPct'))
+          ctx.vix={price:_val(vx,'price'),dayChange:_val(vx,'dayPct')};
+        const ip={};
+        for(const sym of ['SPY','QQQ','IWM']){
+          const d=px[sym];
+          if(_has(d,'price')||_has(d,'dayPct'))
+            ip[sym]={price:_val(d,'price'),dayPct:_val(d,'dayPct')};
+        }
+        ctx.indexPrices=ip;
+      }
+
+      // Watchlist stage distribution + the HOSTILE verdict. The >=60% call is
+      // computed server-side beside the classifier — forwarded here, never
+      // recomputed, so the two cannot drift.
+      if(sdR.status==='fulfilled'&&_has(sdR.value,'total')){
+        const sd=sdR.value;
+        ctx.stageDistribution={
+          total:sd.total,s1:sd.s1,s2:sd.s2,s3:sd.s3,s4:sd.s4,
+          pctStage2:sd.pctStage2,pctStage4:sd.pctStage4,
+        };
+        ctx.hostileEnvironment=sd.hostileEnvironment;
+      }
 
       const d=await NX.apiPost('/api/ai/commentary/'+ticker,{index_context:ctx});
       const now=new Date();

@@ -4623,23 +4623,44 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
         // Not wired yet — AI-6b. Rendered MISSING, which is the honest state.
         cotSummary:[],uwMarketTide:{},uwIV:{},uwFlowAlerts:[],uwDarkPool:[],
       };
+      // AI-6b wires the five that were stubbed above. Three fields the backend
+      // reads have NO source field and are deliberately NOT invented here:
+      // uwIV.premiumLabel is computed server-side beside the IV feed (one copy
+      // of the rule), while uwMarketTide.dominant and uwFlowAlerts[].sentiment
+      // are judgment rules awaiting their own proposal-first phase. They are
+      // sent absent, which renders MISSING and states the gap honestly.
       // Real value present under `k`? Rejects the {"error":…} envelope outright.
       const _has=(o,k)=>!!o&&typeof o==='object'&&o.error===undefined&&o[k]!==undefined&&o[k]!==null;
       const _val=(o,k)=>_has(o,k)?o[k]:undefined;
       // "a/b" only when BOTH halves are real — never "undefined/undefined".
       const _pair=(a,b)=>(a===undefined||a===null||b===undefined||b===null)?undefined:`${a}/${b}`;
+      // The UW feeds send numbers as strings. Absent or unparseable -> undefined,
+      // never 0 — a genuine zero premium is a reading, not a gap, and the two
+      // must stay distinguishable. Number('') is 0, hence the explicit check.
+      const _num=v=>{
+        if(v===undefined||v===null||v==='')return undefined;
+        const n=Number(v);
+        return Number.isFinite(n)?n:undefined;
+      };
+      // Sort key that puts unranked rows last instead of producing NaN.
+      const _rank=v=>(typeof v==='number'&&Number.isFinite(v))?v:-Infinity;
 
       // /api/research/stage-distribution caps at 100 tickers (ScanRequest);
       // slice here rather than let the model boundary 422 the whole call.
       const wlTickers=[...new Set(Object.values(NX._wlGetData()||{}).flat()
         .map(i=>i&&i.ticker).filter(Boolean))].slice(0,100);
 
-      const [bdR,pxR,sdR]=await Promise.allSettled([
+      const [bdR,pxR,sdR,ivR,cotR,tideR,flowR,dpR]=await Promise.allSettled([
         NX.apiFetch('/api/market-breadth'),
         NX.apiFetch('/api/prices?symbols=SPY,QQQ,IWM,%5EVIX'),
         wlTickers.length
           ? NX.apiPost('/api/research/stage-distribution',{tickers:wlTickers})
           : Promise.reject(new Error('watchlist empty')),
+        NX.apiFetch('/api/uw/iv-context/'+ticker),
+        NX.apiFetch('/api/cot/v2'),
+        NX.apiFetch('/api/uw/market-tide'),
+        NX.apiFetch('/api/uw/flow-alerts?ticker='+ticker+'&limit=20'),
+        NX.apiFetch('/api/uw/darkpool/'+ticker),
       ]);
 
       // Breadth — all 8 sub-keys ai.py reads (was 4, one of them misnamed).
@@ -4685,6 +4706,79 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
           pctStage2:sd.pctStage2,pctStage4:sd.pctStage4,
         };
         ctx.hostileEnvironment=sd.hostileEnvironment;
+      }
+
+      // IV context — forwarded verbatim. premiumLabel, the x100 scaling, the
+      // days:30 row pick and the staleness cut all happen server-side beside
+      // the IV feed; recomputing any of it here would be a second copy of a
+      // rule that has to stay single.
+      if(ivR.status==='fulfilled'){
+        const iv=_val(ivR.value,'data');
+        if(iv&&typeof iv==='object')ctx.uwIV=iv;
+      }
+
+      // COT — two renames, no derivation.
+      // NOTE: net_long is NOT legacy Non-Commercial. cot_router builds it from
+      // leveraged money (TFF) and managed money (Disaggregated) — the large-spec
+      // PROXY those reports carry, as its own comment says. Wired as-is rather
+      // than relabelled; see the PR for the open question.
+      if(cotR.status==='fulfilled'){
+        const rows=_val(cotR.value,'data');
+        if(Array.isArray(rows))ctx.cotSummary=rows
+          .filter(r=>r&&r.category==='equity')   // index gameplan: equity only
+          .map(r=>({
+            contract:_val(r,'contract'),
+            netPosition:_val(r,'net_long'),
+            weeklyChange:_val(r,'wk_change'),
+            signal:_val(r,'signal'),
+          }));
+      }
+
+      // Market tide — the feed is a 405-row intraday series, not a snapshot, so
+      // the LAST row is the reading. `dominant` is not sent: no such field
+      // exists and deriving it is a judgment rule, not a mapping. At today's
+      // close both premiums are negative (both net SOLD), where a naive
+      // net_call>net_put comparison would report call-buying dominance.
+      if(tideR.status==='fulfilled'){
+        const rows=_val(tideR.value,'data');
+        if(Array.isArray(rows)&&rows.length){
+          const last=rows[rows.length-1];
+          ctx.uwMarketTide={
+            netCallPremium:_num(_val(last,'net_call_premium')),
+            netPutPremium:_num(_val(last,'net_put_premium')),
+          };
+        }
+      }
+
+      // Flow alerts — raw side/type/premium only. `sentiment` is not derived:
+      // it depends on side X option type (a put sold into the bid is not the
+      // same posture as a put bought at the ask) and is its own proposal phase.
+      if(flowR.status==='fulfilled'){
+        const rows=_val(flowR.value,'data');
+        if(Array.isArray(rows))ctx.uwFlowAlerts=rows.slice(0,10).map(r=>({
+          type:_val(r,'type'),
+          strike:_num(_val(r,'strike')),
+          expiry:_val(r,'expiry'),
+          premium:_num(_val(r,'total_premium')),
+          has_sweep:_val(r,'has_sweep'),
+        }));
+      }
+
+      // Dark pool — top 5 by notional. The feed returns 500 rows and ai.py's
+      // header claims "Top 5 by Notional"; the backend now enforces that too,
+      // but sending 500 rows over the wire to be discarded is pointless.
+      // `premium` IS the notional (price x size), verified against the feed.
+      if(dpR.status==='fulfilled'){
+        const rows=_val(dpR.value,'data');
+        if(Array.isArray(rows))ctx.uwDarkPool=rows
+          .map(r=>({
+            ticker:_val(r,'ticker'),
+            price:_num(_val(r,'price')),
+            size:_num(_val(r,'size')),
+            notional:_num(_val(r,'premium')),
+          }))
+          .sort((a,b)=>_rank(b.notional)-_rank(a.notional))
+          .slice(0,5);
       }
 
       const d=await NX.apiPost('/api/ai/commentary/'+ticker,{index_context:ctx});

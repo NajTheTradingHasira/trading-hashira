@@ -3825,6 +3825,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
       if(dpVol>55)alerts.push('SPIKE');
       if(stages[i]&&(stages[i]==='2A'||stages[i]==='1B')&&sent>50)alerts.push('SQ SETUP');
       return{ticker:tk,sector:sectorMap[tk],price,dayPct,dpVol,shortPct,sent,whales,blocks,notional,score,alerts,stage:stages[i]||'2A',
+        confidence:'MOCK',qualified:true,lastPrintAt:null,largestPrint:0,
         dpSup:+(price*(.94+r()*.04)).toFixed(2),dpRes:price*1.05+r()*price*.08>0?+(price*(1.02+r()*.06)).toFixed(2):null,
         strongLevels:Math.floor(1+r()*5)};
     }).sort((a,b)=>b.score-a.score);
@@ -3873,24 +3874,35 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
       }
 
       NX._dpLastUpdated=d.last_updated||'';
+      NX._dpMeta={
+        regime:d.regime||null, avgSent:d.avg_sentiment??null,
+        dataAgeSec:d.data_age_sec??null, stale:!!d.stale,
+        newestPrintAt:d.newest_print_at||null, qualified:d.qualified_names??null,
+        buyNot:d.buy_notional||0, sellNot:d.sell_notional||0,
+      };
       const tickers=d.tickers||[];
 
-      // Map live API → _dpScored format
+      // Map live API → _dpScored format.
+      // null stays null → renders as N/A. Never coerce missing to 0 or 50.
       NX._dpScored=tickers.map(t=>({
         ticker:t.ticker,
         sector:t.sector||'Unknown',
-        price:0, dayPct:t.pct_change||0,
-        dpVol:t.dp_vol_pct||0,
-        shortPct:t.short_pct||0,
-        sent:t.sentiment||50,
+        price:0, dayPct:t.pct_change??null,
+        dpVol:t.dp_vol_pct??null,
+        shortPct:t.short_pct??null,
+        sent:t.sentiment??null,
         whales:t.whales||0,
         blocks:t.blocks||0,
         notional:t.notional>=1e6?+((t.notional/1e6).toFixed(1)):+((t.notional/1e3).toFixed(0))/1000,
+        largestPrint:t.largest_print||0,
         score:t.score||0,
         alerts:t.alerts||[],
+        confidence:t.confidence||'LOW',
+        qualified:!!t.qualified,
+        lastPrintAt:t.last_print_at||null,
         stage:t.stage||'—',
         dpSup:0, dpRes:null, strongLevels:0,
-      })).sort((a,b)=>b.score-a.score);
+      })).sort((a,b)=>b.score-a.score||b.notional-a.notional);
 
       // Build feed from live data (for Live Feed tab — basic representation)
       NX._dpData=tickers.map((t,i)=>({
@@ -4087,14 +4099,25 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
   // ─── FLOW MONITOR TAB ───
   _renderDPMonitor(el){
     const scored=NX._dpScored;const af=NX._dpAlertFilt;
+    const meta=NX._dpLive?(NX._dpMeta||{}):{};
     const accum=scored.filter(s=>s.alerts.includes('ACCUM')).length;
     const distrib=scored.filter(s=>s.alerts.includes('DIST')).length;
     const wh=scored.filter(s=>s.alerts.includes('WHALE')).length;
-    const avgSent=scored.length?(scored.reduce((s,d)=>s+d.sent,0)/scored.length).toFixed(1):'0';
-    const regime=+avgSent>=55?'NET BUYING BIAS':+avgSent<=45?'NET SELLING BIAS':'NEUTRAL FLOW';
-    const regClr=+avgSent>=55?'var(--green)':+avgSent<=45?'var(--red)':'var(--amber)';
+    // Live: backend supplies notional-weighted avg over QUALIFIED names. Mock: simple mean.
+    const sentVals=scored.filter(d=>d.sent!=null);
+    const avgSentNum=meta.avgSent!=null?+meta.avgSent:(sentVals.length?sentVals.reduce((s,d)=>s+d.sent,0)/sentVals.length:null);
+    const avgSent=avgSentNum==null?'N/A':avgSentNum.toFixed(1)+'%';
+    const regime=meta.regime||(avgSentNum==null?'INSUFFICIENT DATA':avgSentNum>=55?'NET BUYING BIAS':avgSentNum<=45?'NET SELLING BIAS':'NEUTRAL FLOW');
+    const regClr=avgSentNum==null?'var(--text-dim)':avgSentNum>=55?'var(--green)':avgSentNum<=45?'var(--red)':'var(--amber)';
     const alertNames=scored.filter(s=>s.alerts.length>0);
     const now=new Date();const ts=now.toLocaleTimeString('en-US',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    // Data age (from newest print, not from fetch time)
+    const ageMin=meta.dataAgeSec!=null?Math.round(meta.dataAgeSec/60):null;
+    const ageStr=ageMin==null?'':ageMin<60?ageMin+'m old':(ageMin/60).toFixed(1)+'h old';
+    const stale=!!meta.stale;
+    const fmtPct=v=>v==null?'<span style="color:var(--text-dim)">N/A</span>':v+'%';
+    const minsAgo=iso=>{if(!iso)return'—';const m=Math.max(0,Math.round((Date.now()-new Date(iso).getTime())/60000));return m<60?m+'m ago':(m/60).toFixed(1)+'h ago';};
+    const confBadge=c=>c==='HIGH'?'<span class="badge b-green" style="font-size:8px">HIGH</span>':c==='MED'?'<span class="badge b-amber" style="font-size:8px">MED</span>':'<span class="badge" style="font-size:8px;background:var(--bg4);color:var(--text-dim)">LOW</span>';
 
     let filtered=[...scored];
     if(af==='ALERTS')filtered=filtered.filter(s=>s.alerts.length>0);
@@ -4105,18 +4128,18 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     else if(af==='SQ SETUP')filtered=filtered.filter(s=>s.alerts.includes('SQ SETUP'));
 
     el.innerHTML=`
-    <div class="card" style="border-color:${regClr}30">
+    <div class="card" style="border-color:${stale?'var(--amber)':regClr}30;${stale?'opacity:.75':''}">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
         <div>
-          <div style="font-size:10px;color:var(--text-dim)">DARK POOL REGIME · ${scored.length} NAMES</div>
-          <div style="font-size:24px;font-weight:700;color:${regClr};letter-spacing:2px;margin-top:4px">${regime}</div>
-          <div style="font-size:10px;color:${NX._dpLive?'var(--green)':'var(--text-dim)'};margin-top:2px">${NX._dpLive?'● LIVE':'○ MOCK'} · Last: ${NX._dpLive&&NX._dpLastUpdated?new Date(NX._dpLastUpdated).toLocaleTimeString('en-US',{hour12:false}):ts}</div>
+          <div style="font-size:10px;color:var(--text-dim)">DARK POOL REGIME · ${scored.length} NAMES${meta.qualified!=null?' · '+meta.qualified+' QUALIFIED (≥10 blocks, ≥$1M)':''}</div>
+          <div style="font-size:24px;font-weight:700;color:${regClr};letter-spacing:2px;margin-top:4px">${regime}${stale?' <span class="badge b-amber" style="font-size:9px;vertical-align:middle">STALE · '+ageStr+'</span>':''}</div>
+          <div style="font-size:10px;color:${NX._dpLive?'var(--green)':'var(--text-dim)'};margin-top:2px">${NX._dpLive?'● LIVE':'○ MOCK'} · Fetched: ${NX._dpLive&&NX._dpLastUpdated?new Date(NX._dpLastUpdated).toLocaleTimeString('en-US',{hour12:false}):ts}${meta.newestPrintAt?' · Newest print: '+new Date(meta.newestPrintAt).toLocaleTimeString('en-US',{hour12:false})+(ageStr?' ('+ageStr+')':''):''}</div>
         </div>
         <div style="display:flex;gap:20px;text-align:center">
           <div><div style="font-size:10px;color:var(--text-dim)">ACCUM</div><div style="font-size:20px;font-weight:700;color:var(--green)">${accum}</div></div>
           <div><div style="font-size:10px;color:var(--text-dim)">DISTRIB</div><div style="font-size:20px;font-weight:700;color:var(--red)">${distrib}</div></div>
           <div><div style="font-size:10px;color:var(--text-dim)">WHALES</div><div style="font-size:20px;font-weight:700;color:var(--purple)">${wh}</div></div>
-          <div><div style="font-size:10px;color:var(--text-dim)">AVG SENT</div><div style="font-size:20px;font-weight:700;color:${regClr}">${avgSent}%</div></div>
+          <div><div style="font-size:10px;color:var(--text-dim)">AVG SENT ($-WTD)</div><div style="font-size:20px;font-weight:700;color:${regClr}">${avgSent}</div></div>
         </div>
       </div>
     </div>
@@ -4131,13 +4154,13 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
             <div style="font-size:16px;font-weight:700;color:${aClr}">${s.ticker}</div>
             <span class="badge ${alertBg}" style="font-size:8px;padding:2px 6px;white-space:nowrap">${topAlert}</span>
           </div>
-          <div style="font-size:10px;color:var(--text-dim);margin-top:2px">${s.sector} · ${Math.floor(20+Math.random()*25)}m ago</div>
+          <div style="font-size:10px;color:var(--text-dim);margin-top:2px">${s.sector} · ${NX._dpLive?minsAgo(s.lastPrintAt):'—'} · ${confBadge(s.confidence)}</div>
           <div style="display:flex;gap:10px;margin-top:8px;font-size:11px">
-            <div><span style="color:var(--text-dim)">SENT</span> <strong style="color:${s.sent>50?'var(--green)':'var(--red)'}">${s.sent}%</strong></div>
-            <div><span style="color:var(--text-dim)">DP VOL</span> <strong>${s.dpVol}%</strong></div>
+            <div><span style="color:var(--text-dim)">SENT</span> <strong style="color:${s.sent==null?'var(--text-dim)':s.sent>50?'var(--green)':'var(--red)'}">${fmtPct(s.sent)}</strong></div>
+            <div><span style="color:var(--text-dim)">DP VOL</span> <strong>${fmtPct(s.dpVol)}</strong></div>
             <div><span style="color:var(--text-dim)">SCORE</span> <strong style="color:var(--accent)">${s.score}</strong></div>
           </div>
-          <div style="font-size:10px;color:var(--text-muted);margin-top:4px">${s.stage} — ${s.sent>55?'Stealth accum':s.sent<40?'Inst. exit':'Accumulation'}</div>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:4px">${s.stage} — ${s.blocks} blocks · $${s.notional}M${s.sent==null?'':s.sent>55?' · Accum':s.sent<40?' · Inst. exit':' · Mixed'}</div>
         </div>`;
       }).join('')}
     </div>
@@ -4154,19 +4177,22 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
       <span style="font-size:9px;color:${NX._dpLive?'var(--green)':'var(--text-dim)'}">${NX._dpLive?'● LIVE':'○ MOCK'}</span>
     </div>
     <div class="card" style="padding:0"><div style="overflow-x:auto;max-height:500px;overflow-y:auto"><table>
-    <thead><tr><th>SCORE ↓</th><th>TICKER</th><th>SECTOR</th><th>DP VOL%</th><th>SHORT%</th><th>SENT</th><th>WHALES</th><th>BLOCKS</th><th>NOTIONAL</th><th>ALERTS</th><th>STAGE</th></tr></thead>
+    <thead><tr><th>SCORE ↓</th><th>TICKER</th><th>SECTOR</th><th>DP VOL%</th><th>SHORT%</th><th>SENT ($-WTD)</th><th>WHALES</th><th>BLOCKS</th><th>NOTIONAL</th><th>CONF</th><th>LAST PRINT</th><th>ALERTS</th><th>STAGE</th></tr></thead>
     <tbody>${filtered.map(s=>{
       const scoreClr=s.score>=85?'var(--green)':s.score>=70?'var(--accent)':'var(--amber)';
-      return `<tr>
+      const dim=NX._dpLive&&!s.qualified?'opacity:.55':'';
+      return `<tr style="${dim}" title="${NX._dpLive&&!s.qualified?'Below gate: needs ≥10 blocks and ≥$1M notional for a tag':''}">
         <td style="font-weight:600"><span style="display:inline-block;width:40px;height:6px;border-radius:3px;background:${scoreClr};margin-right:6px"></span>${s.score}</td>
-        <td><strong>${s.ticker}</strong><br/><span style="font-size:10px;color:${s.dayPct>=0?'var(--green)':'var(--red)'}">${s.dayPct>=0?'+':''}${s.dayPct}%</span></td>
+        <td><strong>${s.ticker}</strong><br/><span style="font-size:10px;color:${s.dayPct==null?'var(--text-dim)':s.dayPct>=0?'var(--green)':'var(--red)'}">${s.dayPct==null?'N/A':(s.dayPct>=0?'+':'')+s.dayPct+'%'}</span></td>
         <td style="color:var(--text-dim);font-size:10px">${s.sector}</td>
-        <td>${s.dpVol!=null?s.dpVol+'%':'—'}</td>
-        <td>${s.shortPct!=null?s.shortPct+'%':'—'}</td>
-        <td style="color:${s.sent>55?'var(--green)':s.sent<40?'var(--red)':'var(--amber)'}"><strong>${s.sent}%</strong></td>
+        <td>${fmtPct(s.dpVol)}</td>
+        <td>${fmtPct(s.shortPct)}</td>
+        <td style="color:${s.sent==null?'var(--text-dim)':s.sent>55?'var(--green)':s.sent<40?'var(--red)':'var(--amber)'}"><strong>${fmtPct(s.sent)}</strong></td>
         <td>${s.whales}</td>
         <td>${s.blocks}</td>
         <td>$${s.notional}M</td>
+        <td>${NX._dpLive?confBadge(s.confidence):'—'}</td>
+        <td style="font-size:10px;color:var(--text-dim)">${NX._dpLive?minsAgo(s.lastPrintAt):'—'}</td>
         <td style="max-width:200px">${s.alerts.map(a=>{const c=a.includes('WHALE')?'b-purple':a.includes('ACCUM')?'b-green':a.includes('DIST')?'b-red':a.includes('SPIKE')?'b-amber':'b-accent';return`<span class="badge ${c}" style="font-size:8px;margin:1px">${a}</span>`}).join(' ')}</td>
         <td style="color:var(--text-dim)">${s.stage}</td>
       </tr>`;
@@ -4205,8 +4231,8 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
         </div>
         <div class="dp-expand" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
           <div class="grid g4">
-            <div class="m-card"><div class="label">DP VOLUME</div><div class="value neutral">${s.dpVol}%</div></div>
-            <div class="m-card"><div class="label">SENT</div><div class="value ${s.sent>50?'up':'down'}">${s.sent}%</div></div>
+            <div class="m-card"><div class="label">DP VOLUME</div><div class="value neutral">${s.dpVol!=null?s.dpVol+'%':'N/A'}</div></div>
+            <div class="m-card"><div class="label">SENT ($-WTD)</div><div class="value ${s.sent==null?'neutral':s.sent>50?'up':'down'}">${s.sent!=null?s.sent+'%':'N/A'}</div></div>
             <div class="m-card"><div class="label">WHALES</div><div class="value" style="color:var(--purple)">${s.whales}</div></div>
             <div class="m-card"><div class="label">STAGE</div><div class="value neutral">${s.stage}</div></div>
           </div>

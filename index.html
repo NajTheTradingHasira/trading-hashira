@@ -3940,7 +3940,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
       const r=await fetch(NX.getBase()+'/api/darkpool/feed');
       if(!r.ok)throw new Error('HTTP '+r.status);
       const d=await r.json();
-      NX._dpFeedPrints=d.prints||[];
+      NX._dpFeedPrints=NX._dpFeedAnnotate(d.prints||[]);
       NX._dpFeedLastTs=d.last_updated||'';
       return d;
     }catch(e){console.warn('[DP Feed]',e.message);return null;}
@@ -3961,11 +3961,28 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
   },
   _stopFeedRefresh(){if(NX._dpFeedTimer){clearInterval(NX._dpFeedTimer);NX._dpFeedTimer=null;}},
 
+  _dpFeedMedians(data){
+    const by={};
+    for(const d of data){ if(!d.ticker||!(d.size>0))continue; (by[d.ticker]=by[d.ticker]||[]).push(d.size); }
+    const med={};
+    for(const t in by){
+      const a=by[t].sort((x,y)=>x-y), n=a.length;
+      if(n<5){ med[t]=null; continue; }
+      med[t]= n%2 ? a[(n-1)/2] : (a[n/2-1]+a[n/2])/2;
+    }
+    return med;
+  },
+  _dpFeedAnnotate(data){
+    const med=NX._dpFeedMedians(data);
+    for(const d of data){ const m=med[d.ticker]; d.x_med=(m&&d.size>0)?d.size/m:null; }
+    return data;
+  },
+
   _dpFeedSortFn(a,b){
     const s=NX._dpFeedSort,dir=NX._dpFeedSortDir==='asc'?1:-1;
     if(s==='premium')return dir*((a.premium||0)-(b.premium||0));
     if(s==='size')return dir*((a.size||0)-(b.size||0));
-    if(s==='pct_vol')return dir*((a.pct_vol||0)-(b.pct_vol||0));
+    if(s==='x_med')return dir*((a.x_med||0)-(b.x_med||0));
     if(s==='ticker')return dir*((a.ticker||'').localeCompare(b.ticker||''));
     return dir*((a.time||'').localeCompare(b.time||''));
   },
@@ -4072,10 +4089,10 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
 
     wrap.innerHTML=`
     <div class="card" style="padding:0"><div id="dp-feed-table" style="overflow-x:auto;max-height:520px;overflow-y:auto"><table>
-    <thead><tr>${hdr('time','TIME')}${hdr('ticker','TICKER')}<th>PRICE</th>${hdr('size','SIZE')}${hdr('premium','PREMIUM')}${hdr('pct_vol','% VOL')}<th>SECTOR</th><th>SOURCE</th><th>TRADE CODE</th><th>SETTLE</th></tr></thead>
+    <thead><tr>${hdr('time','TIME')}${hdr('ticker','TICKER')}<th>PRICE</th>${hdr('size','SIZE')}${hdr('premium','PREMIUM')}${hdr('x_med','× MED')}<th>SECTOR</th><th>SOURCE</th><th>TRADE CODE</th><th>SETTLE</th></tr></thead>
     <tbody>${data.slice(0,200).map(d=>{
       const isSweep=(d.trade_code||'').includes('sweep');
-      const pvClr=!d.pct_vol?'var(--text-dim)':d.pct_vol>5?'var(--red)':d.pct_vol>1?'var(--amber)':'var(--text)';
+      const xmClr=d.x_med==null?'var(--text-dim)':d.x_med>=5?'var(--red)':d.x_med>=2?'var(--amber)':'var(--text)';
       const tcBadge=isSweep?'<span class="badge b-purple" style="font-size:8px">SWEEP</span>'
         :d.source==='DARKPOOL'?'<span class="badge" style="font-size:8px;background:var(--bg4);color:var(--text-dim)">OFF-EXCHANGE</span>'
         :'<span class="badge" style="font-size:8px;background:var(--bg4);color:var(--text-dim)">REGULAR</span>';
@@ -4087,7 +4104,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
         <td>$${fmt(d.price)}</td>
         <td style="font-weight:600">${fmtSz(d.size)}</td>
         <td style="color:var(--green);font-weight:600">${fmtPrem(d.premium)}</td>
-        <td style="color:${pvClr}">${d.pct_vol!=null?d.pct_vol.toFixed(2)+'%':'—'}</td>
+        <td style="color:${xmClr};font-weight:${d.x_med>=2?600:400}">${d.x_med!=null?d.x_med.toFixed(1)+'×':'n<5'}</td>
         <td style="color:var(--text-dim);font-size:10px">${d.sector||'—'}</td>
         <td>${srcBadge}</td>
         <td>${tcBadge}</td>

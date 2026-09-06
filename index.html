@@ -3878,6 +3878,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
         regime:d.regime||null, avgSent:d.avg_sentiment??null,
         dataAgeSec:d.data_age_sec??null, stale:!!d.stale,
         newestPrintAt:d.newest_print_at||null, qualified:d.qualified_names??null,
+        deepOk:d.deep_ok??null, deepTarget:d.deep_target??null,
         buyNot:d.buy_notional||0, sellNot:d.sell_notional||0,
       };
       const tickers=d.tickers||[];
@@ -4131,7 +4132,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     <div class="card" style="border-color:${stale?'var(--amber)':regClr}30;${stale?'opacity:.75':''}">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
         <div>
-          <div style="font-size:10px;color:var(--text-dim)">DARK POOL REGIME · ${scored.length} NAMES${meta.qualified!=null?' · '+meta.qualified+' QUALIFIED (≥10 blocks, ≥$1M)':''}</div>
+          <div style="font-size:10px;color:var(--text-dim)">DARK POOL REGIME · ${scored.length} NAMES${meta.qualified!=null?' · '+meta.qualified+' QUALIFIED (≥10 blocks, ≥$1M)':''}${meta.deepOk!=null&&meta.deepTarget!=null&&meta.deepOk<meta.deepTarget?' · <span style="color:var(--amber)">DEEP PASS '+meta.deepOk+'/'+meta.deepTarget+' — PARTIAL</span>':''}</div>
           <div style="font-size:24px;font-weight:700;color:${regClr};letter-spacing:2px;margin-top:4px">${regime}${stale?' <span class="badge b-amber" style="font-size:9px;vertical-align:middle">STALE · '+ageStr+'</span>':''}</div>
           <div style="font-size:10px;color:${NX._dpLive?'var(--green)':'var(--text-dim)'};margin-top:2px">${NX._dpLive?'● LIVE':'○ MOCK'} · Fetched: ${NX._dpLive&&NX._dpLastUpdated?new Date(NX._dpLastUpdated).toLocaleTimeString('en-US',{hour12:false}):ts}${meta.newestPrintAt?' · Newest print: '+new Date(meta.newestPrintAt).toLocaleTimeString('en-US',{hour12:false})+(ageStr?' ('+ageStr+')':''):''}</div>
         </div>

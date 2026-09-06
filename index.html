@@ -3766,6 +3766,15 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
   // ═══ DARK POOL — 3-Tab: Live Feed · Flow Monitor · Inst. Levels ═══
   _dpData:[],_dpScored:[],_dpLevels:[],_dpTab:'monitor',_dpLive:false,
   _dpSizeFilt:'ALL',_dpSideFilt:'ALL',_dpSectorFilt:'ALL',_dpAlertFilt:'ALL',
+  // Flow Monitor: hide funds (index/sector/bond/commodity/levered ETFs). SPY, VOO
+  // and QQQ tie at the top on raw notional and bury the single names the tab is
+  // for. Per-viewer preference, so it lives in localStorage, never in the API.
+  _dpHideFunds:(()=>{try{return localStorage.getItem('nx.dp.hideFunds')==='1';}catch(e){return false;}})(),
+  _dpToggleHideFunds(){
+    NX._dpHideFunds=!NX._dpHideFunds;
+    try{localStorage.setItem('nx.dp.hideFunds',NX._dpHideFunds?'1':'0');}catch(e){}
+    NX._renderDP();
+  },
   _dpSectors:['Technology','Communication','Consumer Discretionary','Financials','Healthcare','Industrials','Energy','Materials','Utilities','Real Estate'],
   // Live Feed state
   _dpFeedPrints:[],_dpFeedSrcFilt:'ALL',_dpFeedSzFilt:'ALL',_dpFeedTicker:'',_dpFeedSort:'time',_dpFeedSortDir:'desc',
@@ -3895,6 +3904,8 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
         whales:t.whales||0,
         blocks:t.blocks||0,
         blocksTruncated:!!t.dp_truncated, dpPages:t.dp_pages||0,
+        // Backend is_fund (UW issue_type + ETF_SECTOR); sector tag is the fallback.
+        isFund:t.is_fund!=null?!!t.is_fund:(t.sector==='Index'||t.sector==='ETF'),
         notional:t.notional>=1e6?+((t.notional/1e6).toFixed(1)):+((t.notional/1e3).toFixed(0))/1000,
         largestPrint:t.largest_print||0,
         score:t.score||0,
@@ -3976,8 +3987,8 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
   _dpFeedAnnotate(data){
     const local=NX._dpFeedMedians(data);           // 200-print fallback
     for(const d of data){
-      const m20=d.med_size ?? d.med_size_20d, mL=local[d.ticker];
-      if(m20>0){ d.x_med=d.size/m20; d.x_src='20d'; }
+      const mA=d.med_size, mL=local[d.ticker];      // backend stratified median
+      if(mA>0){ d.x_med=d.size/mA; d.x_src='api'; }
       else if(mL>0){ d.x_med=d.size/mL; d.x_src='feed'; }
       else { d.x_med=null; d.x_src=null; }
     }
@@ -4110,7 +4121,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
         <td>$${fmt(d.price)}</td>
         <td style="font-weight:600">${fmtSz(d.size)}</td>
         <td style="color:var(--green);font-weight:600">${fmtPrem(d.premium)}</td>
-        <td style="color:${xmClr};font-weight:${d.x_med>=2?600:400}" title="${d.x_src==='20d'?(d.med_days+'d median · '+d.med_window+' · n='+(d.med_n ?? d.med_n_20d)+' · as of '+d.med_asof):d.x_src==='feed'?'feed median (200 prints)':'no baseline'}">${d.x_med!=null?d.x_med.toFixed(1)+'×'+(d.x_src==='feed'?'<span style="font-size:9px;opacity:.8;color:var(--amber)"> f</span>':''):'n<5'}</td>
+        <td style="color:${xmClr};font-weight:${d.x_med>=2?600:400}" title="${d.x_src==='api'?(d.med_days+'d median · '+d.med_window+' · n='+d.med_n+' · as of '+d.med_asof):d.x_src==='feed'?'feed median (200 prints)':'no baseline'}">${d.x_med!=null?d.x_med.toFixed(1)+'×'+(d.x_src==='feed'?'<span style="font-size:9px;opacity:.8;color:var(--amber)"> f</span>':''):'n<5'}</td>
         <td style="color:var(--text-dim);font-size:10px">${d.sector||'—'}</td>
         <td>${srcBadge}</td>
         <td>${tcBadge}</td>
@@ -4122,7 +4133,12 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
 
   // ─── FLOW MONITOR TAB ───
   _renderDPMonitor(el){
-    const scored=NX._dpScored;const af=NX._dpAlertFilt;
+    const all=NX._dpScored;const af=NX._dpAlertFilt;
+    // HIDE ETFs narrows every list on this tab. Regime + avg sent stay backend
+    // values over QUALIFIED names, funds included — the header says so.
+    const fundCount=all.filter(s=>s.isFund).length;
+    const fundsHidden=NX._dpHideFunds?fundCount:0;
+    const scored=NX._dpHideFunds?all.filter(s=>!s.isFund):all;
     const meta=NX._dpLive?(NX._dpMeta||{}):{};
     const accum=scored.filter(s=>s.alerts.includes('ACCUM')).length;
     const distrib=scored.filter(s=>s.alerts.includes('DIST')).length;
@@ -4150,12 +4166,13 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     else if(af==='WHALE')filtered=filtered.filter(s=>s.alerts.includes('WHALE'));
     else if(af==='UNUSUAL')filtered=filtered.filter(s=>s.alerts.includes('SPIKE'));
     else if(af==='SQ SETUP')filtered=filtered.filter(s=>s.alerts.includes('SQ SETUP'));
+    if(NX._dpSectorFilt!=='ALL')filtered=filtered.filter(s=>s.sector===NX._dpSectorFilt);
 
     el.innerHTML=`
     <div class="card" style="border-color:${stale?'var(--amber)':regClr}30;${stale?'opacity:.75':''}">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
         <div>
-          <div style="font-size:10px;color:var(--text-dim)">DARK POOL REGIME · ${scored.length} NAMES${meta.qualified!=null?' · '+meta.qualified+' QUALIFIED (≥10 blocks, ≥$1M)':''}${meta.deepOk!=null&&meta.deepTarget!=null&&meta.deepOk<meta.deepTarget?' · <span style="color:var(--amber)">DEEP PASS '+meta.deepOk+'/'+meta.deepTarget+' — PARTIAL</span>':''}</div>
+          <div style="font-size:10px;color:var(--text-dim)">DARK POOL REGIME · ${all.length} NAMES${fundsHidden?' · <span style="color:var(--amber)">'+fundsHidden+' ETFs HIDDEN</span>':''}${meta.qualified!=null?' · '+meta.qualified+' QUALIFIED (≥10 blocks, ≥$1M)':''}${meta.deepOk!=null&&meta.deepTarget!=null&&meta.deepOk<meta.deepTarget?' · <span style="color:var(--amber)">DEEP PASS '+meta.deepOk+'/'+meta.deepTarget+' — PARTIAL</span>':''}</div>
           <div style="font-size:24px;font-weight:700;color:${regClr};letter-spacing:2px;margin-top:4px">${regime}${stale?' <span class="badge b-amber" style="font-size:9px;vertical-align:middle">STALE · '+ageStr+'</span>':''}</div>
           <div style="font-size:10px;color:${NX._dpLive?'var(--green)':'var(--text-dim)'};margin-top:2px">${NX._dpLive?'● LIVE':'○ MOCK'} · Fetched: ${NX._dpLive&&NX._dpLastUpdated?new Date(NX._dpLastUpdated).toLocaleTimeString('en-US',{hour12:false}):ts}${meta.newestPrintAt?' · Newest print: '+new Date(meta.newestPrintAt).toLocaleTimeString('en-US',{hour12:false})+(ageStr?' ('+ageStr+')':''):''}</div>
         </div>
@@ -4193,9 +4210,10 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
         const cnt=s==='ALL'?scored.length:s==='ALERTS'?alertNames.length:scored.filter(x=>x.alerts.includes(s==='ACCUM'?'ACCUM':s==='DISTRIB'?'DIST':s==='UNUSUAL'?'SPIKE':s)).length;
         return `<button class="btn btn-sm" style="${NX._dpAlertFilt===s?'background:var(--accent);color:var(--bg0);border-color:var(--accent)':''}" onclick="NX._dpAlertFilt='${s}';NX._renderDP()">${s}${cnt?' ('+cnt+')':''}</button>`;
       }).join('')}
-      <select class="nx-input" style="margin-left:auto;font-size:10px;padding:4px 8px" onchange="NX._dpSectorFilt=this.value;NX._renderDP()">
+      <button class="btn btn-sm" style="margin-left:auto;${NX._dpHideFunds?'background:var(--amber);color:var(--bg0);border-color:var(--amber)':''}" onclick="NX._dpToggleHideFunds()" title="Hide index, sector, bond, commodity and levered funds so single names surface. Regime and avg sent still include them.">HIDE ETFs${fundCount?' ('+fundCount+')':''}</button>
+      <select class="nx-input" style="font-size:10px;padding:4px 8px" onchange="NX._dpSectorFilt=this.value;NX._renderDP()">
         <option value="ALL">ALL SECTORS</option>
-        ${NX._dpSectors.map(s=>`<option value="${s}">${s}</option>`).join('')}
+        ${NX._dpSectors.map(s=>`<option value="${s}"${NX._dpSectorFilt===s?' selected':''}>${s}</option>`).join('')}
       </select>
       <button class="btn btn-sm" onclick="NX.loadDarkPool()">↻</button>
       <span style="font-size:9px;color:${NX._dpLive?'var(--green)':'var(--text-dim)'}">${NX._dpLive?'● LIVE':'○ MOCK'}</span>

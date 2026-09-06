@@ -3766,13 +3766,14 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
   // ═══ DARK POOL — 3-Tab: Live Feed · Flow Monitor · Inst. Levels ═══
   _dpData:[],_dpScored:[],_dpLevels:[],_dpTab:'monitor',_dpLive:false,
   _dpSizeFilt:'ALL',_dpSideFilt:'ALL',_dpSectorFilt:'ALL',_dpAlertFilt:'ALL',
-  // Flow Monitor: hide funds (index/sector/bond/commodity/levered ETFs). SPY, VOO
-  // and QQQ tie at the top on raw notional and bury the single names the tab is
-  // for. Per-viewer preference, so it lives in localStorage, never in the API.
-  _dpHideFunds:(()=>{try{return localStorage.getItem('nx.dp.hideFunds')==='1';}catch(e){return false;}})(),
-  _dpToggleHideFunds(){
-    NX._dpHideFunds=!NX._dpHideFunds;
-    try{localStorage.setItem('nx.dp.hideFunds',NX._dpHideFunds?'1':'0');}catch(e){}
+  // Flow Monitor: ETFs ONLY narrows the tab to funds (index/sector/bond/commodity/
+  // levered). Index and sector fund prints are where allocation money shows up
+  // first, so the view isolates them rather than hiding them. Per-viewer
+  // preference, so it lives in localStorage, never in the API.
+  _dpFundsOnly:(()=>{try{return localStorage.getItem('nx.dp.fundsOnly')==='1';}catch(e){return false;}})(),
+  _dpToggleFundsOnly(){
+    NX._dpFundsOnly=!NX._dpFundsOnly;
+    try{localStorage.setItem('nx.dp.fundsOnly',NX._dpFundsOnly?'1':'0');}catch(e){}
     NX._renderDP();
   },
   _dpSectors:['Technology','Communication','Consumer Discretionary','Financials','Healthcare','Industrials','Energy','Materials','Utilities','Real Estate'],
@@ -4134,11 +4135,11 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
   // ─── FLOW MONITOR TAB ───
   _renderDPMonitor(el){
     const all=NX._dpScored;const af=NX._dpAlertFilt;
-    // HIDE ETFs narrows every list on this tab. Regime + avg sent stay backend
-    // values over QUALIFIED names, funds included — the header says so.
+    // ETFs ONLY narrows every list on this tab to funds. Regime + avg sent stay
+    // backend values over ALL qualified names — the header says so.
     const fundCount=all.filter(s=>s.isFund).length;
-    const fundsHidden=NX._dpHideFunds?fundCount:0;
-    const scored=NX._dpHideFunds?all.filter(s=>!s.isFund):all;
+    const fundsOnly=NX._dpFundsOnly&&fundCount>0;
+    const scored=fundsOnly?all.filter(s=>s.isFund):all;
     const meta=NX._dpLive?(NX._dpMeta||{}):{};
     const accum=scored.filter(s=>s.alerts.includes('ACCUM')).length;
     const distrib=scored.filter(s=>s.alerts.includes('DIST')).length;
@@ -4172,7 +4173,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
     <div class="card" style="border-color:${stale?'var(--amber)':regClr}30;${stale?'opacity:.75':''}">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
         <div>
-          <div style="font-size:10px;color:var(--text-dim)">DARK POOL REGIME · ${all.length} NAMES${fundsHidden?' · <span style="color:var(--amber)">'+fundsHidden+' ETFs HIDDEN</span>':''}${meta.qualified!=null?' · '+meta.qualified+' QUALIFIED (≥10 blocks, ≥$1M)':''}${meta.deepOk!=null&&meta.deepTarget!=null&&meta.deepOk<meta.deepTarget?' · <span style="color:var(--amber)">DEEP PASS '+meta.deepOk+'/'+meta.deepTarget+' — PARTIAL</span>':''}</div>
+          <div style="font-size:10px;color:var(--text-dim)">DARK POOL REGIME · ${all.length} NAMES${fundsOnly?' · <span style="color:var(--amber)">ETFs ONLY · '+fundCount+' OF '+all.length+'</span>':''}${meta.qualified!=null?' · '+meta.qualified+' QUALIFIED (≥10 blocks, ≥$1M)':''}${meta.deepOk!=null&&meta.deepTarget!=null&&meta.deepOk<meta.deepTarget?' · <span style="color:var(--amber)">DEEP PASS '+meta.deepOk+'/'+meta.deepTarget+' — PARTIAL</span>':''}</div>
           <div style="font-size:24px;font-weight:700;color:${regClr};letter-spacing:2px;margin-top:4px">${regime}${stale?' <span class="badge b-amber" style="font-size:9px;vertical-align:middle">STALE · '+ageStr+'</span>':''}</div>
           <div style="font-size:10px;color:${NX._dpLive?'var(--green)':'var(--text-dim)'};margin-top:2px">${NX._dpLive?'● LIVE':'○ MOCK'} · Fetched: ${NX._dpLive&&NX._dpLastUpdated?new Date(NX._dpLastUpdated).toLocaleTimeString('en-US',{hour12:false}):ts}${meta.newestPrintAt?' · Newest print: '+new Date(meta.newestPrintAt).toLocaleTimeString('en-US',{hour12:false})+(ageStr?' ('+ageStr+')':''):''}</div>
         </div>
@@ -4210,7 +4211,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
         const cnt=s==='ALL'?scored.length:s==='ALERTS'?alertNames.length:scored.filter(x=>x.alerts.includes(s==='ACCUM'?'ACCUM':s==='DISTRIB'?'DIST':s==='UNUSUAL'?'SPIKE':s)).length;
         return `<button class="btn btn-sm" style="${NX._dpAlertFilt===s?'background:var(--accent);color:var(--bg0);border-color:var(--accent)':''}" onclick="NX._dpAlertFilt='${s}';NX._renderDP()">${s}${cnt?' ('+cnt+')':''}</button>`;
       }).join('')}
-      <button class="btn btn-sm" style="margin-left:auto;${NX._dpHideFunds?'background:var(--amber);color:var(--bg0);border-color:var(--amber)':''}" onclick="NX._dpToggleHideFunds()" title="Hide index, sector, bond, commodity and levered funds so single names surface. Regime and avg sent still include them.">HIDE ETFs${fundCount?' ('+fundCount+')':''}</button>
+      <button class="btn btn-sm" style="margin-left:auto;${NX._dpFundsOnly?'background:var(--amber);color:var(--bg0);border-color:var(--amber)':''}" onclick="NX._dpToggleFundsOnly()" title="Show only index, sector, bond, commodity and levered funds — where allocation flow shows first. Regime and avg sent still cover every qualified name.">ETFs ONLY${fundCount?' ('+fundCount+')':''}</button>
       <select class="nx-input" style="font-size:10px;padding:4px 8px" onchange="NX._dpSectorFilt=this.value;NX._renderDP()">
         <option value="ALL">ALL SECTORS</option>
         ${NX._dpSectors.map(s=>`<option value="${s}"${NX._dpSectorFilt===s?' selected':''}>${s}</option>`).join('')}

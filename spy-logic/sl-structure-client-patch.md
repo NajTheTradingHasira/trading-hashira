@@ -52,7 +52,15 @@ moves the fallback.
 
 ## 2. Response contract
 
-`GET /api/spy-logic/structure` → always `200`, `Cache-Control: public, max-age=300`.
+`GET /api/spy-logic/structure` → always `200`. **No `Cache-Control` header, deliberately.**
+
+An earlier revision of this contract asserted `Cache-Control: public, max-age=300`.
+Production never served it — Railway's edge does not pass it through — and it was not
+buying anything in principle either: the endpoint memoises its parse/validate result on
+the identity of the raw `SPY_STRUCTURE_JSON` string, so the steady-state call is already
+free without a client cache. A client cache is pure downside here, being the one thing
+that could delay a re-anchor from reaching the panel, which is the entire reason the
+endpoint exists. The assertion was dropped rather than the edge chased; do not re-add it.
 
 ```json
 {

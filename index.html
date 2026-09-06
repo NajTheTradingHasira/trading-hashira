@@ -3894,6 +3894,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
         sent:t.sentiment??null,
         whales:t.whales||0,
         blocks:t.blocks||0,
+        blocksTruncated:!!t.dp_truncated, dpPages:t.dp_pages||0,
         notional:t.notional>=1e6?+((t.notional/1e6).toFixed(1)):+((t.notional/1e3).toFixed(0))/1000,
         largestPrint:t.largest_print||0,
         score:t.score||0,
@@ -3975,7 +3976,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
   _dpFeedAnnotate(data){
     const local=NX._dpFeedMedians(data);           // 200-print fallback
     for(const d of data){
-      const m20=d.med_size_20d, mL=local[d.ticker];
+      const m20=d.med_size ?? d.med_size_20d, mL=local[d.ticker];
       if(m20>0){ d.x_med=d.size/m20; d.x_src='20d'; }
       else if(mL>0){ d.x_med=d.size/mL; d.x_src='feed'; }
       else { d.x_med=null; d.x_src=null; }
@@ -4109,7 +4110,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
         <td>$${fmt(d.price)}</td>
         <td style="font-weight:600">${fmtSz(d.size)}</td>
         <td style="color:var(--green);font-weight:600">${fmtPrem(d.premium)}</td>
-        <td style="color:${xmClr};font-weight:${d.x_med>=2?600:400}" title="${d.x_src==='20d'?('20d median · n='+d.med_n_20d+' · as of '+d.med_asof):d.x_src==='feed'?'feed median (200 prints)':'no baseline'}">${d.x_med!=null?d.x_med.toFixed(1)+'×'+(d.x_src==='feed'?'<span style="font-size:9px;opacity:.8;color:var(--amber)"> f</span>':''):'n<5'}</td>
+        <td style="color:${xmClr};font-weight:${d.x_med>=2?600:400}" title="${d.x_src==='20d'?(d.med_days+'d median · '+d.med_window+' · n='+(d.med_n ?? d.med_n_20d)+' · as of '+d.med_asof):d.x_src==='feed'?'feed median (200 prints)':'no baseline'}">${d.x_med!=null?d.x_med.toFixed(1)+'×'+(d.x_src==='feed'?'<span style="font-size:9px;opacity:.8;color:var(--amber)"> f</span>':''):'n<5'}</td>
         <td style="color:var(--text-dim);font-size:10px">${d.sector||'—'}</td>
         <td>${srcBadge}</td>
         <td>${tcBadge}</td>
@@ -4212,7 +4213,7 @@ ${(v.distribution_days||[]).length?`<table><thead><tr><th>Week</th><th>Price Cha
         <td>${fmtPct(s.shortPct)}</td>
         <td style="color:${s.sent==null?'var(--text-dim)':s.sent>55?'var(--green)':s.sent<40?'var(--red)':'var(--amber)'}"><strong>${fmtPct(s.sent)}</strong></td>
         <td>${s.whales}</td>
-        <td>${s.blocks}</td>
+        <td${s.blocksTruncated?' title="hit 8-page ceiling — this is a floor, not a total" style="color:var(--amber)"':''}>${s.blocks.toLocaleString()}${s.blocksTruncated?'+':''}</td>
         <td>$${s.notional}M</td>
         <td>${NX._dpLive?confBadge(s.confidence):'—'}</td>
         <td style="font-size:10px;color:var(--text-dim)">${NX._dpLive?minsAgo(s.lastPrintAt):'—'}</td>

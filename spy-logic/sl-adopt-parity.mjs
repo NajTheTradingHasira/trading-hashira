@@ -54,7 +54,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 // ── CLI ─────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
 const SELF_TEST_ONLY = argv.includes('--self-test');
-const args = argv.filter((a) => a !== '--self-test');
+// --matrix prints the ACTUAL failure message each perturbation produced, not
+// just a verdict. "red and named" is a claim about the comparator; the message
+// is the evidence for it, and the two are worth keeping separable.
+const MATRIX = argv.includes('--matrix');
+const args = argv.filter((a) => a !== '--self-test' && a !== '--matrix');
 const apexPath = args[0];
 const nexusSrc = args[1];
 const hashiraPath = args[2] || fileURLToPath(new URL('../index.html', import.meta.url));
@@ -90,6 +94,24 @@ const FIELDS = [
     { path: 'originReview' },
     { path: 'calculatedAsOf' },
 ];
+
+// ── FLOORS: fail CLOSED, not open ───────────────────────────────────────────
+//
+// Every harness here locates what it compares by matching something — a content
+// anchor, a script block, an exported symbol. All of those fail OPEN. Reformat
+// `const SL_STATE = {` to `const SL_STATE={`, rename a function, move a block
+// past an anchor, and the harness matches less, compares fewer things (possibly
+// nothing) and still reports GREEN. The thing guarding everything else is the
+// thing with no guard on it.
+//
+// So today's counts become floors the run ASSERTS rather than numbers it
+// merely prints. A run that comes in under its floor fails and says an anchor
+// probably stopped matching. Raise these deliberately when the grid legitimately
+// grows; never lower one to make a run pass.
+const MIN_COMPARISONS = 243;   // 9 fixtures x 9 fields x 3 side pairs
+const MIN_FIELDS = 9;
+const MIN_FIXTURES = 9;
+const MIN_SIDES = 3;
 
 // Absent and null both mean "no value worth showing" and render identically
 // (near-term-pivot-proposal §3). A terminal that omits the key and one that
@@ -439,6 +461,8 @@ console.log('\ntest-the-test — one perturbation per field, each must go RED an
     }
 }
 
+const matrixRows = [];
+
 for (const [fieldPath, perturb] of PERTURBATIONS) {
     const perturbed = clone(baseline);
     perturb(perturbed.nexus);                    // one side only
@@ -446,6 +470,7 @@ for (const [fieldPath, perturb] of PERTURBATIONS) {
     const named = r.failures.filter((f) => f.field === fieldPath);
     const collateral = r.failures.filter((f) => f.field !== fieldPath);
     const others = (list) => [...new Set(list.map((f) => f.field))].join(', ');
+    matrixRows.push({ fieldPath, red: r.failures.length > 0, named: named[0] || null });
 
     if (!r.failures.length) {
         selfFail++;
@@ -461,6 +486,30 @@ for (const [fieldPath, perturb] of PERTURBATIONS) {
     } else {
         console.log('  ok  ' + fieldPath + ' — red, named, ' + named.length
             + ' pair(s), no collateral');
+    }
+}
+
+if (MATRIX) {
+    // The artifact: nine fields, each perturbed on one side, each confirmed RED,
+    // each failure message naming the field. Green is an ambiguous signal —
+    // "nine fields correctly compared" and "nine fields silently not compared"
+    // both report green — so the matrix, not the green run, is the evidence
+    // that the comparator reaches each field.
+    console.log('\n── PERTURBATION MATRIX ' + '─'.repeat(52));
+    console.log('field'.padEnd(19) + 'perturbation'.padEnd(40) + 'verdict');
+    console.log('─'.repeat(74));
+    for (const row of matrixRows) {
+        const f = row.named;
+        const change = f ? show(f.av) + ' -> ' + show(f.bv) : '(no failure produced)';
+        console.log(
+            row.fieldPath.padEnd(19) +
+            change.slice(0, 39).padEnd(40) +
+            (row.red && f ? 'RED, names ' + f.field : row.red ? 'RED, WRONG FIELD' : 'GREEN — NOT COMPARED'));
+    }
+    console.log('─'.repeat(74));
+    console.log('verbatim failure messages:\n');
+    for (const row of matrixRows) {
+        console.log(row.named ? line(row.named) : '  (none for ' + row.fieldPath + ')');
     }
 }
 
@@ -529,8 +578,41 @@ console.log('\nnumeric-string parity — same value, different type');
     }
 }
 
+// ── floors ──────────────────────────────────────────────────────────────────
+// Asserted before the green line is printed, so an under-count can never be
+// reported as a clean run.
+const floorFailures = [];
+const floor = (label, got, min) => {
+    if (got < min) {
+        floorFailures.push('expected >= ' + min + ' ' + label + ', got ' + got
+            + ' — an anchor probably stopped matching');
+    }
+};
+floor('fields in the comparison set', FIELDS.length, MIN_FIELDS);
+floor('fixtures', FIXTURES.length, MIN_FIXTURES);
+floor('terminals loaded', Object.keys(sides).length, MIN_SIDES);
+if (!SELF_TEST_ONLY) floor('comparisons', comparisons, MIN_COMPARISONS);
+// Every field in the comparison set must have a perturbation proving it is
+// reached. Adding a field without one is exactly how a field joins the set and
+// is never actually compared.
+if (PERTURBATIONS.length < FIELDS.length) {
+    floorFailures.push('every field needs a perturbation: ' + FIELDS.length
+        + ' fields but only ' + PERTURBATIONS.length + ' perturbations');
+}
+for (const f of FIELDS) {
+    if (!PERTURBATIONS.some(([p]) => p === f.path)) {
+        floorFailures.push('field ' + f.path + ' has no perturbation — it is in the '
+            + 'comparison set but nothing proves the comparator reaches it');
+    }
+}
+
 // ── report ──────────────────────────────────────────────────────────────────
 console.log('');
+if (floorFailures.length) {
+    console.log('✗ FLOOR CHECK FAILED — this harness compares less than it used to:');
+    for (const m of floorFailures) console.log('    ' + m);
+    process.exit(1);
+}
 if (selfFail) {
     console.log('✗ TEST-THE-TEST FAILED — ' + selfFail + ' check(s). The comparator is not');
     console.log('  trustworthy; a green parity run above means nothing until this is fixed.');

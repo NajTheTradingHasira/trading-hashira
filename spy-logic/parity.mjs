@@ -344,9 +344,43 @@ apex.SL_STATE.inputs = Object.assign({}, INPUTS.SHORT, { window: 'amprime' });
         Object.keys(aCtx).filter(k => !APEX_ONLY_KEYS.has(k)).sort(), Object.keys(cCtx).sort());
 }
 
+// ── floors: fail CLOSED, not open ────────────────────────────
+// This harness finds what it compares by CONTENT ANCHORS. Anchors fail open.
+// Reformat `const SL_STATE = {` to `const SL_STATE={`, rename slRunGate, or
+// move the renderer banner, and the slice shrinks — or the grid derived from
+// SL_INPUTS_DEF shrinks — and the run compares fewer things, possibly nothing,
+// while still printing "parity clean". The harness guarding everything else
+// has nothing guarding it.
+//
+// So today's counts are asserted as floors, not merely printed. Raise them
+// deliberately when the grid legitimately grows; never lower one to make a run
+// pass — a lowered floor is the drift, written down.
+const MIN_TAPE_COMBOS = 972;    // 4 x 3 x 3 x 3 x 3 x 3, derived from SL_INPUTS_DEF
+const MIN_PHASE1 = 5832;        // 972 tape combinations x 6 windows
+const MIN_PHASE2 = 2016;        // 14 spots x 8 VIXes x 3 reads x 6 windows
+const MIN_COMPARISONS = 12013;
+
+const floorFailures = [];
+const floor = (label, got, min) => {
+    if (got < min) {
+        floorFailures.push('expected >= ' + min + ' ' + label + ', got ' + got +
+            ' — an anchor probably stopped matching');
+    }
+};
+floor('tape combinations', tapeGrid.length, MIN_TAPE_COMBOS);
+floor('phase-1 scenarios', phase1, MIN_PHASE1);
+floor('phase-2 scenarios', phase2, MIN_PHASE2);
+floor('comparisons', checks, MIN_COMPARISONS);
+
 // ── report ───────────────────────────────────────────────────
 const scenarios = phase1 + phase2;
 console.log('');
+if (floorFailures.length) {
+    console.log('✗ FLOOR CHECK FAILED — this harness compares less than it used to:');
+    for (const m of floorFailures) console.log('    ' + m);
+    console.log('\nA green run under a floor is the failure mode floors exist to catch.');
+    process.exit(1);
+}
 if (fail === 0) {
     console.log(`✓ parity clean — ${scenarios} scenarios, ${checks} comparisons`);
     console.log(`    phase 1 (collapse proof):    ${phase1}`);

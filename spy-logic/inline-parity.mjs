@@ -224,9 +224,36 @@ for (const internals of INTERNALS) for (const retest of RETEST) {
 // an unreachable branch produces no mismatch on its own.
 const missing = mod.SPY_SCENARIOS.map(x => x.id).filter(id => !seen.has(id));
 
+// ── floors: fail CLOSED, not open ────────────────────────────────────────
+// This harness locates the inline block by an ORDERED ANCHOR LIST, and anchors
+// fail open: rename the anchor function, reformat its signature, or move a
+// block past an anchor and the extraction matches less, the grid shrinks, and
+// the run still exits 0. Worse, the summary line below hardcodes "/108", so a
+// run that compared 50 combinations printed "50/108 combinations" and passed.
+//
+// Today's counts are therefore asserted. Raise them deliberately when the grid
+// legitimately grows; never lower one to make a run pass.
+const MIN_COMBINATIONS = 108;
+const MIN_SCENARIOS = 8;
+const floorFailures = [];
+if (n < MIN_COMBINATIONS) {
+    floorFailures.push('expected >= ' + MIN_COMBINATIONS + ' combinations, got ' + n +
+        ' — an anchor probably stopped matching');
+}
+if (seen.size < MIN_SCENARIOS) {
+    floorFailures.push('expected >= ' + MIN_SCENARIOS + ' reachable scenarios, got ' +
+        seen.size + ' — an anchor probably stopped matching');
+}
+
 console.log('');
+if (floorFailures.length) {
+    console.log('✗ FLOOR CHECK FAILED — this harness compares less than it used to:');
+    for (const m of floorFailures) console.log('    ' + m);
+    process.exit(1);
+}
 if (fail === 0 && missing.length === 0) {
-    console.log('✓ inline parity clean — ' + n + '/108 combinations, full {dir,label,note} triple');
+    console.log('✓ inline parity clean — ' + n + '/' + MIN_COMBINATIONS +
+        ' combinations, full {dir,label,note} triple');
     console.log('  all ' + seen.size + ' scenarios reachable');
     process.exit(0);
 }

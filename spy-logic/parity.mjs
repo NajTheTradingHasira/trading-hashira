@@ -52,6 +52,47 @@
  *   field.
  *
  * Nothing else is pruned. Reported counts are actual, not nominal.
+ *
+ * ── WHAT PARITY STRUCTURALLY CANNOT CATCH ───────────────────────────────
+ *
+ * Parity compares two implementations AGAINST EACH OTHER. It detects drift
+ * between them and is BLIND to anything they lose together.
+ *
+ * That is not hypothetical. The four provenance fields (derivationVersion,
+ * dataSource, originReview, calculatedAsOf) were carried in
+ * SPY_STRUCTURE_JSON and reached no terminal for a week. They were not
+ * dropped by a client: StructureResponse is a Pydantic whitelist and
+ * get_spy_structure() constructs it field by field, so a key the model does
+ * not name is discarded at the BACKEND, before the wire. Every terminal lost
+ * them in lockstep, every terminal agreed, and this harness would have
+ * printed "parity clean" for the entire duration. `degraded` went the same
+ * way one release earlier.
+ *
+ * So a green run here is evidence that the implementations agree. It is NOT
+ * evidence that a field survived the backend. The guard for that class is a
+ * round-trip assertion — feed a known SPY_STRUCTURE_JSON in, assert every key
+ * comes back populated — and it lives in the backend, deliberately outside
+ * parity because parity cannot express it:
+ *
+ *     nexus-backend/api/test_spy_structure_roundtrip.py
+ *
+ * ── WHERE `pivot` AND THE PROVENANCE FIELDS ARE COMPARED ─────────────────
+ *
+ * Not here, and `pivot` never can be. This harness's comparison set is
+ * governor behaviour (structuralTag / governorFor / stops / worsenGate /
+ * stopMath / buildStructureContext), and the pivot is forbidden from
+ * reaching any of it — it is display context, outside the ordered triple
+ * (near-term-pivot-proposal §2 rule 2). A pivot field becoming visible to
+ * the comparison set below would mean the governor had started reading it:
+ * the bug, not the test.
+ *
+ * Those nine fields are compared at the ADOPTION boundary instead, across
+ * all three terminals, by:
+ *
+ *     spy-logic/sl-adopt-parity.mjs
+ *
+ * (The adopt step is also physically outside this harness's slice: APEX's
+ * slFetchStructure sits BELOW the END_ANCHOR renderer banner.)
  */
 import fs from 'fs';
 import path from 'path';

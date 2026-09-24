@@ -2113,6 +2113,7 @@ Score: ${a.score}/100${a.flag?' · STRICT FLAG ✓':''}
       if(d.error){el.innerHTML='<div class="error-msg">'+d.error+'</div>';return;}
       NX._stageData=d;
       const s=d.stage||'?',sub=d.sub_stage||'',stageLabel=d.stage_label||'',conf=d.confidence||0;
+      const stageAsOf=/^\d{4}-\d{2}-\d{2}$/.test(String(d.stage_as_of??''))?d.stage_as_of:null;
       const sn=parseInt(s),sc=sn<=1?'s1':sn===2?'s2':sn===3?'s3':'s4';
       const actionMap={'1':'Accumulate on volume','1A':'Accumulate on volume','1B':'Accumulate on volume','2':'Buy breakouts','2A':'Buy breakouts','2B':'Hold / trail stops','3':'Sell into strength','3A':'Sell into strength','3B':'Reduce exposure','4':'Avoid / short only','4A':'Avoid / short only','4B':'Avoid / short only'};
       const actionText=actionMap[sub]||actionMap[String(s)]||'—';
@@ -2121,6 +2122,7 @@ Score: ${a.score}/100${a.flag?' · STRICT FLAG ✓':''}
 <div class="card" style="display:flex;align-items:center;gap:24px;flex-wrap:wrap">
   <div><div style="font-size:10px;color:var(--text-dim);letter-spacing:1px;margin-bottom:6px">WEINSTEIN STAGE</div>
     <span class="stage-badge ${sc}">STAGE ${s}${sub?' — '+sub:''}</span>
+    ${stageAsOf?'<span style="font-size:10px;color:var(--text-dim);letter-spacing:1px;margin-left:10px;vertical-align:middle">AS OF '+stageAsOf+' CLOSE</span>':''}
     ${stageLabel?'<div style="font-size:11px;color:var(--text-muted);margin-top:4px">'+stageLabel+'</div>':''}
     <div style="margin-top:8px"><span class="badge" style="background:${actionClr}18;color:${actionClr};border:1px solid ${actionClr}40;font-size:11px;padding:3px 10px;font-weight:700">${actionText.toUpperCase()}</span></div>
   </div>

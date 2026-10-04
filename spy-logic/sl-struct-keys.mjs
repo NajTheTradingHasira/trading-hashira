@@ -177,5 +177,18 @@ for (const [name, pass, detail] of results) {
     if (!pass) failed += 1;
     console.log((pass ? '  ok  ' : '✗ FAIL') + '  ' + name + (detail && !pass ? '\n          got: ' + detail : ''));
 }
+
+// ── floor: fail CLOSED, not open ─────────────────────────────────────────
+// The inline block is located by a regex and driven through named functions.
+// If either stops matching, checks stop being registered and the run reports a
+// green pass over a shorter list — the exact fail-open this file exists to
+// prevent for the adopted key set. The key set itself is asserted above; this
+// asserts that the assertions ran.
+const MIN_CHECKS = 8;
+if (results.length < MIN_CHECKS) {
+    console.log('\n✗ FLOOR CHECK FAILED — expected >= ' + MIN_CHECKS + ' checks, got ' +
+        results.length + ' — an anchor probably stopped matching');
+    process.exit(1);
+}
 console.log('\n' + (failed ? '✗ ' + failed + ' failed / ' : '✓ ') + results.length + ' checks');
 process.exit(failed ? 1 : 0);

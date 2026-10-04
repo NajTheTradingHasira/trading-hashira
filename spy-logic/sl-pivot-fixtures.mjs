@@ -168,6 +168,19 @@ for (const [name, pass, detail] of results) {
 }
 const ok = results.every(([, pass]) => pass);
 const failed = results.filter(([, pass]) => !pass).length;
+
+// ── floor: fail CLOSED, not open ─────────────────────────────────────────
+// This file finds what it tests by matching the inline <script> and then by
+// naming functions (slPivot, slRenderStructure) inside it. Both fail open: if
+// the regex stops matching or a function is renamed, whole assertions stop
+// being registered and `results` simply gets shorter — a green run over fewer
+// fixtures. Assert the count so a shrink is a failure, not a quieter pass.
+const MIN_FIXTURES = 32;
+if (results.length < MIN_FIXTURES) {
+    console.log(`\n✗ FLOOR CHECK FAILED — expected >= ${MIN_FIXTURES} fixtures, got ` +
+        `${results.length} — an anchor probably stopped matching`);
+    process.exit(1);
+}
 console.log(ok ? `\nPASS — ${results.length} fixtures green`
                : `\nFAIL — ${failed} of ${results.length}`);
 process.exit(ok ? 0 : 1);

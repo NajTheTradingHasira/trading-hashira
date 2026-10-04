@@ -183,5 +183,18 @@ Run against live data, not fixtures. Report observed output — not a pass you d
 
 9. **Parity.** `node parity.mjs <APEX index.html> <spy-governor-core.js>` → clean, exit 0.
 
+10. **Adoption parity.** `node spy-logic/sl-adopt-parity.mjs <APEX index.html> <nexus src dir>`
+    → clean, exit 0. Compares what all three terminals' shipped adopt steps produce from one
+    payload, over `pivot.{level,kind,asOf,origin,policy}` and the four provenance fields —
+    the nine fields `parity.mjs` cannot cover (`pivot` is barred from the governor by design,
+    and the adopt step sits below that harness's end anchor). Ends with a `test-the-test`
+    block that perturbs each of the nine fields in turn and fails if the comparator does not
+    go red and name it.
+
+    Both parity harnesses compare clients against each other and are blind to anything they
+    all lose together — the way the provenance fields were originally dropped, at the
+    backend's response whitelist. That class is covered by
+    `nexus-backend/api/test_spy_structure_roundtrip.py`, not by parity.
+
 Deploys via Vercel (`vercel.json`), not GitHub Pages. Before browser testing, clear
 `localStorage.nexus_api_base` — a stale preview URL silently overrides the default.

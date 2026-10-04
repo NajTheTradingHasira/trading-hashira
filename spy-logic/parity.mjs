@@ -52,6 +52,47 @@
  *   field.
  *
  * Nothing else is pruned. Reported counts are actual, not nominal.
+ *
+ * ── WHAT PARITY STRUCTURALLY CANNOT CATCH ───────────────────────────────
+ *
+ * Parity compares two implementations AGAINST EACH OTHER. It detects drift
+ * between them and is BLIND to anything they lose together.
+ *
+ * That is not hypothetical. The four provenance fields (derivationVersion,
+ * dataSource, originReview, calculatedAsOf) were carried in
+ * SPY_STRUCTURE_JSON and reached no terminal for a week. They were not
+ * dropped by a client: StructureResponse is a Pydantic whitelist and
+ * get_spy_structure() constructs it field by field, so a key the model does
+ * not name is discarded at the BACKEND, before the wire. Every terminal lost
+ * them in lockstep, every terminal agreed, and this harness would have
+ * printed "parity clean" for the entire duration. `degraded` went the same
+ * way one release earlier.
+ *
+ * So a green run here is evidence that the implementations agree. It is NOT
+ * evidence that a field survived the backend. The guard for that class is a
+ * round-trip assertion — feed a known SPY_STRUCTURE_JSON in, assert every key
+ * comes back populated — and it lives in the backend, deliberately outside
+ * parity because parity cannot express it:
+ *
+ *     nexus-backend/api/test_spy_structure_roundtrip.py
+ *
+ * ── WHERE `pivot` AND THE PROVENANCE FIELDS ARE COMPARED ─────────────────
+ *
+ * Not here, and `pivot` never can be. This harness's comparison set is
+ * governor behaviour (structuralTag / governorFor / stops / worsenGate /
+ * stopMath / buildStructureContext), and the pivot is forbidden from
+ * reaching any of it — it is display context, outside the ordered triple
+ * (near-term-pivot-proposal §2 rule 2). A pivot field becoming visible to
+ * the comparison set below would mean the governor had started reading it:
+ * the bug, not the test.
+ *
+ * Those nine fields are compared at the ADOPTION boundary instead, across
+ * all three terminals, by:
+ *
+ *     spy-logic/sl-adopt-parity.mjs
+ *
+ * (The adopt step is also physically outside this harness's slice: APEX's
+ * slFetchStructure sits BELOW the END_ANCHOR renderer banner.)
  */
 import fs from 'fs';
 import path from 'path';
@@ -303,9 +344,43 @@ apex.SL_STATE.inputs = Object.assign({}, INPUTS.SHORT, { window: 'amprime' });
         Object.keys(aCtx).filter(k => !APEX_ONLY_KEYS.has(k)).sort(), Object.keys(cCtx).sort());
 }
 
+// ── floors: fail CLOSED, not open ────────────────────────────
+// This harness finds what it compares by CONTENT ANCHORS. Anchors fail open.
+// Reformat `const SL_STATE = {` to `const SL_STATE={`, rename slRunGate, or
+// move the renderer banner, and the slice shrinks — or the grid derived from
+// SL_INPUTS_DEF shrinks — and the run compares fewer things, possibly nothing,
+// while still printing "parity clean". The harness guarding everything else
+// has nothing guarding it.
+//
+// So today's counts are asserted as floors, not merely printed. Raise them
+// deliberately when the grid legitimately grows; never lower one to make a run
+// pass — a lowered floor is the drift, written down.
+const MIN_TAPE_COMBOS = 972;    // 4 x 3 x 3 x 3 x 3 x 3, derived from SL_INPUTS_DEF
+const MIN_PHASE1 = 5832;        // 972 tape combinations x 6 windows
+const MIN_PHASE2 = 2016;        // 14 spots x 8 VIXes x 3 reads x 6 windows
+const MIN_COMPARISONS = 12013;
+
+const floorFailures = [];
+const floor = (label, got, min) => {
+    if (got < min) {
+        floorFailures.push('expected >= ' + min + ' ' + label + ', got ' + got +
+            ' — an anchor probably stopped matching');
+    }
+};
+floor('tape combinations', tapeGrid.length, MIN_TAPE_COMBOS);
+floor('phase-1 scenarios', phase1, MIN_PHASE1);
+floor('phase-2 scenarios', phase2, MIN_PHASE2);
+floor('comparisons', checks, MIN_COMPARISONS);
+
 // ── report ───────────────────────────────────────────────────
 const scenarios = phase1 + phase2;
 console.log('');
+if (floorFailures.length) {
+    console.log('✗ FLOOR CHECK FAILED — this harness compares less than it used to:');
+    for (const m of floorFailures) console.log('    ' + m);
+    console.log('\nA green run under a floor is the failure mode floors exist to catch.');
+    process.exit(1);
+}
 if (fail === 0) {
     console.log(`✓ parity clean — ${scenarios} scenarios, ${checks} comparisons`);
     console.log(`    phase 1 (collapse proof):    ${phase1}`);
